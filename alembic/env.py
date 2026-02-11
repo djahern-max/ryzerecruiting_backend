@@ -12,7 +12,8 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Import all your models here so Alembic can detect them
-from app.models.contact import Contact  # Changed from ContactSubmission
+from app.models.contact import Contact
+from app.models.user import User  # Add user model for authentication
 
 # this is the Alembic Config object
 config = context.config

@@ -1,7 +1,7 @@
 # main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import contact, blog
+from app.api import contact, blog, auth
 from app.core.database import engine, Base
 
 app = FastAPI(title="RYZE Recruiting API")
@@ -20,6 +20,7 @@ app.add_middleware(
 # Include routers
 app.include_router(contact.router, prefix="/contact", tags=["contact"])
 app.include_router(blog.router, prefix="/blog", tags=["blog"])
+app.include_router(auth.router, prefix="/auth", tags=["authentication"])
 
 
 @app.get("/")
