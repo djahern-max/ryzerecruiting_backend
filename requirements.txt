@@ -1,0 +1,12 @@
+fastapi==0.109.0                    # Web framework - your main API framework
+uvicorn[standard]==0.27.0           # ASGI server - runs your FastAPI app
+pydantic==2.5.3                     # Data validation - validates request/response data
+pydantic-settings==2.1.0            # Settings management - handles .env files
+sqlalchemy==2.0.25                  # ORM - database toolkit for Python
+psycopg2-binary==2.9.9              # PostgreSQL adapter - connects Python to Postgres
+alembic==1.13.1                     # Database migrations - tracks schema changes
+python-multipart==0.0.6             # Form data parsing - handles file uploads
+python-jose[cryptography]==3.3.0   # JWT tokens - for authentication (Phase 2.0)
+passlib[bcrypt]==1.7.4              # Password hashing - for authentication (Phase 2.0)
+python-dotenv==1.0.0                # Environment variables - loads .env files
+email-validator==2.1.0              # Email validation - validates email addresses
