@@ -17,4 +17,4 @@ venv/
 
 # Server documentation (contains sensitive info)
 UBUNTU_SERVER_CHEATSHEET.md
-CREDENTIALS_TEMPLATE.md
+RYZE_CREDENTIALS_ACTUAL.md
