@@ -1,4 +1,4 @@
-# contact.py - Schema definitions for contact management
+# app/schemas/contact.py - Schema definitions for contact management
 from pydantic import BaseModel, EmailStr
 
 
@@ -15,4 +15,4 @@ class ContactResponse(BaseModel):
     message: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated from orm_mode for Pydantic v2

@@ -1,59 +1,48 @@
-# user.py - Schema definitions for user authentication and management
+# app/schemas/user.py - Simplified schemas with email only
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
+from datetime import datetime
 
 
-# Base User Schema - shared properties
-class UserBase(BaseModel):
+class UserCreate(BaseModel):
+    """Schema for user registration - email and password only."""
+
     email: EmailStr
+    password: str = Field(..., min_length=8, max_length=100)
     full_name: Optional[str] = None
 
 
-# Schema for user registration
-class UserCreate(UserBase):
-    password: str = Field(
-        ..., min_length=8, description="Password must be at least 8 characters"
-    )
-
-
-# Schema for user login
 class UserLogin(BaseModel):
+    """Schema for user login."""
+
     email: EmailStr
     password: str
 
 
-# Schema for token response
-class Token(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class UserResponse(BaseModel):
+    """Schema for user response (without password)."""
 
-
-# Schema for token data (stored in JWT)
-class TokenData(BaseModel):
-    email: Optional[str] = None
-
-
-# Schema for user response (without password)
-class UserResponse(UserBase):
     id: int
+    email: EmailStr
+    full_name: Optional[str]
     is_active: bool
     is_superuser: bool
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
-        from_attributes = True  # Pydantic v2 (was orm_mode in v1)
+        from_attributes = True  # Pydantic v2 syntax
 
 
-# Schema for updating user info
-class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    password: Optional[str] = Field(None, min_length=8)
-    is_active: Optional[bool] = None
+class Token(BaseModel):
+    """Schema for JWT token response."""
+
+    access_token: str
+    token_type: str
+    user: dict
 
 
-# Schema for password change
-class PasswordChange(BaseModel):
-    current_password: str
-    new_password: str = Field(
-        ..., min_length=8, description="New password must be at least 8 characters"
-    )
+class TokenData(BaseModel):
+    """Schema for token payload data."""
+
+    email: Optional[str] = None
