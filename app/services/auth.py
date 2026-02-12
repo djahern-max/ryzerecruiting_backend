@@ -1,4 +1,4 @@
-# app/services/auth.py - Simplified authentication service
+# app/services/auth.py - Authentication service with user_type support
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from app.models.user import User
@@ -14,7 +14,7 @@ class AuthService:
     @staticmethod
     def create_user(db: Session, user: UserCreate):
         """
-        Create a new user with hashed password.
+        Create a new user with hashed password and user_type.
         Email serves as the unique identifier.
         """
         # Check if user already exists
@@ -28,9 +28,12 @@ class AuthService:
         # Hash the password (safely truncated to 72 bytes)
         hashed_password = get_password_hash(user.password)
 
-        # Create new user
+        # Create new user with user_type
         db_user = User(
-            email=user.email, hashed_password=hashed_password, full_name=user.full_name
+            email=user.email,
+            hashed_password=hashed_password,
+            full_name=user.full_name,
+            user_type=user.user_type,  # NEW: Store user type (employer/candidate)
         )
 
         db.add(db_user)
@@ -65,6 +68,7 @@ class AuthService:
                 "id": db_user.id,
                 "email": db_user.email,
                 "full_name": db_user.full_name,
+                "user_type": db_user.user_type.value,  # Include user_type in response
             },
         }
 
