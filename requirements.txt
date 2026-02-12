@@ -10,4 +10,4 @@ python-jose[cryptography]==3.3.0   # JWT tokens - for authentication
 passlib[bcrypt]==1.7.4              # Password hashing - for authentication
 bcrypt==4.0.1                       # Explicit bcrypt version for compatibility
 python-dotenv==1.0.0                # Environment variables - loads .env files
-email-validator==2.1.0              # Email validation - validates email addresses
+email-validator==2.1.0              # Email validation - validates email addressesgunicorn==25.0.3
