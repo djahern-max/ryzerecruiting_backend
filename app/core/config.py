@@ -7,9 +7,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str
 
     # App
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    SECRET_KEY: str  #
     APP_NAME: str = "RYZE Recruiting API"
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     class Config:
         env_file = ".env"
