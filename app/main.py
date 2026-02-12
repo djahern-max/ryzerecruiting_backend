@@ -1,4 +1,4 @@
-# main.py
+# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import contact, blog, auth
@@ -9,9 +9,15 @@ app = FastAPI(title="RYZE Recruiting API")
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
 
+# Updated CORS - more restrictive
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to your domain in production
+    allow_origins=[
+        "https://ryzerecruiting.com",
+        "https://www.ryzerecruiting.com",
+        "http://localhost:5173",  # Local Vite dev server
+        "http://localhost:3000",  # Common React dev port
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
