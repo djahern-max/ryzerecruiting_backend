@@ -1,13 +1,22 @@
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from app.api import contact, blog, auth
 from app.core.database import engine, Base
+from app.core.config import settings
 
 app = FastAPI(title="RYZE Recruiting API")
 
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
+
+# Add SessionMiddleware BEFORE CORS (required for OAuth)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    max_age=3600,
+)
 
 # Updated CORS - more restrictive
 app.add_middleware(
