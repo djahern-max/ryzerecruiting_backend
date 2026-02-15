@@ -159,16 +159,6 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={str(e)}")
 
 
-# LinkedIn OAuth Routes
-@router.get("/oauth/linkedin")
-async def linkedin_login(request: Request):
-    """Initiate LinkedIn OAuth flow"""
-    logger.info("=== LinkedIn OAuth Login Initiated ===")
-    redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/linkedin/callback"
-    logger.info(f"Redirect URI: {redirect_uri}")
-    return await oauth.linkedin.authorize_redirect(request, redirect_uri)
-
-
 @router.get("/oauth/linkedin/callback")
 async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
     """Handle LinkedIn OAuth callback"""
@@ -179,9 +169,11 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Request URL: {request.url}")
         logger.info(f"Query params: {dict(request.query_params)}")
 
-        # Get the token WITHOUT parsing ID token
+        # Get token WITHOUT validating ID token (LinkedIn's OIDC is incomplete)
         logger.info("Attempting to exchange code for access token...")
-        token = await oauth.linkedin.authorize_access_token(request)
+        token = await oauth.linkedin.authorize_access_token(
+            request, claims_options={"id_token": {"essential": False}}
+        )
         logger.info("✓ Successfully received access token from LinkedIn")
         logger.info(f"Token keys: {list(token.keys())}")
 
