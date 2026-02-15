@@ -26,6 +26,9 @@ class User(Base):
     # OAuth fields
     oauth_provider = Column(String, nullable=True)  # "google", "linkedin", or None
     oauth_provider_id = Column(String, nullable=True)  # Provider's unique user ID
+    avatar_url = Column(
+        String, nullable=True
+    )  # Add this line - profile picture from OAuth
 
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)

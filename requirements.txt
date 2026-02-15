@@ -1,13 +1,40 @@
-fastapi==0.109.0                    # Web framework - your main API framework
-uvicorn[standard]==0.27.0           # ASGI server - runs your FastAPI app
-pydantic==2.5.3                     # Data validation - validates request/response data
-pydantic-settings==2.1.0            # Settings management - handles .env files
-sqlalchemy==2.0.25                  # ORM - database toolkit for Python
-psycopg2-binary==2.9.9              # PostgreSQL adapter - connects Python to Postgres
-alembic==1.13.1                     # Database migrations - tracks schema changes
-python-multipart==0.0.6             # Form data parsing - handles file uploads
-python-jose[cryptography]==3.3.0   # JWT tokens - for authentication
-passlib[bcrypt]==1.7.4              # Password hashing - for authentication
-bcrypt==4.0.1                       # Explicit bcrypt version for compatibility
-python-dotenv==1.0.0                # Environment variables - loads .env files
-email-validator==2.1.0              # Email validation - validates email addressesgunicorn==25.0.3
+alembic==1.13.1
+annotated-types==0.7.0
+anyio==4.12.1
+Authlib==1.6.8
+bcrypt==4.0.1
+certifi==2026.1.4
+cffi==2.0.0
+click==8.3.1
+cryptography==46.0.5
+dnspython==2.8.0
+ecdsa==0.19.1
+email-validator==2.1.0
+fastapi==0.109.0
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.7.1
+httpx==0.28.1
+idna==3.11
+Mako==1.3.10
+MarkupSafe==3.0.3
+passlib==1.7.4
+psycopg2-binary==2.9.9
+pyasn1==0.6.2
+pycparser==3.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+pydantic_core==2.14.6
+python-dotenv==1.0.0
+python-jose==3.3.0
+python-multipart==0.0.6
+PyYAML==6.0.3
+rsa==4.9.1
+six==1.17.0
+SQLAlchemy==2.0.25
+starlette==0.35.1
+typing_extensions==4.15.0
+uvicorn==0.27.0
+uvloop==0.22.1
+watchfiles==1.1.1
+websockets==16.0

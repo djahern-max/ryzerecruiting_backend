@@ -1,7 +1,8 @@
 # app/services/auth.py - Authentication service with user_type support
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from app.models.user import User
+from typing import Optional
+from app.models.user import User, UserType
 from app.schemas.user import UserCreate, UserLogin
 from app.core.security import get_password_hash, verify_password, create_access_token
 
@@ -78,3 +79,92 @@ class AuthService:
         Get a user by email.
         """
         return db.query(User).filter(User.email == email).first()
+
+    # NEW: OAuth-specific methods
+    @staticmethod
+    def get_or_create_oauth_user(
+        db: Session,
+        email: str,
+        oauth_provider: str,
+        oauth_provider_id: str,
+        full_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        user_type: Optional[UserType] = None,
+    ) -> tuple[User, bool]:
+        """
+        Get existing OAuth user or create incomplete one.
+        Returns (user, is_new) tuple.
+
+        If user_type is None, creates an incomplete user that needs user_type selection.
+        """
+        # Check if user exists with this OAuth provider
+        user = (
+            db.query(User)
+            .filter(
+                User.oauth_provider == oauth_provider,
+                User.oauth_provider_id == oauth_provider_id,
+            )
+            .first()
+        )
+
+        if user:
+            # Existing OAuth user - update info
+            if full_name:
+                user.full_name = full_name
+            if avatar_url:
+                user.avatar_url = avatar_url
+            db.commit()
+            db.refresh(user)
+            return user, False
+
+        # Check if email exists (user might have signed up with password)
+        existing_user = db.query(User).filter(User.email == email).first()
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered with password login. Please use password login.",
+            )
+
+        # user_type is required for new users - this will fail if None
+        if user_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User type is required for new users",
+            )
+
+        # Create new OAuth user
+        new_user = User(
+            email=email,
+            full_name=full_name,
+            avatar_url=avatar_url,
+            oauth_provider=oauth_provider,
+            oauth_provider_id=oauth_provider_id,
+            user_type=user_type,
+            hashed_password=None,  # OAuth users don't have passwords
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user, True
+
+    @staticmethod
+    def complete_oauth_signup(
+        db: Session,
+        email: str,
+        oauth_provider: str,
+        oauth_provider_id: str,
+        user_type: UserType,
+    ) -> User:
+        """
+        Complete OAuth signup by setting user_type for a pending OAuth user.
+        This is called after the user selects employer/candidate.
+        """
+        # Verify the OAuth data matches before creating
+        user, is_new = AuthService.get_or_create_oauth_user(
+            db=db,
+            email=email,
+            oauth_provider=oauth_provider,
+            oauth_provider_id=oauth_provider_id,
+            user_type=user_type,
+        )
+        return user
