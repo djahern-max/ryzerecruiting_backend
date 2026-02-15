@@ -13,7 +13,7 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
-# LinkedIn OAuth - Simple OAuth 2.0 (not OIDC)
+# LinkedIn OAuth - OAuth 2.0 WITHOUT OpenID Connect
 oauth.register(
     name="linkedin",
     client_id=settings.LINKEDIN_CLIENT_ID,
@@ -21,7 +21,7 @@ oauth.register(
     authorize_url="https://www.linkedin.com/oauth/v2/authorization",
     access_token_url="https://www.linkedin.com/oauth/v2/accessToken",
     client_kwargs={
-        "scope": "openid profile email",
-        "token_endpoint_auth_method": "client_secret_post",  # Send secret in POST body
+        "scope": "profile email",  # Removed "openid" - use regular OAuth 2.0
+        "token_endpoint_auth_method": "client_secret_post",
     },
 )
