@@ -179,52 +179,85 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Request URL: {request.url}")
         logger.info(f"Query params: {dict(request.query_params)}")
 
-        # Get token WITHOUT validating ID token (LinkedIn's OIDC is incomplete)
+        # Get access token (no ID token with legacy scopes)
         logger.info("Attempting to exchange code for access token...")
-        token = await oauth.linkedin.authorize_access_token(
-            request, claims_options={"id_token": {"essential": False}}
-        )
+        token = await oauth.linkedin.authorize_access_token(request)
         logger.info("✓ Successfully received access token from LinkedIn")
         logger.info(f"Token keys: {list(token.keys())}")
 
-        # Get user info from LinkedIn API manually
-        logger.info("Fetching user info from LinkedIn API...")
+        # Get user info from LinkedIn's legacy v2 API
+        logger.info("Fetching user info from LinkedIn v2 API...")
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {token['access_token']}"}
+            headers = {
+                "Authorization": f"Bearer {token['access_token']}",
+                "Content-Type": "application/json",
+            }
 
-            # LinkedIn's userinfo endpoint
-            response = await client.get(
-                "https://api.linkedin.com/v2/userinfo", headers=headers
+            # Get profile data
+            profile_response = await client.get(
+                "https://api.linkedin.com/v2/me", headers=headers
             )
-            logger.info(f"LinkedIn API response status: {response.status_code}")
+            logger.info(f"Profile API response status: {profile_response.status_code}")
 
-            if response.status_code != 200:
-                logger.error(f"LinkedIn API error: {response.text}")
+            if profile_response.status_code != 200:
+                logger.error(f"Profile API error: {profile_response.text}")
                 raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"LinkedIn API error: {response.text}",
+                    status_code=profile_response.status_code,
+                    detail=f"LinkedIn Profile API error: {profile_response.text}",
                 )
 
-            user_info = response.json()
-            logger.info("✓ Successfully received user info from LinkedIn")
-            logger.info(f"User info: {user_info}")
+            profile_data = profile_response.json()
+            logger.info(f"✓ Profile data: {profile_data}")
 
-        email = user_info.get("email")
-        oauth_provider_id = user_info.get("sub")
+            # Get email data
+            email_response = await client.get(
+                "https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))",
+                headers=headers,
+            )
+            logger.info(f"Email API response status: {email_response.status_code}")
+
+            if email_response.status_code != 200:
+                logger.error(f"Email API error: {email_response.text}")
+                raise HTTPException(
+                    status_code=email_response.status_code,
+                    detail=f"LinkedIn Email API error: {email_response.text}",
+                )
+
+            email_data = email_response.json()
+            logger.info(f"✓ Email data: {email_data}")
+
+        # Extract user information
+        oauth_provider_id = profile_data.get("id")
+        first_name = profile_data.get("localizedFirstName", "")
+        last_name = profile_data.get("localizedLastName", "")
+        full_name = f"{first_name} {last_name}".strip()
+
+        # Extract email from the nested structure
+        email = None
+        if email_data.get("elements"):
+            email = email_data["elements"][0]["handle~"]["emailAddress"]
+
+        # Get profile picture if available
+        avatar_url = None
+        if "profilePicture" in profile_data:
+            picture_data = profile_data["profilePicture"].get("displayImage~", {})
+            if "elements" in picture_data and len(picture_data["elements"]) > 0:
+                avatar_url = picture_data["elements"][0]["identifiers"][0]["identifier"]
 
         if not email:
-            logger.error("No email in user_info!")
+            logger.error("No email found in LinkedIn response!")
             raise HTTPException(
                 status_code=400, detail="No email received from LinkedIn"
             )
 
         if not oauth_provider_id:
-            logger.error("No sub (provider ID) in user_info!")
+            logger.error("No ID in LinkedIn response!")
             raise HTTPException(
                 status_code=400, detail="No user ID received from LinkedIn"
             )
 
         logger.info(f"Email: {email}")
+        logger.info(f"Full name: {full_name}")
         logger.info(f"OAuth Provider ID: {oauth_provider_id}")
 
         # Check if user already exists
@@ -252,8 +285,8 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
             "email": email,
             "oauth_provider": "linkedin",
             "oauth_provider_id": oauth_provider_id,
-            "full_name": user_info.get("name"),
-            "avatar_url": user_info.get("picture"),
+            "full_name": full_name,
+            "avatar_url": avatar_url,
         }
         logger.info(f"Stored OAuth data with temp_token: {temp_token}")
 
