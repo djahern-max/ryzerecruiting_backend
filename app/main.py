@@ -26,7 +26,7 @@ app.add_middleware(
 # Include routers
 app.include_router(contact.router, prefix="/contact", tags=["contact"])
 app.include_router(blog.router, prefix="/blog", tags=["blog"])
-app.include_router(auth.router, prefix="/auth", tags=["authentication"])
+app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 
 
 @app.get("/")
