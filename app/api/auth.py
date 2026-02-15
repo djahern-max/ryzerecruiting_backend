@@ -179,20 +179,18 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
         logger.info(f"Request URL: {request.url}")
         logger.info(f"Query params: {dict(request.query_params)}")
 
-        # Attempt to get access token
+        # Get the token WITHOUT parsing ID token
         logger.info("Attempting to exchange code for access token...")
         token = await oauth.linkedin.authorize_access_token(request)
         logger.info("✓ Successfully received access token from LinkedIn")
         logger.info(f"Token keys: {list(token.keys())}")
 
-        # Get user info from LinkedIn
+        # Get user info from LinkedIn API manually
         logger.info("Fetching user info from LinkedIn API...")
         async with httpx.AsyncClient() as client:
             headers = {"Authorization": f"Bearer {token['access_token']}"}
-            logger.info(
-                f"Request headers: Authorization: Bearer {token['access_token'][:20]}..."
-            )
 
+            # LinkedIn's userinfo endpoint
             response = await client.get(
                 "https://api.linkedin.com/v2/userinfo", headers=headers
             )
@@ -207,7 +205,6 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
 
             user_info = response.json()
             logger.info("✓ Successfully received user info from LinkedIn")
-            logger.info(f"User info keys: {list(user_info.keys())}")
             logger.info(f"User info: {user_info}")
 
         email = user_info.get("email")
@@ -241,7 +238,6 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
 
         if existing_user:
             logger.info(f"✓ Existing user found: {existing_user.email}")
-            # User exists - log them in
             access_token = create_access_token(data={"sub": existing_user.email})
             redirect_url = f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
             logger.info(f"Redirecting existing user to: {redirect_url}")
@@ -258,7 +254,6 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
             "avatar_url": user_info.get("picture"),
         }
         logger.info(f"Stored OAuth data with temp_token: {temp_token}")
-        logger.info(f"OAuth temp store data: {oauth_temp_store[temp_token]}")
 
         redirect_url = (
             f"{settings.FRONTEND_URL}/auth/complete-signup?temp_token={temp_token}"
