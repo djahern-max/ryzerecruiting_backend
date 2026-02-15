@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from starlette.responses import RedirectResponse
 import httpx
 import secrets
+import logging
 
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
@@ -18,14 +19,15 @@ from app.core.oauth import oauth
 from app.core.config import settings
 from app.models.user import User, UserType
 
+# Set up logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 # Temporary storage for OAuth flow (use Redis in production)
 oauth_temp_store = {}
-
-# ... rest of your existing code ...
 
 
 @router.post(
@@ -161,28 +163,73 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 @router.get("/oauth/linkedin")
 async def linkedin_login(request: Request):
     """Initiate LinkedIn OAuth flow"""
+    logger.info("=== LinkedIn OAuth Login Initiated ===")
     redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/linkedin/callback"
+    logger.info(f"Redirect URI: {redirect_uri}")
     return await oauth.linkedin.authorize_redirect(request, redirect_uri)
 
 
 @router.get("/oauth/linkedin/callback")
 async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
     """Handle LinkedIn OAuth callback"""
+    logger.info("=== LinkedIn OAuth Callback Received ===")
+
     try:
+        # Log incoming request details
+        logger.info(f"Request URL: {request.url}")
+        logger.info(f"Query params: {dict(request.query_params)}")
+
+        # Attempt to get access token
+        logger.info("Attempting to exchange code for access token...")
         token = await oauth.linkedin.authorize_access_token(request)
+        logger.info("✓ Successfully received access token from LinkedIn")
+        logger.info(f"Token keys: {list(token.keys())}")
 
         # Get user info from LinkedIn
+        logger.info("Fetching user info from LinkedIn API...")
         async with httpx.AsyncClient() as client:
             headers = {"Authorization": f"Bearer {token['access_token']}"}
+            logger.info(
+                f"Request headers: Authorization: Bearer {token['access_token'][:20]}..."
+            )
+
             response = await client.get(
                 "https://api.linkedin.com/v2/userinfo", headers=headers
             )
-            user_info = response.json()
+            logger.info(f"LinkedIn API response status: {response.status_code}")
 
-        email = user_info["email"]
-        oauth_provider_id = user_info["sub"]
+            if response.status_code != 200:
+                logger.error(f"LinkedIn API error: {response.text}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"LinkedIn API error: {response.text}",
+                )
+
+            user_info = response.json()
+            logger.info("✓ Successfully received user info from LinkedIn")
+            logger.info(f"User info keys: {list(user_info.keys())}")
+            logger.info(f"User info: {user_info}")
+
+        email = user_info.get("email")
+        oauth_provider_id = user_info.get("sub")
+
+        if not email:
+            logger.error("No email in user_info!")
+            raise HTTPException(
+                status_code=400, detail="No email received from LinkedIn"
+            )
+
+        if not oauth_provider_id:
+            logger.error("No sub (provider ID) in user_info!")
+            raise HTTPException(
+                status_code=400, detail="No user ID received from LinkedIn"
+            )
+
+        logger.info(f"Email: {email}")
+        logger.info(f"OAuth Provider ID: {oauth_provider_id}")
 
         # Check if user already exists
+        logger.info("Checking if user already exists...")
         existing_user = (
             db.query(User)
             .filter(
@@ -193,13 +240,15 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
         )
 
         if existing_user:
+            logger.info(f"✓ Existing user found: {existing_user.email}")
             # User exists - log them in
             access_token = create_access_token(data={"sub": existing_user.email})
-            return RedirectResponse(
-                url=f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
-            )
+            redirect_url = f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
+            logger.info(f"Redirecting existing user to: {redirect_url}")
+            return RedirectResponse(url=redirect_url)
 
         # New user - need to collect user_type
+        logger.info("New user detected - creating temp token for signup completion")
         temp_token = secrets.token_urlsafe(32)
         oauth_temp_store[temp_token] = {
             "email": email,
@@ -208,12 +257,20 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
             "full_name": user_info.get("name"),
             "avatar_url": user_info.get("picture"),
         }
+        logger.info(f"Stored OAuth data with temp_token: {temp_token}")
+        logger.info(f"OAuth temp store data: {oauth_temp_store[temp_token]}")
 
-        return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}/auth/complete-signup?temp_token={temp_token}"
+        redirect_url = (
+            f"{settings.FRONTEND_URL}/auth/complete-signup?temp_token={temp_token}"
         )
+        logger.info(f"Redirecting new user to: {redirect_url}")
+        return RedirectResponse(url=redirect_url)
 
+    except HTTPException as he:
+        logger.error(f"HTTPException in LinkedIn callback: {he.detail}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={he.detail}")
     except Exception as e:
+        logger.error(f"Unexpected error in LinkedIn callback: {str(e)}", exc_info=True)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={str(e)}")
 
 
@@ -222,16 +279,24 @@ async def complete_oauth_signup(
     temp_token: str, user_type: UserType, db: Session = Depends(get_db)
 ):
     """Complete OAuth signup by providing user_type"""
+    logger.info(f"=== Complete OAuth Signup Called ===")
+    logger.info(f"Temp token: {temp_token}")
+    logger.info(f"User type: {user_type}")
 
     # Get OAuth data from temporary store
     oauth_data = oauth_temp_store.get(temp_token)
     if not oauth_data:
+        logger.error(f"Invalid or expired temp_token: {temp_token}")
+        logger.info(f"Available temp tokens: {list(oauth_temp_store.keys())}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired signup token",
         )
 
+    logger.info(f"OAuth data retrieved: {oauth_data}")
+
     # Create user with user_type
+    logger.info("Creating user with OAuth data...")
     user, is_new = AuthService.get_or_create_oauth_user(
         db=db,
         email=oauth_data["email"],
@@ -241,12 +306,15 @@ async def complete_oauth_signup(
         avatar_url=oauth_data.get("avatar_url"),
         user_type=user_type,
     )
+    logger.info(f"✓ User created/retrieved: {user.email} (is_new: {is_new})")
 
     # Clean up temporary data
     del oauth_temp_store[temp_token]
+    logger.info("✓ Cleaned up temp token")
 
     # Create access token
     access_token = create_access_token(data={"sub": user.email})
+    logger.info("✓ Access token created")
 
     return {
         "access_token": access_token,
