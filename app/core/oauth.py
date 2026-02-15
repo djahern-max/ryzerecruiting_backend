@@ -22,5 +22,6 @@ oauth.register(
     access_token_url="https://www.linkedin.com/oauth/v2/accessToken",
     client_kwargs={
         "scope": "openid profile email",
+        "token_endpoint_auth_method": "client_secret_post",  # Send secret in POST body
     },
 )
