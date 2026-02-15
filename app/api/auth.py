@@ -159,6 +159,16 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={str(e)}")
 
 
+# LinkedIn OAuth Routes
+@router.get("/oauth/linkedin")
+async def linkedin_login(request: Request):
+    """Initiate LinkedIn OAuth flow"""
+    logger.info("=== LinkedIn OAuth Login Initiated ===")
+    redirect_uri = f"{settings.BACKEND_URL}/api/auth/oauth/linkedin/callback"
+    logger.info(f"Redirect URI: {redirect_uri}")
+    return await oauth.linkedin.authorize_redirect(request, redirect_uri)
+
+
 @router.get("/oauth/linkedin/callback")
 async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
     """Handle LinkedIn OAuth callback"""
