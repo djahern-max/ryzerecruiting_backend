@@ -1,4 +1,4 @@
-# app/api/auth.py - API endpoints for authentication
+# app/api/auth.py - Updated to use Redis for OAuth temp storage
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -6,6 +6,8 @@ from starlette.responses import RedirectResponse
 import httpx
 import secrets
 import logging
+import redis
+import json
 
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
@@ -14,7 +16,7 @@ from app.services.auth import AuthService
 from app.core.security import (
     decode_access_token,
     create_access_token,
-)  # Add create_access_token here
+)
 from app.core.oauth import oauth
 from app.core.config import settings
 from app.models.user import User, UserType
@@ -26,8 +28,27 @@ router = APIRouter()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# Temporary storage for OAuth flow (use Redis in production)
-oauth_temp_store = {}
+# ✅ NEW: Redis client for OAuth temp storage
+redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+
+
+# Helper functions for Redis OAuth storage
+def store_oauth_temp_data(temp_token: str, data: dict, expiration_seconds: int = 300):
+    """Store OAuth temp data in Redis with expiration (default 5 minutes)"""
+    redis_client.setex(f"oauth_temp:{temp_token}", expiration_seconds, json.dumps(data))
+
+
+def get_oauth_temp_data(temp_token: str) -> dict:
+    """Retrieve OAuth temp data from Redis"""
+    data = redis_client.get(f"oauth_temp:{temp_token}")
+    if data:
+        return json.loads(data)
+    return None
+
+
+def delete_oauth_temp_data(temp_token: str):
+    """Delete OAuth temp data from Redis"""
+    redis_client.delete(f"oauth_temp:{temp_token}")
 
 
 @router.post(
@@ -140,15 +161,18 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             )
 
         # New user - need to collect user_type
-        # Store OAuth data temporarily
+        # Store OAuth data temporarily in Redis (expires in 5 minutes)
         temp_token = secrets.token_urlsafe(32)
-        oauth_temp_store[temp_token] = {
-            "email": email,
-            "oauth_provider": "google",
-            "oauth_provider_id": oauth_provider_id,
-            "full_name": user_info.get("name"),
-            "avatar_url": user_info.get("picture"),
-        }
+        store_oauth_temp_data(
+            temp_token,
+            {
+                "email": email,
+                "oauth_provider": "google",
+                "oauth_provider_id": oauth_provider_id,
+                "full_name": user_info.get("name"),
+                "avatar_url": user_info.get("picture"),
+            },
+        )
 
         # Redirect to frontend user type selection page
         return RedirectResponse(
@@ -156,7 +180,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
 
     except Exception as e:
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={str(e)}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth?error={str(e)}")
 
 
 # LinkedIn OAuth Routes
@@ -278,15 +302,19 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
             return RedirectResponse(url=redirect_url)
 
         # New user - need to collect user_type
+        # Store OAuth data temporarily in Redis (expires in 5 minutes)
         logger.info("New user detected - creating temp token for signup completion")
         temp_token = secrets.token_urlsafe(32)
-        oauth_temp_store[temp_token] = {
-            "email": email,
-            "oauth_provider": "linkedin",
-            "oauth_provider_id": oauth_provider_id,
-            "full_name": full_name,
-            "avatar_url": avatar_url,
-        }
+        store_oauth_temp_data(
+            temp_token,
+            {
+                "email": email,
+                "oauth_provider": "linkedin",
+                "oauth_provider_id": oauth_provider_id,
+                "full_name": full_name,
+                "avatar_url": avatar_url,
+            },
+        )
         logger.info(f"Stored OAuth data with temp_token: {temp_token}")
 
         redirect_url = (
@@ -297,10 +325,10 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
 
     except HTTPException as he:
         logger.error(f"HTTPException in LinkedIn callback: {he.detail}")
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={he.detail}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth?error={he.detail}")
     except Exception as e:
         logger.error(f"Unexpected error in LinkedIn callback: {str(e)}", exc_info=True)
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={str(e)}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth?error={str(e)}")
 
 
 @router.post("/oauth/complete-signup")
@@ -312,47 +340,53 @@ async def complete_oauth_signup(
     logger.info(f"Temp token: {temp_token}")
     logger.info(f"User type: {user_type}")
 
-    # Get OAuth data from temporary store
-    oauth_data = oauth_temp_store.get(temp_token)
+    # Get OAuth data from Redis
+    oauth_data = get_oauth_temp_data(temp_token)
     if not oauth_data:
         logger.error(f"Invalid or expired temp_token: {temp_token}")
-        logger.info(f"Available temp tokens: {list(oauth_temp_store.keys())}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired signup token",
+            status_code=400,
+            detail="Invalid or expired signup token. Please try signing in again.",
         )
 
-    logger.info(f"OAuth data retrieved: {oauth_data}")
+    logger.info(f"Found OAuth data: {oauth_data.get('email')}")
 
-    # Create user with user_type
-    logger.info("Creating user with OAuth data...")
-    user, is_new = AuthService.get_or_create_oauth_user(
-        db=db,
-        email=oauth_data["email"],
-        oauth_provider=oauth_data["oauth_provider"],
-        oauth_provider_id=oauth_data["oauth_provider_id"],
-        full_name=oauth_data.get("full_name"),
-        avatar_url=oauth_data.get("avatar_url"),
-        user_type=user_type,
-    )
-    logger.info(f"✓ User created/retrieved: {user.email} (is_new: {is_new})")
+    # Create new user
+    try:
+        new_user = User(
+            email=oauth_data["email"],
+            full_name=oauth_data.get("full_name"),
+            oauth_provider=oauth_data["oauth_provider"],
+            oauth_provider_id=oauth_data["oauth_provider_id"],
+            avatar_url=oauth_data.get("avatar_url"),
+            user_type=user_type,
+            hashed_password=None,  # OAuth users don't have passwords
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
 
-    # Clean up temporary data
-    del oauth_temp_store[temp_token]
-    logger.info("✓ Cleaned up temp token")
+        logger.info(f"✓ Created new OAuth user: {new_user.email}")
 
-    # Create access token
-    access_token = create_access_token(data={"sub": user.email})
-    logger.info("✓ Access token created")
+        # Delete temp data from Redis
+        delete_oauth_temp_data(temp_token)
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "full_name": user.full_name,
-            "user_type": user.user_type.value,
-            "avatar_url": user.avatar_url,
-        },
-    }
+        # Create access token
+        access_token = create_access_token(data={"sub": new_user.email})
+
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": new_user.id,
+                "email": new_user.email,
+                "full_name": new_user.full_name,
+                "user_type": new_user.user_type.value,
+                "oauth_provider": new_user.oauth_provider,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"Error creating OAuth user: {str(e)}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
