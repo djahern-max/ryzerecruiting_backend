@@ -147,8 +147,8 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         existing_user = (
             db.query(User)
             .filter(
-                User.oauth_provider == "google",
-                User.oauth_provider_id == oauth_provider_id,
+                (User.oauth_provider_id == oauth_provider_id)
+                | (User.email == email)  # ✅ fallback: same email, different provider
             )
             .first()
         )
@@ -335,58 +335,60 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
 async def complete_oauth_signup(
     temp_token: str, user_type: UserType, db: Session = Depends(get_db)
 ):
-    """Complete OAuth signup by providing user_type"""
-    logger.info(f"=== Complete OAuth Signup Called ===")
-    logger.info(f"Temp token: {temp_token}")
-    logger.info(f"User type: {user_type}")
-
-    # Get OAuth data from Redis
     oauth_data = get_oauth_temp_data(temp_token)
     if not oauth_data:
-        logger.error(f"Invalid or expired temp_token: {temp_token}")
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired signup token. Please try signing in again.",
         )
 
-    logger.info(f"Found OAuth data: {oauth_data.get('email')}")
-
-    # Create new user
     try:
-        new_user = User(
-            email=oauth_data["email"],
-            full_name=oauth_data.get("full_name"),
-            oauth_provider=oauth_data["oauth_provider"],
-            oauth_provider_id=oauth_data["oauth_provider_id"],
-            avatar_url=oauth_data.get("avatar_url"),
-            user_type=user_type,
-            hashed_password=None,  # OAuth users don't have passwords
-        )
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
+        # ✅ Check by email first before inserting
+        existing_user = db.query(User).filter(User.email == oauth_data["email"]).first()
 
-        logger.info(f"✓ Created new OAuth user: {new_user.email}")
+        if existing_user:
+            # Email exists — update their OAuth info and log them in
+            logger.info(
+                f"Email already exists, linking OAuth to existing user: {existing_user.email}"
+            )
+            existing_user.oauth_provider = oauth_data["oauth_provider"]
+            existing_user.oauth_provider_id = oauth_data["oauth_provider_id"]
+            existing_user.avatar_url = oauth_data.get("avatar_url")
+            db.commit()
+            db.refresh(existing_user)
+            user = existing_user
+        else:
+            # Truly new user — create them
+            user = User(
+                email=oauth_data["email"],
+                full_name=oauth_data.get("full_name"),
+                oauth_provider=oauth_data["oauth_provider"],
+                oauth_provider_id=oauth_data["oauth_provider_id"],
+                avatar_url=oauth_data.get("avatar_url"),
+                user_type=user_type,
+                hashed_password=None,
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info(f"✓ Created new OAuth user: {user.email}")
 
-        # Delete temp data from Redis
         delete_oauth_temp_data(temp_token)
-
-        # Create access token
-        access_token = create_access_token(data={"sub": new_user.email})
+        access_token = create_access_token(data={"sub": user.email})
 
         return {
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": new_user.id,
-                "email": new_user.email,
-                "full_name": new_user.full_name,
-                "user_type": new_user.user_type.value,
-                "oauth_provider": new_user.oauth_provider,
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "user_type": user.user_type.value,
+                "oauth_provider": user.oauth_provider,
             },
         }
 
     except Exception as e:
-        logger.error(f"Error creating OAuth user: {str(e)}", exc_info=True)
+        logger.error(f"Error in OAuth signup: {str(e)}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
