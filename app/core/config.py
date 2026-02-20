@@ -20,8 +20,17 @@ class Settings(BaseSettings):
     LINKEDIN_CLIENT_SECRET: str = ""
 
     # URLs
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
+
+    # Email (Resend) - Phase 3
+    RESEND_API_KEY: str = ""
+    FROM_EMAIL: str = "noreply@ryzerecruiting.com"
+    ADMIN_EMAIL: str = ""
+
+    # Google Calendar - Phase 4
+    GOOGLE_CALENDAR_ID: str = "primary"
+    GOOGLE_REFRESH_TOKEN: str = ""
 
     class Config:
         env_file = ".env"

@@ -12,10 +12,12 @@ class Booking(Base):
     employer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     employer_name = Column(String(255), nullable=False)
     employer_email = Column(String(255), nullable=False)
+    company_name = Column(String(255), nullable=True)
+    website_url = Column(String(500), nullable=True)
 
     # Booking details
     date = Column(Date, nullable=False)
-    time_slot = Column(String(20), nullable=False)  # e.g. "9:00 AM"
+    time_slot = Column(String(20), nullable=False)   # e.g. "9:00 AM"
     phone = Column(String(30), nullable=True)
     notes = Column(Text, nullable=True)
 

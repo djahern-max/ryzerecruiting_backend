@@ -1,27 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+import logging
 
 from app.core.database import get_db
 from app.models.booking import Booking
 from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingResponse
 from app.api.auth import get_current_user
 from app.models.user import User
+from app.core.config import settings
+from app.services.email import send_employer_confirmation, send_admin_notification
 
-import os
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
+
 
 # ---------------------------------------------------------------------------
 # Admin guard
 # ---------------------------------------------------------------------------
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-
-
 def require_admin(current_user: User = Depends(get_current_user)):
-    """Only allow Dane (admin) to access this endpoint."""
-    if current_user.email != ADMIN_EMAIL:
+    if current_user.email != settings.ADMIN_EMAIL:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required.",
@@ -33,7 +33,6 @@ def require_admin(current_user: User = Depends(get_current_user)):
 # Employer endpoint — create a booking
 # ---------------------------------------------------------------------------
 
-
 @router.post("", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
 def create_booking(
     payload: BookingCreate,
@@ -42,8 +41,10 @@ def create_booking(
 ):
     booking = Booking(
         employer_id=current_user.id,
-        employer_name=current_user.full_name,  # adjust field name as needed
+        employer_name=current_user.full_name,
         employer_email=current_user.email,
+        company_name=payload.company_name,
+        website_url=payload.website_url,
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -54,9 +55,33 @@ def create_booking(
     db.commit()
     db.refresh(booking)
 
-    # TODO (Phase 3): send confirmation email to employer
-    # TODO (Phase 3): send admin notification email to Dane
-    # TODO (Phase 4): create Google Calendar event and save calendar_event_id
+    # Send emails — wrapped in try/except so a email failure never breaks the booking
+    try:
+        send_employer_confirmation(
+            employer_name=current_user.full_name,
+            employer_email=current_user.email,
+            company_name=payload.company_name or "",
+            date=str(payload.date),
+            time_slot=payload.time_slot,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send employer confirmation email: {e}")
+
+    try:
+        send_admin_notification(
+            employer_name=current_user.full_name,
+            employer_email=current_user.email,
+            company_name=payload.company_name or "",
+            website_url=payload.website_url or "",
+            date=str(payload.date),
+            time_slot=payload.time_slot,
+            phone=payload.phone or "",
+            notes=payload.notes or "",
+        )
+    except Exception as e:
+        logger.error(f"Failed to send admin notification email: {e}")
+
+    # TODO (Phase 4): create Google Calendar event
 
     return booking
 
@@ -64,7 +89,6 @@ def create_booking(
 # ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
-
 
 @router.get("", response_model=List[BookingResponse])
 def list_bookings(

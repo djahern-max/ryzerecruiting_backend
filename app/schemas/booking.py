@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from datetime import date
 
@@ -9,7 +9,9 @@ from datetime import date
 
 class BookingCreate(BaseModel):
     date: date
-    time_slot: str          # e.g. "9:00 AM"
+    time_slot: str
+    company_name: Optional[str] = None
+    website_url: Optional[str] = None
     phone: Optional[str] = None
     notes: Optional[str] = None
 
@@ -27,6 +29,8 @@ class BookingResponse(BaseModel):
     employer_id: int
     employer_name: str
     employer_email: str
+    company_name: Optional[str]
+    website_url: Optional[str]
     date: date
     time_slot: str
     phone: Optional[str]
