@@ -5,6 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.api import contact, blog, auth
 from app.core.database import engine, Base
 from app.core.config import settings
+from app.api.bookings import router as bookings_router
 
 app = FastAPI(title="RYZE Recruiting API")
 
@@ -36,6 +37,7 @@ app.add_middleware(
 app.include_router(contact.router, prefix="/contact", tags=["contact"])
 app.include_router(blog.router, prefix="/blog", tags=["blog"])
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+app.include_router(bookings_router)
 
 
 @app.get("/")
