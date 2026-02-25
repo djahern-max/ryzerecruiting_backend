@@ -17,8 +17,8 @@ class AuthService:
         """
         Create a new user with hashed password and user_type.
         Email serves as the unique identifier.
+        Note: UserCreate schema uses PublicUserType — admin cannot be registered here.
         """
-        # Check if user already exists
         existing_user = db.query(User).filter(User.email == user.email).first()
         if existing_user:
             raise HTTPException(
@@ -26,15 +26,13 @@ class AuthService:
                 detail="Email already registered",
             )
 
-        # Hash the password (safely truncated to 72 bytes)
         hashed_password = get_password_hash(user.password)
 
-        # Create new user with user_type
         db_user = User(
             email=user.email,
             hashed_password=hashed_password,
             full_name=user.full_name,
-            user_type=user.user_type,  # NEW: Store user type (employer/candidate)
+            user_type=user.user_type,
         )
 
         db.add(db_user)
@@ -63,8 +61,8 @@ class AuthService:
                 "id": db_user.id,
                 "email": db_user.email,
                 "full_name": db_user.full_name,
-                "user_type": db_user.user_type.value,
-                "is_superuser": db_user.is_superuser,  # ← added
+                "user_type": db_user.user_type.value,  # Will be "admin", "employer", or "candidate"
+                "is_superuser": db_user.is_superuser,
             },
         }
 
@@ -75,7 +73,6 @@ class AuthService:
         """
         return db.query(User).filter(User.email == email).first()
 
-    # NEW: OAuth-specific methods
     @staticmethod
     def get_or_create_oauth_user(
         db: Session,
@@ -87,10 +84,9 @@ class AuthService:
         user_type: Optional[UserType] = None,
     ) -> tuple[User, bool]:
         """
-        Get existing OAuth user or create incomplete one.
+        Get existing OAuth user or create a new one.
         Returns (user, is_new) tuple.
-
-        If user_type is None, creates an incomplete user that needs user_type selection.
+        Note: OAuth flow only allows employer/candidate — admin cannot be created via OAuth.
         """
         # Check if user exists with this OAuth provider
         user = (
@@ -103,7 +99,7 @@ class AuthService:
         )
 
         if user:
-            # Existing OAuth user - update info
+            # Existing OAuth user — update info
             if full_name:
                 user.full_name = full_name
             if avatar_url:
@@ -120,11 +116,17 @@ class AuthService:
                 detail="Email already registered with password login. Please use password login.",
             )
 
-        # user_type is required for new users - this will fail if None
         if user_type is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="User type is required for new users",
+            )
+
+        # Prevent admin accounts from being created via OAuth
+        if user_type == UserType.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Admin accounts cannot be created via OAuth.",
             )
 
         # Create new OAuth user
@@ -135,7 +137,7 @@ class AuthService:
             oauth_provider=oauth_provider,
             oauth_provider_id=oauth_provider_id,
             user_type=user_type,
-            hashed_password=None,  # OAuth users don't have passwords
+            hashed_password=None,
         )
         db.add(new_user)
         db.commit()
@@ -152,9 +154,8 @@ class AuthService:
     ) -> User:
         """
         Complete OAuth signup by setting user_type for a pending OAuth user.
-        This is called after the user selects employer/candidate.
+        Called after user selects employer/candidate.
         """
-        # Verify the OAuth data matches before creating
         user, is_new = AuthService.get_or_create_oauth_user(
             db=db,
             email=email,
