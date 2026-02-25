@@ -8,9 +8,9 @@ import enum
 class UserType(str, enum.Enum):
     """User type enumeration - Employer, Candidate, or Admin"""
 
-    EMPLOYER = "employer"
-    CANDIDATE = "candidate"
-    ADMIN = "admin"
+    EMPLOYER = "EMPLOYER"
+    CANDIDATE = "CANDIDATE"
+    ADMIN = "ADMIN"
 
 
 class User(Base):
