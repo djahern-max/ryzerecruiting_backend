@@ -1,3 +1,4 @@
+# app/schemas/booking.py
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from datetime import date
@@ -6,6 +7,7 @@ from datetime import date
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
+
 
 class BookingCreate(BaseModel):
     date: date
@@ -17,12 +19,13 @@ class BookingCreate(BaseModel):
 
 
 class BookingStatusUpdate(BaseModel):
-    status: str             # pending | confirmed | cancelled
+    status: str  # pending | confirmed | cancelled
 
 
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
+
 
 class BookingResponse(BaseModel):
     id: int
@@ -36,6 +39,7 @@ class BookingResponse(BaseModel):
     phone: Optional[str]
     notes: Optional[str]
     status: str
+    meeting_url: Optional[str]
     calendar_event_id: Optional[str]
 
     class Config:

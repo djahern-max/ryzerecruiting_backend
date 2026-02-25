@@ -18,6 +18,16 @@ router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
 
 # ---------------------------------------------------------------------------
+# Meeting URL helper — swap this function when upgrading to Zoom API
+# ---------------------------------------------------------------------------
+
+
+def get_meeting_url() -> str:
+    """Return the meeting URL for a booking. Static for now; replace with Zoom API call later."""
+    return settings.ZOOM_MEETING_URL  # add ZOOM_MEETING_URL to your .env
+
+
+# ---------------------------------------------------------------------------
 # Admin guard
 # ---------------------------------------------------------------------------
 
@@ -42,6 +52,8 @@ def create_booking(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    meeting_url = get_meeting_url()
+
     booking = Booking(
         employer_id=current_user.id,
         employer_name=current_user.full_name,
@@ -52,13 +64,13 @@ def create_booking(
         time_slot=payload.time_slot,
         phone=payload.phone,
         notes=payload.notes,
+        meeting_url=meeting_url,
         status="pending",
     )
     db.add(booking)
     db.commit()
     db.refresh(booking)
 
-    # Send emails — wrapped in try/except so a email failure never breaks the booking
     try:
         send_employer_confirmation(
             employer_name=current_user.full_name,
@@ -66,6 +78,7 @@ def create_booking(
             company_name=payload.company_name or "",
             date=str(payload.date),
             time_slot=payload.time_slot,
+            meeting_url=meeting_url,
         )
     except Exception as e:
         logger.error(f"Failed to send employer confirmation email: {e}")
@@ -80,6 +93,7 @@ def create_booking(
             time_slot=payload.time_slot,
             phone=payload.phone or "",
             notes=payload.notes or "",
+            meeting_url=meeting_url,
         )
     except Exception as e:
         logger.error(f"Failed to send admin notification email: {e}")

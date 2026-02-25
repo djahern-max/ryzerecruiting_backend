@@ -1,3 +1,4 @@
+# app/services/email.py
 import resend
 import logging
 from app.core.config import settings
@@ -13,6 +14,7 @@ def send_employer_confirmation(
     company_name: str,
     date: str,
     time_slot: str,
+    meeting_url: str,
 ) -> None:
     """Send a booking confirmation email to the employer."""
 
@@ -48,8 +50,22 @@ def send_employer_confirmation(
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
                     </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Meeting Link</td>
+                        <td style="padding: 8px 0; font-size: 14px;">
+                            <a href="{meeting_url}" style="color: #0a66c2; font-weight: 600; text-decoration: none;">
+                                Join Zoom Call →
+                            </a>
+                        </td>
+                    </tr>
                 </table>
             </div>
+
+            <a href="{meeting_url}"
+               style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
+                      font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 14px; margin-bottom: 24px;">
+                Join Zoom Call →
+            </a>
 
             <p style="color: #334155; font-size: 15px;">
                 Dane will reach out if anything changes. If you have any questions in the meantime,
@@ -79,6 +95,7 @@ def send_admin_notification(
     time_slot: str,
     phone: str,
     notes: str,
+    meeting_url: str,
 ) -> None:
     """Send a new booking notification email to Dane."""
 
@@ -128,6 +145,12 @@ def send_admin_notification(
                     <tr>
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Meeting Link</td>
+                        <td style="padding: 8px 0; font-size: 14px;">
+                            <a href="{meeting_url}" style="color: #0a66c2;">{meeting_url}</a>
+                        </td>
                     </tr>
                     <tr>
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Notes</td>
