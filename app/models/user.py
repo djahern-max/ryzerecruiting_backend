@@ -6,10 +6,11 @@ import enum
 
 
 class UserType(str, enum.Enum):
-    """User type enumeration - Employer or Candidate"""
+    """User type enumeration - Employer, Candidate, or Admin"""
 
     EMPLOYER = "employer"
     CANDIDATE = "candidate"
+    ADMIN = "admin"
 
 
 class User(Base):
@@ -21,14 +22,12 @@ class User(Base):
     hashed_password = Column(String, nullable=True)  # Nullable for OAuth users
     user_type = Column(
         SQLEnum(UserType), nullable=False
-    )  # Required: employer or candidate
+    )  # Required: employer, candidate, or admin
 
     # OAuth fields
-    oauth_provider = Column(String, nullable=True)  # "google", "linkedin", or None
-    oauth_provider_id = Column(String, nullable=True)  # Provider's unique user ID
-    avatar_url = Column(
-        String, nullable=True
-    )  # Add this line - profile picture from OAuth
+    oauth_provider = Column(String, nullable=True)
+    oauth_provider_id = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True)
 
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
