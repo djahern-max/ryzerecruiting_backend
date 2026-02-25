@@ -1,6 +1,8 @@
-# app/services/email.py
 import resend
+import logging
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 resend.api_key = settings.RESEND_API_KEY
 
@@ -11,64 +13,61 @@ def send_employer_confirmation(
     company_name: str,
     date: str,
     time_slot: str,
-):
+) -> None:
     """Send a booking confirmation email to the employer."""
-    resend.Emails.send({
-        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
-        "to": employer_email,
-        "subject": "Your call with RYZE Recruiting is confirmed!",
-        "html": f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-            <div style="text-align: center; margin-bottom: 32px;">
-                <h1 style="color: #004182; font-size: 28px; margin: 0;">RYZE Recruiting</h1>
-            </div>
 
-            <h2 style="color: #1a2e44; font-size: 22px;">You're booked, {employer_name.split()[0]}!</h2>
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [employer_email],
+            "subject": "Your call with RYZE Recruiting is confirmed!",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
-            <p style="color: #3d5a73; font-size: 16px; line-height: 1.6;">
-                Your intro call has been scheduled. Here are your details:
+            <h2 style="color: #111827; margin-bottom: 16px;">Your call is confirmed!</h2>
+
+            <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
+
+            <p style="color: #334155; font-size: 15px;">
+                We're looking forward to speaking with you. Here are your booking details:
             </p>
 
-            <div style="background: #f0f5fb; border-radius: 12px; padding: 24px; margin: 24px 0;">
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0; width: 40%;">Date</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{date}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
                     </tr>
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Time</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{time_slot}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
                     </tr>
-                    {"" if not company_name else f'''
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Company</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{company_name}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
                     </tr>
-                    '''}
                 </table>
             </div>
 
-            <p style="color: #3d5a73; font-size: 15px; line-height: 1.6;">
-                We'll be in touch shortly. If anything comes up and you need to reschedule,
-                just reply to this email.
+            <p style="color: #334155; font-size: 15px;">
+                Dane will reach out if anything changes. If you have any questions in the meantime,
+                simply reply to this email.
             </p>
 
-            <p style="color: #3d5a73; font-size: 15px; line-height: 1.6;">
-                Looking forward to speaking with you!
-            </p>
+            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
 
-            <p style="color: #1a2e44; font-size: 15px; font-weight: 600; margin-top: 32px;">
-                Dane Ahern<br>
-                <span style="color: #5a7290; font-weight: 400;">RYZE Recruiting</span>
-            </p>
-
-            <hr style="border: none; border-top: 1px solid #e0e7ef; margin: 32px 0;" />
-            <p style="color: #8fa3b8; font-size: 12px; text-align: center;">
-                RYZE Recruiting · ryzerecruiting.com
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
             </p>
         </div>
         """,
-    })
+        }
+    )
+
+    logger.info(f"Confirmation email sent to {employer_email}")
 
 
 def send_admin_notification(
@@ -80,78 +79,76 @@ def send_admin_notification(
     time_slot: str,
     phone: str,
     notes: str,
-):
+) -> None:
     """Send a new booking notification email to Dane."""
-    resend.Emails.send({
-        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
-        "to": settings.ADMIN_EMAIL,
-        "subject": f"New call booked — {employer_name} on {date} at {time_slot}",
-        "html": f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-            <div style="text-align: center; margin-bottom: 32px;">
-                <h1 style="color: #004182; font-size: 28px; margin: 0;">RYZE Recruiting</h1>
-            </div>
 
-            <h2 style="color: #1a2e44; font-size: 22px;">New Call Booked 🎉</h2>
+    admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
-            <div style="background: #f0f5fb; border-radius: 12px; padding: 24px; margin: 24px 0;">
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [settings.ADMIN_EMAIL],
+            "subject": f"New call booked — {employer_name} on {date} at {time_slot}",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">New Call Booked 🎉</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">A new employer has scheduled a discovery call.</p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0; width: 40%;">Name</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{employer_name}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Name</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{employer_name}</td>
                     </tr>
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Email</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{employer_email}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{employer_email}</td>
                     </tr>
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Date</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{date}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{company_name or "—"}</td>
                     </tr>
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Time</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{time_slot}</td>
-                    </tr>
-                    {"" if not company_name else f'''
-                    <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Company</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{company_name}</td>
-                    </tr>
-                    '''}
-                    {"" if not website_url else f'''
-                    <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Website</td>
-                        <td style="font-size: 14px; font-weight: 600; padding: 8px 0;">
-                            <a href="{website_url}" style="color: #004182;">{website_url}</a>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Website</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            {"<a href='" + website_url + "' style='color: #0a66c2;'>" + website_url + "</a>" if website_url else "—"}
                         </td>
                     </tr>
-                    '''}
-                    {"" if not phone else f'''
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0;">Phone</td>
-                        <td style="color: #1a2e44; font-size: 14px; font-weight: 600; padding: 8px 0;">{phone}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Phone</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{phone or "—"}</td>
                     </tr>
-                    '''}
-                    {"" if not notes else f'''
                     <tr>
-                        <td style="color: #5a7290; font-size: 14px; padding: 8px 0; vertical-align: top;">Notes</td>
-                        <td style="color: #1a2e44; font-size: 14px; padding: 8px 0;">{notes}</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
                     </tr>
-                    '''}
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Notes</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{notes or "—"}</td>
+                    </tr>
                 </table>
             </div>
 
-            <a href="{settings.FRONTEND_URL}/admin"
-               style="display: inline-block; background: #004182; color: #ffffff;
-                      text-decoration: none; padding: 12px 24px; border-radius: 8px;
-                      font-size: 15px; font-weight: 600; margin-top: 8px;">
-                View in Admin Dashboard
+            <a href="{admin_dashboard_url}"
+               style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
+                      font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 14px;">
+                View in Admin Dashboard →
             </a>
 
-            <hr style="border: none; border-top: 1px solid #e0e7ef; margin: 32px 0;" />
-            <p style="color: #8fa3b8; font-size: 12px; text-align: center;">
-                RYZE Recruiting · ryzerecruiting.com
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
             </p>
         </div>
         """,
-    })
+        }
+    )
+
+    logger.info(f"Admin notification sent for booking by {employer_email}")

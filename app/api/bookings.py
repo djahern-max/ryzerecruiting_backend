@@ -1,3 +1,4 @@
+# app/api/bookings.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
@@ -20,6 +21,7 @@ router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 # Admin guard
 # ---------------------------------------------------------------------------
 
+
 def require_admin(current_user: User = Depends(get_current_user)):
     if current_user.email != settings.ADMIN_EMAIL:
         raise HTTPException(
@@ -32,6 +34,7 @@ def require_admin(current_user: User = Depends(get_current_user)):
 # ---------------------------------------------------------------------------
 # Employer endpoint — create a booking
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
 def create_booking(
@@ -89,6 +92,7 @@ def create_booking(
 # ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("", response_model=List[BookingResponse])
 def list_bookings(
