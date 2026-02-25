@@ -1,3 +1,4 @@
+# app/models/booking.py
 from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -17,7 +18,7 @@ class Booking(Base):
 
     # Booking details
     date = Column(Date, nullable=False)
-    time_slot = Column(String(20), nullable=False)   # e.g. "9:00 AM"
+    time_slot = Column(String(20), nullable=False)  # e.g. "9:00 AM"
     phone = Column(String(30), nullable=True)
     notes = Column(Text, nullable=True)
 
