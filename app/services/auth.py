@@ -45,13 +45,8 @@ class AuthService:
 
     @staticmethod
     def authenticate_user(db: Session, user: UserLogin):
-        """
-        Authenticate a user and return an access token.
-        """
-        # Find user by email
         db_user = db.query(User).filter(User.email == user.email).first()
 
-        # Verify user exists and password is correct
         if not db_user or not verify_password(user.password, db_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,7 +54,6 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Create access token
         access_token = create_access_token(data={"sub": db_user.email})
 
         return {
@@ -69,7 +63,8 @@ class AuthService:
                 "id": db_user.id,
                 "email": db_user.email,
                 "full_name": db_user.full_name,
-                "user_type": db_user.user_type.value,  # Include user_type in response
+                "user_type": db_user.user_type.value,
+                "is_superuser": db_user.is_superuser,  # ← added
             },
         }
 

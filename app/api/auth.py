@@ -385,6 +385,7 @@ async def complete_oauth_signup(
                 "full_name": user.full_name,
                 "user_type": user.user_type.value,
                 "oauth_provider": user.oauth_provider,
+                "is_superuser": user.is_superuser,  # ← added
             },
         }
 
