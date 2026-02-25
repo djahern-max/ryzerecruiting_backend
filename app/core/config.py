@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     FROM_EMAIL: str = "noreply@ryzerecruiting.com"
     ADMIN_EMAIL: str = ""
 
+    # Zoom
+    ZOOM_MEETING_URL: str = ""
+
     # Google Calendar - Phase 4
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_REFRESH_TOKEN: str = ""
