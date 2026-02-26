@@ -154,7 +154,10 @@ def update_booking_status(
                 date=str(booking.date),
                 time_slot=booking.time_slot,
                 meeting_url=booking.meeting_url,
+                phone=booking.phone or "",
+                notes=booking.notes or "",
             )
+
         except Exception as e:
             logger.error(f"Failed to send meeting confirmed email: {e}")
 

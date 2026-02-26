@@ -91,7 +91,7 @@ def send_admin_notification(
     phone: str,
     notes: str,
 ) -> None:
-    """Send a new booking notification email to Dane."""
+    """Send a new booking request notification email to Dane — action required."""
 
     admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
@@ -99,14 +99,17 @@ def send_admin_notification(
         {
             "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
             "to": [settings.ADMIN_EMAIL],
-            "subject": f"New call booked — {employer_name} on {date} at {time_slot}",
+            "subject": f"New Call Request — {employer_name} on {date} at {time_slot} — Confirmation Required",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
             <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
-            <h2 style="color: #111827; margin-bottom: 4px;">New Call Booked 🎉</h2>
-            <p style="color: #64748b; font-size: 14px; margin-top: 0;">A new employer has scheduled a discovery call.</p>
+            <h2 style="color: #111827; margin-bottom: 4px;">New Call Request 📋</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                A new employer has requested a discovery call. Please confirm in the Admin Dashboard 
+                to create their Zoom meeting and send them their link.
+            </p>
 
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
                 <table style="width: 100%; border-collapse: collapse;">
@@ -152,7 +155,7 @@ def send_admin_notification(
             <a href="{admin_dashboard_url}"
                style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
                       font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 14px;">
-                View in Admin Dashboard →
+                Confirm in Admin Dashboard →
             </a>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
@@ -174,9 +177,12 @@ def send_meeting_confirmed(
     date: str,
     time_slot: str,
     meeting_url: str,
+    phone: str = "",
+    notes: str = "",
 ) -> None:
-    """Send the confirmed call email with Zoom link to the employer."""
+    """Send confirmed call email with Zoom link to both the employer and the recruiter (Dane)."""
 
+    # --- Employer email ---
     resend.Emails.send(
         {
             "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
@@ -192,7 +198,7 @@ def send_meeting_confirmed(
             <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
 
             <p style="color: #334155; font-size: 15px;">
-                Great news — your intro call with RYZE Recruiting is confirmed. 
+                Great news — your intro call with RYZE Recruiting is confirmed.
                 Here are your details:
             </p>
 
@@ -244,3 +250,82 @@ def send_meeting_confirmed(
     )
 
     logger.info(f"Meeting confirmed email with Zoom link sent to {employer_email}")
+
+    # --- Recruiter (admin) email ---
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [settings.ADMIN_EMAIL],
+            "subject": f"Call Confirmed — {employer_name} ({company_name}) on {date} at {time_slot}",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">Call Confirmed ✅</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                You've confirmed this call. A Zoom link has been sent to the employer.
+                Here's everything you need to prepare.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Name</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{employer_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            <a href="mailto:{employer_email}" style="color: #0a66c2;">{employer_email}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Phone</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{phone or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Notes</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{notes or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Your Zoom Link</td>
+                        <td style="padding: 8px 0; font-size: 14px;">
+                            <a href="{meeting_url}" style="color: #0a66c2; font-weight: 600; text-decoration: none;">
+                                Join Zoom Call →
+                            </a>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <a href="{meeting_url}"
+               style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
+                      font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 14px; margin-bottom: 24px;">
+                Join Zoom Call →
+            </a>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(
+        f"Admin confirmation email with Zoom link sent to {settings.ADMIN_EMAIL}"
+    )
