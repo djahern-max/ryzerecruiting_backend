@@ -10,21 +10,16 @@ from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingRespo
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.core.config import settings
-from app.services.email import send_employer_confirmation, send_admin_notification
+from app.services.email import (
+    send_employer_confirmation,
+    send_admin_notification,
+    send_meeting_confirmed,
+)
+from app.services.zoom import create_meeting
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/bookings", tags=["bookings"])
-
-
-# ---------------------------------------------------------------------------
-# Meeting URL helper — swap this function when upgrading to Zoom API
-# ---------------------------------------------------------------------------
-
-
-def get_meeting_url() -> str:
-    """Return the meeting URL for a booking. Static for now; replace with Zoom API call later."""
-    return settings.ZOOM_MEETING_URL  # add ZOOM_MEETING_URL to your .env
 
 
 # ---------------------------------------------------------------------------
@@ -52,8 +47,6 @@ def create_booking(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    meeting_url = get_meeting_url()
-
     booking = Booking(
         employer_id=current_user.id,
         employer_name=current_user.full_name,
@@ -64,8 +57,8 @@ def create_booking(
         time_slot=payload.time_slot,
         phone=payload.phone,
         notes=payload.notes,
-        meeting_url=meeting_url,
         status="pending",
+        # No meeting_url yet — created when admin confirms
     )
     db.add(booking)
     db.commit()
@@ -78,7 +71,6 @@ def create_booking(
             company_name=payload.company_name or "",
             date=str(payload.date),
             time_slot=payload.time_slot,
-            meeting_url=meeting_url,
         )
     except Exception as e:
         logger.error(f"Failed to send employer confirmation email: {e}")
@@ -93,12 +85,9 @@ def create_booking(
             time_slot=payload.time_slot,
             phone=payload.phone or "",
             notes=payload.notes or "",
-            meeting_url=meeting_url,
         )
     except Exception as e:
         logger.error(f"Failed to send admin notification email: {e}")
-
-    # TODO (Phase 4): create Google Calendar event
 
     return booking
 
@@ -140,6 +129,35 @@ def update_booking_status(
         raise HTTPException(status_code=404, detail="Booking not found.")
     if payload.status not in ("pending", "confirmed", "cancelled"):
         raise HTTPException(status_code=400, detail="Invalid status value.")
+
+    # When confirming — create Zoom meeting and email employer the link
+    if payload.status == "confirmed" and booking.status != "confirmed":
+        try:
+            zoom = create_meeting(
+                topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+            )
+            booking.meeting_url = zoom["join_url"]
+            logger.info(f"Zoom meeting created: {zoom['meeting_id']}")
+        except Exception as e:
+            logger.error(f"Failed to create Zoom meeting: {e}")
+            raise HTTPException(
+                status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
+            )
+
+        try:
+            send_meeting_confirmed(
+                employer_name=booking.employer_name,
+                employer_email=booking.employer_email,
+                company_name=booking.company_name or "",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send meeting confirmed email: {e}")
+
     booking.status = payload.status
     db.commit()
     db.refresh(booking)

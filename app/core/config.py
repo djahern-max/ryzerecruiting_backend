@@ -29,7 +29,10 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: str = ""
 
     # Zoom
-    ZOOM_MEETING_URL: str = ""
+    ZOOM_ACCOUNT_ID: str = ""
+    ZOOM_CLIENT_ID: str = ""
+    ZOOM_CLIENT_SECRET: str = ""
+    ZOOM_SECRET_TOKEN: str = ""
 
     # Google Calendar - Phase 4
     GOOGLE_CALENDAR_ID: str = "primary"
