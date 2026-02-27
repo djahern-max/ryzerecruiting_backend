@@ -123,6 +123,11 @@ def generate_pre_call_brief(website_url: str) -> dict:
             messages=[{"role": "user", "content": _build_prompt(website_text)}],
         )
         raw = message.content[0].text.strip()
+        # Strip markdown fences Claude sometimes wraps JSON in
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]  # remove ```json line
+            raw = raw.rsplit("```", 1)[0]  # remove closing ```
+            raw = raw.strip()
     except Exception as e:
         logger.error(f"Claude API call failed for {website_url}: {e}")
         return {}
