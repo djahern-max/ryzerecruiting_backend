@@ -109,7 +109,7 @@ def get_employer_profile(
     )
 
 
-@router.get("", response_model=List[EmployerProfileResponse])
+@router.get("/", response_model=List[EmployerProfileResponse])
 def list_employer_profiles(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
