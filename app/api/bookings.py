@@ -14,6 +14,7 @@ from app.services.email import (
     send_employer_confirmation,
     send_admin_notification,
     send_meeting_confirmed,
+    send_cancellation_email,
 )
 from app.services.zoom import create_meeting
 
@@ -58,7 +59,6 @@ def create_booking(
         phone=payload.phone,
         notes=payload.notes,
         status="pending",
-        # No meeting_url yet — created when admin confirms
     )
     db.add(booking)
     db.commit()
@@ -130,7 +130,7 @@ def update_booking_status(
     if payload.status not in ("pending", "confirmed", "cancelled"):
         raise HTTPException(status_code=400, detail="Invalid status value.")
 
-    # When confirming — create Zoom meeting and email employer the link
+    # ── Confirming: create Zoom meeting and notify both parties ──
     if payload.status == "confirmed" and booking.status != "confirmed":
         try:
             zoom = create_meeting(
@@ -157,9 +157,21 @@ def update_booking_status(
                 phone=booking.phone or "",
                 notes=booking.notes or "",
             )
-
         except Exception as e:
             logger.error(f"Failed to send meeting confirmed email: {e}")
+
+    # ── Cancelling: notify both parties ──
+    if payload.status == "cancelled" and booking.status != "cancelled":
+        try:
+            send_cancellation_email(
+                employer_name=booking.employer_name,
+                employer_email=booking.employer_email,
+                company_name=booking.company_name or "",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send cancellation email: {e}")
 
     booking.status = payload.status
     db.commit()

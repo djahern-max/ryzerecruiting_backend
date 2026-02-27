@@ -107,7 +107,7 @@ def send_admin_notification(
 
             <h2 style="color: #111827; margin-bottom: 4px;">New Call Request 📋</h2>
             <p style="color: #64748b; font-size: 14px; margin-top: 0;">
-                A new employer has requested a discovery call. Please confirm in the Admin Dashboard 
+                A new employer has requested a discovery call. Please confirm in the Admin Dashboard
                 to create their Zoom meeting and send them their link.
             </p>
 
@@ -125,7 +125,7 @@ def send_admin_notification(
                     </tr>
                     <tr>
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Company</td>
-                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{company_name or "—"}</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
                     </tr>
                     <tr>
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Website</td>
@@ -329,3 +329,131 @@ def send_meeting_confirmed(
     logger.info(
         f"Admin confirmation email with Zoom link sent to {settings.ADMIN_EMAIL}"
     )
+
+
+def send_cancellation_email(
+    employer_name: str,
+    employer_email: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+) -> None:
+    """Notify both the employer and the recruiter (Dane) that a booking has been cancelled."""
+
+    # --- Employer email ---
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [employer_email],
+            "subject": "Your call with RYZE Recruiting has been cancelled",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 16px;">Your call has been cancelled</h2>
+
+            <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
+
+            <p style="color: #334155; font-size: 15px;">
+                We're sorry to let you know that the following discovery call has been cancelled.
+                Please reach out if you'd like to reschedule — we'd love to connect.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Status</td>
+                        <td style="padding: 8px 0; font-size: 14px;">
+                            <span style="background: #fee2e2; color: #b91c1c; padding: 2px 10px; border-radius: 12px; font-size: 13px; font-weight: 600;">
+                                Cancelled
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <p style="color: #334155; font-size: 15px;">
+                To book a new time, visit
+                <a href="{settings.FRONTEND_URL}" style="color: #0a66c2; font-weight: 600;">ryzerecruiting.com</a>
+                and we'll get something scheduled.
+            </p>
+
+            <p style="color: #334155; font-size: 15px;">Apologies for any inconvenience,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Cancellation email sent to employer {employer_email}")
+
+    # --- Recruiter (admin) email ---
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [settings.ADMIN_EMAIL],
+            "subject": f"Call Cancelled — {employer_name} ({company_name}) on {date} at {time_slot}",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">Call Cancelled ❌</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                You've cancelled the following booking. The employer has been notified.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Name</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{employer_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            <a href="mailto:{employer_email}" style="color: #0a66c2;">{employer_email}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                </table>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Cancellation admin email sent to {settings.ADMIN_EMAIL}")
