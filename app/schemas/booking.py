@@ -1,7 +1,7 @@
 # app/schemas/booking.py
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +41,13 @@ class BookingResponse(BaseModel):
     status: str
     meeting_url: Optional[str]
     calendar_event_id: Optional[str]
+
+    # Intelligence layer fields
+    employer_profile_id: Optional[int] = None
+    call_outcome: Optional[str] = None
+    call_notes: Optional[str] = None
+    reminded_at: Optional[datetime] = None
+    meeting_summary: Optional[str] = None
 
     class Config:
         from_attributes = True

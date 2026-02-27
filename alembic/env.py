@@ -11,9 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.core.config import settings
 from app.core.database import Base
 
-# Import all your models here so Alembic can detect them
+# Import all models here so Alembic can detect schema changes
 from app.models.contact import Contact
 from app.models.user import User
+from app.models.employer_profile import (
+    EmployerProfile,
+)  # Must come before Booking (FK dependency)
 from app.models.booking import Booking
 
 # this is the Alembic Config object

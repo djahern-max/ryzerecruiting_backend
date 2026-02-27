@@ -1,15 +1,20 @@
 # app/api/bookings.py
+from datetime import datetime
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-import logging
 
-from app.core.database import get_db
-from app.models.booking import Booking
-from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingResponse
-from app.api.auth import get_current_user
-from app.models.user import User
 from app.core.config import settings
+from app.core.database import get_db
+from app.api.auth import get_current_user
+from app.models.booking import Booking
+from app.models.employer_profile import EmployerProfile
+from app.models.user import User
+from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingResponse
+from app.services.ai_brief import generate_pre_call_brief
 from app.services.email import (
     send_employer_confirmation,
     send_admin_notification,
@@ -17,7 +22,6 @@ from app.services.email import (
     send_cancellation_email,
 )
 from app.services.zoom import create_meeting
-from app.services.ai_brief import generate_pre_call_brief
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +29,12 @@ router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 
 
 # ---------------------------------------------------------------------------
-# Admin guard
+# Guards
 # ---------------------------------------------------------------------------
 
 
 def require_admin(current_user: User = Depends(get_current_user)):
-    if current_user.email != settings.ADMIN_EMAIL:
+    if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required.",
@@ -131,8 +135,10 @@ def update_booking_status(
     if payload.status not in ("pending", "confirmed", "cancelled"):
         raise HTTPException(status_code=400, detail="Invalid status value.")
 
-    # ── Confirming: create Zoom meeting and notify both parties ──
+    # ── Confirming: create Zoom meeting, build employer intelligence, notify ──
     if payload.status == "confirmed" and booking.status != "confirmed":
+
+        # 1. Create Zoom meeting
         try:
             zoom = create_meeting(
                 topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
@@ -147,15 +153,68 @@ def update_booking_status(
                 status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
             )
 
-            # Generate AI pre-call brief from employer website
-    ai_brief = ""
-    if booking.website_url:
-        try:
-            ai_brief = generate_pre_call_brief(booking.website_url)
-            logger.info(f"AI brief generated for {booking.website_url}")
-        except Exception as e:
-            logger.error(f"Failed to generate AI brief: {e}")
+        # 2. Generate structured AI brief from employer website
+        brief_dict = {}
+        if booking.website_url:
+            try:
+                brief_dict = generate_pre_call_brief(booking.website_url)
+                logger.info(f"AI brief generated for {booking.website_url}")
+            except Exception as e:
+                logger.error(f"Failed to generate AI brief: {e}")
 
+        # 3. Upsert employer_profiles record with AI intelligence
+        try:
+            profile = (
+                db.query(EmployerProfile)
+                .filter(
+                    EmployerProfile.company_name == booking.company_name,
+                    EmployerProfile.tenant_id.is_(None),  # RYZE Recruiting tenant
+                )
+                .first()
+            )
+
+            if not profile:
+                profile = EmployerProfile(
+                    company_name=booking.company_name or "",
+                    website_url=booking.website_url,
+                    primary_contact_email=booking.employer_email,
+                    phone=booking.phone,
+                    user_id=booking.employer_id,
+                    tenant_id=None,  # RYZE Recruiting — first tenant
+                )
+                db.add(profile)
+                logger.info(f"Created new employer profile for: {booking.company_name}")
+            else:
+                # Update contact info in case it's changed
+                if booking.website_url:
+                    profile.website_url = booking.website_url
+                if booking.phone:
+                    profile.phone = booking.phone
+                logger.info(
+                    f"Updating existing employer profile for: {booking.company_name}"
+                )
+
+            # Persist AI brief data to profile fields
+            if brief_dict:
+                profile.ai_industry = brief_dict.get("industry")
+                profile.ai_company_size = brief_dict.get("estimated_size")
+                profile.ai_company_overview = brief_dict.get("company_overview")
+                profile.ai_hiring_needs = json.dumps(brief_dict.get("hiring_needs", []))
+                profile.ai_talking_points = json.dumps(
+                    brief_dict.get("talking_points", [])
+                )
+                profile.ai_red_flags = brief_dict.get("red_flags")
+                profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
+                profile.ai_brief_updated_at = datetime.utcnow()
+
+            db.flush()  # Get profile.id without full commit
+            booking.employer_profile_id = profile.id
+
+        except Exception as e:
+            logger.error(f"Failed to upsert employer profile: {e}")
+            # Non-fatal — booking confirm should not be blocked by profile upsert
+
+        # 4. Send confirmation email to employer + briefed email to recruiter
         try:
             send_meeting_confirmed(
                 employer_name=booking.employer_name,
@@ -166,7 +225,7 @@ def update_booking_status(
                 meeting_url=booking.meeting_url,
                 phone=booking.phone or "",
                 notes=booking.notes or "",
-                ai_brief=ai_brief,
+                ai_brief=brief_dict,  # Now passing a dict
             )
         except Exception as e:
             logger.error(f"Failed to send meeting confirmed email: {e}")

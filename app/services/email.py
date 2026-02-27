@@ -8,6 +8,66 @@ logger = logging.getLogger(__name__)
 resend.api_key = settings.RESEND_API_KEY
 
 
+# ---------------------------------------------------------------------------
+# AI Brief formatter
+# ---------------------------------------------------------------------------
+
+
+def _format_brief_for_email(brief: dict) -> str:
+    """
+    Convert a structured AI brief dict into readable HTML for the recruiter email.
+    Handles both the structured case and the raw fallback case gracefully.
+    Returns an empty string if brief is empty or falsy.
+    """
+    if not brief:
+        return ""
+
+    # Fallback path: JSON parse failed, raw text was stored under 'ai_brief_raw'
+    if "ai_brief_raw" in brief:
+        return brief["ai_brief_raw"]
+
+    sections = []
+
+    if brief.get("company_overview"):
+        sections.append(
+            f"<strong>COMPANY OVERVIEW</strong><br>{brief['company_overview']}"
+        )
+
+    if brief.get("industry"):
+        sections.append(f"<strong>INDUSTRY</strong><br>{brief['industry']}")
+
+    if brief.get("estimated_size"):
+        sections.append(f"<strong>ESTIMATED SIZE</strong><br>{brief['estimated_size']}")
+
+    if brief.get("hiring_needs"):
+        needs = brief["hiring_needs"]
+        if isinstance(needs, list):
+            needs_html = ", ".join(needs)
+        else:
+            needs_html = str(needs)
+        sections.append(f"<strong>LIKELY HIRING NEEDS</strong><br>{needs_html}")
+
+    if brief.get("talking_points"):
+        pts = brief["talking_points"]
+        if isinstance(pts, list):
+            pts_html = "<br>".join(f"• {p}" for p in pts)
+        else:
+            pts_html = str(pts)
+        sections.append(f"<strong>KEY TALKING POINTS</strong><br>{pts_html}")
+
+    if brief.get("red_flags"):
+        sections.append(
+            f"<strong>RED FLAGS / CONSIDERATIONS</strong><br>{brief['red_flags']}"
+        )
+
+    return "<br><br>".join(sections)
+
+
+# ---------------------------------------------------------------------------
+# Email functions
+# ---------------------------------------------------------------------------
+
+
 def send_employer_confirmation(
     employer_name: str,
     employer_email: str,
@@ -179,9 +239,12 @@ def send_meeting_confirmed(
     meeting_url: str,
     phone: str = "",
     notes: str = "",
-    ai_brief: str = "",
+    ai_brief: dict = None,  # Now accepts a dict (was str)
 ) -> None:
     """Send confirmed call email with Zoom link to both the employer and the recruiter (Dane)."""
+
+    if ai_brief is None:
+        ai_brief = {}
 
     # --- Employer email ---
     resend.Emails.send(
@@ -194,13 +257,9 @@ def send_meeting_confirmed(
             <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
-            <h2 style="color: #111827; margin-bottom: 16px;">Your call is confirmed! ✅</h2>
-
-            <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
-
-            <p style="color: #334155; font-size: 15px;">
-                Great news — your intro call with RYZE Recruiting is confirmed.
-                Here are your details:
+            <h2 style="color: #111827; margin-bottom: 4px;">Your call is confirmed! ✅</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                We're looking forward to speaking with you. Here are your call details.
             </p>
 
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
@@ -218,7 +277,7 @@ def send_meeting_confirmed(
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Meeting Link</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Your Zoom Link</td>
                         <td style="padding: 8px 0; font-size: 14px;">
                             <a href="{meeting_url}" style="color: #0a66c2; font-weight: 600; text-decoration: none;">
                                 Join Zoom Call →
@@ -235,7 +294,6 @@ def send_meeting_confirmed(
             </a>
 
             <p style="color: #334155; font-size: 15px;">
-                Just click the link above at the scheduled time and you'll be connected directly.
                 If you have any questions beforehand, simply reply to this email.
             </p>
 
@@ -252,8 +310,8 @@ def send_meeting_confirmed(
 
     logger.info(f"Meeting confirmed email with Zoom link sent to {employer_email}")
 
-    # --- Recruiter (admin) email ---
-    # Build the AI brief block separately to avoid nested f-string issues
+    # --- Recruiter (admin) email with AI brief ---
+    brief_html_content = _format_brief_for_email(ai_brief)
     ai_brief_html = (
         f"""
         <div style="margin: 24px 0;">
@@ -262,12 +320,12 @@ def send_meeting_confirmed(
             </h3>
             <div style="background: #f0f9ff; border-left: 4px solid #0a66c2;
                         border-radius: 0 6px 6px 0; padding: 16px;">
-                <pre style="margin: 0; font-family: Arial, sans-serif; font-size: 13px;
-                            color: #1e3a5f; white-space: pre-wrap; line-height: 1.6;">{ai_brief}</pre>
+                <div style="font-family: Arial, sans-serif; font-size: 13px;
+                            color: #1e3a5f; line-height: 1.8;">{brief_html_content}</div>
             </div>
         </div>
         """
-        if ai_brief
+        if brief_html_content
         else ""
     )
 
@@ -320,7 +378,7 @@ def send_meeting_confirmed(
                         <td style="padding: 8px 0; color: #111827; font-size: 14px;">{notes or "—"}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Your Zoom Link</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Zoom Link</td>
                         <td style="padding: 8px 0; font-size: 14px;">
                             <a href="{meeting_url}" style="color: #0a66c2; font-weight: 600; text-decoration: none;">
                                 Join Zoom Call →
@@ -395,24 +453,15 @@ def send_cancellation_email(
                         <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
                     </tr>
-                    <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Status</td>
-                        <td style="padding: 8px 0; font-size: 14px;">
-                            <span style="background: #fee2e2; color: #b91c1c; padding: 2px 10px; border-radius: 12px; font-size: 13px; font-weight: 600;">
-                                Cancelled
-                            </span>
-                        </td>
-                    </tr>
                 </table>
             </div>
 
             <p style="color: #334155; font-size: 15px;">
-                To book a new time, visit
-                <a href="{settings.FRONTEND_URL}" style="color: #0a66c2; font-weight: 600;">ryzerecruiting.com</a>
-                and we'll get something scheduled.
+                Visit <a href="{settings.FRONTEND_URL}" style="color: #0a66c2;">ryzerecruiting.com</a>
+                to schedule a new time.
             </p>
 
-            <p style="color: #334155; font-size: 15px;">Apologies for any inconvenience,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
+            <p style="color: #334155; font-size: 15px;">Best,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
@@ -423,9 +472,9 @@ def send_cancellation_email(
         }
     )
 
-    logger.info(f"Cancellation email sent to employer {employer_email}")
+    logger.info(f"Cancellation email sent to {employer_email}")
 
-    # --- Recruiter (admin) email ---
+    # --- Admin (recruiter) cancellation email ---
     resend.Emails.send(
         {
             "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
@@ -438,7 +487,7 @@ def send_cancellation_email(
 
             <h2 style="color: #111827; margin-bottom: 4px;">Call Cancelled ❌</h2>
             <p style="color: #64748b; font-size: 14px; margin-top: 0;">
-                You've cancelled the following booking. The employer has been notified.
+                The following booking has been cancelled. The employer has been notified.
             </p>
 
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
