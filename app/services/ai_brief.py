@@ -24,6 +24,7 @@ import logging
 import httpx
 import anthropic
 from bs4 import BeautifulSoup
+import re
 
 from app.core.config import settings
 
@@ -124,10 +125,10 @@ def generate_pre_call_brief(website_url: str) -> dict:
         )
         raw = message.content[0].text.strip()
         # Strip markdown fences Claude sometimes wraps JSON in
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1]  # remove ```json line
-            raw = raw.rsplit("```", 1)[0]  # remove closing ```
-            raw = raw.strip()
+        raw = re.sub(r"^```json\s*", "", raw)
+        raw = re.sub(r"^```\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+        raw = raw.strip()
     except Exception as e:
         logger.error(f"Claude API call failed for {website_url}: {e}")
         return {}
