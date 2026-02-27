@@ -27,7 +27,7 @@ class EmployerProfile(Base):
 
     # ── AI-generated structured intelligence ─────────────────────────────
     ai_industry = Column(String(255), nullable=True)
-    ai_company_size = Column(String(100), nullable=True)
+    ai_company_size = Column(Text, nullable=True)
     ai_company_overview = Column(Text, nullable=True)
     ai_hiring_needs = Column(Text, nullable=True)  # JSON array stored as string
     ai_talking_points = Column(Text, nullable=True)  # JSON array stored as string
