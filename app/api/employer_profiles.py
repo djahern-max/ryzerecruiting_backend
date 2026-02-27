@@ -19,6 +19,22 @@ router = APIRouter(prefix="/api/employer-profiles", tags=["employer-profiles"])
 
 
 # ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _parse_json_list(value) -> List[str]:
+    """Safely parse a JSON string into a list. Returns [] on any failure."""
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Response schema
 # ---------------------------------------------------------------------------
 
@@ -34,8 +50,8 @@ class EmployerProfileResponse(BaseModel):
     ai_industry: Optional[str] = None
     ai_company_size: Optional[str] = None
     ai_company_overview: Optional[str] = None
-    ai_hiring_needs: Optional[List[str]] = None  # Parsed from JSON string
-    ai_talking_points: Optional[List[str]] = None  # Parsed from JSON string
+    ai_hiring_needs: Optional[List[str]] = None
+    ai_talking_points: Optional[List[str]] = None
     ai_red_flags: Optional[str] = None
     ai_brief_raw: Optional[str] = None
     ai_brief_updated_at: Optional[datetime] = None
@@ -46,9 +62,6 @@ class EmployerProfileResponse(BaseModel):
 
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 
 # ---------------------------------------------------------------------------
@@ -70,18 +83,26 @@ def get_employer_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Employer profile not found.")
 
-    # Parse JSON arrays from stored strings
-    result = EmployerProfileResponse.model_validate(profile)
-    if profile.ai_hiring_needs:
-        try:
-            result.ai_hiring_needs = json.loads(profile.ai_hiring_needs)
-        except (json.JSONDecodeError, TypeError):
-            result.ai_hiring_needs = []
-
-    if profile.ai_talking_points:
-        try:
-            result.ai_talking_points = json.loads(profile.ai_talking_points)
-        except (json.JSONDecodeError, TypeError):
-            result.ai_talking_points = []
-
-    return result
+    # Build dict manually so we can parse JSON strings BEFORE Pydantic validates.
+    # Passing the ORM object directly to model_validate fails because
+    # ai_hiring_needs and ai_talking_points are stored as raw JSON strings,
+    # not Python lists — Pydantic rejects them at validation time.
+    return EmployerProfileResponse(
+        id=profile.id,
+        company_name=profile.company_name,
+        website_url=profile.website_url,
+        primary_contact_email=profile.primary_contact_email,
+        phone=profile.phone,
+        ai_industry=profile.ai_industry,
+        ai_company_size=profile.ai_company_size,
+        ai_company_overview=profile.ai_company_overview,
+        ai_hiring_needs=_parse_json_list(profile.ai_hiring_needs),
+        ai_talking_points=_parse_json_list(profile.ai_talking_points),
+        ai_red_flags=profile.ai_red_flags,
+        ai_brief_raw=profile.ai_brief_raw,
+        ai_brief_updated_at=profile.ai_brief_updated_at,
+        recruiter_notes=profile.recruiter_notes,
+        relationship_status=profile.relationship_status,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+    )
