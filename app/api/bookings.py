@@ -17,6 +17,7 @@ from app.services.email import (
     send_cancellation_email,
 )
 from app.services.zoom import create_meeting
+from app.services.ai_brief import generate_pre_call_brief
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,15 @@ def update_booking_status(
                 status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
             )
 
+            # Generate AI pre-call brief from employer website
+    ai_brief = ""
+    if booking.website_url:
+        try:
+            ai_brief = generate_pre_call_brief(booking.website_url)
+            logger.info(f"AI brief generated for {booking.website_url}")
+        except Exception as e:
+            logger.error(f"Failed to generate AI brief: {e}")
+
         try:
             send_meeting_confirmed(
                 employer_name=booking.employer_name,
@@ -156,6 +166,7 @@ def update_booking_status(
                 meeting_url=booking.meeting_url,
                 phone=booking.phone or "",
                 notes=booking.notes or "",
+                ai_brief=ai_brief,
             )
         except Exception as e:
             logger.error(f"Failed to send meeting confirmed email: {e}")

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_REFRESH_TOKEN: str = ""
 
+    # AI
+    ANTHROPIC_API_KEY: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True

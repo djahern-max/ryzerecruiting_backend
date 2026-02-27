@@ -179,6 +179,7 @@ def send_meeting_confirmed(
     meeting_url: str,
     phone: str = "",
     notes: str = "",
+    ai_brief: str = "",
 ) -> None:
     """Send confirmed call email with Zoom link to both the employer and the recruiter (Dane)."""
 
@@ -252,6 +253,24 @@ def send_meeting_confirmed(
     logger.info(f"Meeting confirmed email with Zoom link sent to {employer_email}")
 
     # --- Recruiter (admin) email ---
+    # Build the AI brief block separately to avoid nested f-string issues
+    ai_brief_html = (
+        f"""
+        <div style="margin: 24px 0;">
+            <h3 style="color: #111827; font-size: 15px; margin-bottom: 8px;">
+                🧠 Pre-Call Intelligence Brief
+            </h3>
+            <div style="background: #f0f9ff; border-left: 4px solid #0a66c2;
+                        border-radius: 0 6px 6px 0; padding: 16px;">
+                <pre style="margin: 0; font-family: Arial, sans-serif; font-size: 13px;
+                            color: #1e3a5f; white-space: pre-wrap; line-height: 1.6;">{ai_brief}</pre>
+            </div>
+        </div>
+        """
+        if ai_brief
+        else ""
+    )
+
     resend.Emails.send(
         {
             "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
@@ -310,6 +329,8 @@ def send_meeting_confirmed(
                     </tr>
                 </table>
             </div>
+
+            {ai_brief_html}
 
             <a href="{meeting_url}"
                style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
