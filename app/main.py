@@ -18,6 +18,8 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
     max_age=3600,
+    same_site="none",
+    https_only=True,
 )
 
 app.add_middleware(
@@ -31,8 +33,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    same_site="none",
-    https_only=True,
 )
 
 # Include routers
