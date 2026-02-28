@@ -15,11 +15,10 @@ from app.models.employer_profile import EmployerProfile
 from app.models.user import User
 from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingResponse
 from app.services.ai_brief import generate_pre_call_brief
-from app.services.email import (
-    send_employer_confirmation,
-    send_admin_notification,
-    send_meeting_confirmed,
-    send_cancellation_email,
+from app.services.notifications import (
+    notify_booking_received,
+    notify_booking_confirmed,
+    notify_booking_cancelled,
 )
 from app.services.zoom import create_meeting
 
@@ -70,29 +69,18 @@ def create_booking(
     db.refresh(booking)
 
     try:
-        send_employer_confirmation(
+        notify_booking_received(
             employer_name=current_user.full_name,
-            employer_email=current_user.email,
-            company_name=payload.company_name or "",
-            date=str(payload.date),
-            time_slot=payload.time_slot,
-        )
-    except Exception as e:
-        logger.error(f"Failed to send employer confirmation email: {e}")
-
-    try:
-        send_admin_notification(
-            employer_name=current_user.full_name,
-            employer_email=current_user.email,
+            email=current_user.email,
+            phone=payload.phone or "",
             company_name=payload.company_name or "",
             website_url=payload.website_url or "",
             date=str(payload.date),
             time_slot=payload.time_slot,
-            phone=payload.phone or "",
             notes=payload.notes or "",
         )
     except Exception as e:
-        logger.error(f"Failed to send admin notification email: {e}")
+        logger.error(f"Failed to send booking received notifications: {e}")
 
     return booking
 
@@ -182,7 +170,7 @@ def update_booking_status(
                 db.query(EmployerProfile)
                 .filter(
                     EmployerProfile.company_name == booking.company_name,
-                    EmployerProfile.tenant_id.is_(None),  # RYZE Recruiting tenant
+                    EmployerProfile.tenant_id.is_(None),
                 )
                 .first()
             )
@@ -194,12 +182,11 @@ def update_booking_status(
                     primary_contact_email=booking.employer_email,
                     phone=booking.phone,
                     user_id=booking.employer_id,
-                    tenant_id=None,  # RYZE Recruiting — first tenant
+                    tenant_id=None,
                 )
                 db.add(profile)
                 logger.info(f"Created new employer profile for: {booking.company_name}")
             else:
-                # Update contact info in case it's changed
                 if booking.website_url:
                     profile.website_url = booking.website_url
                 if booking.phone:
@@ -208,7 +195,6 @@ def update_booking_status(
                     f"Updating existing employer profile for: {booking.company_name}"
                 )
 
-            # Persist AI brief data to profile fields
             if brief_dict:
                 profile.ai_industry = brief_dict.get("industry")
                 profile.ai_company_size = brief_dict.get("estimated_size")
@@ -221,41 +207,41 @@ def update_booking_status(
                 profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
                 profile.ai_brief_updated_at = datetime.utcnow()
 
-            db.flush()  # Get profile.id without full commit
+            db.flush()
             booking.employer_profile_id = profile.id
 
         except Exception as e:
             logger.error(f"Failed to upsert employer profile: {e}")
-            # Non-fatal — booking confirm should not be blocked by profile upsert
 
-        # 4. Send confirmation email to employer + briefed email to recruiter
+        # 4. Send confirmation notifications (email + SMS)
         try:
-            send_meeting_confirmed(
+            notify_booking_confirmed(
                 employer_name=booking.employer_name,
-                employer_email=booking.employer_email,
+                email=booking.employer_email,
+                phone=booking.phone or "",
                 company_name=booking.company_name or "",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
                 meeting_url=booking.meeting_url,
-                phone=booking.phone or "",
                 notes=booking.notes or "",
-                ai_brief=brief_dict,  # Now passing a dict
+                ai_brief=brief_dict,
             )
         except Exception as e:
-            logger.error(f"Failed to send meeting confirmed email: {e}")
+            logger.error(f"Failed to send booking confirmed notifications: {e}")
 
-    # ── Cancelling: notify both parties ──
+    # ── Cancelling: notify employer ──
     if payload.status == "cancelled" and booking.status != "cancelled":
         try:
-            send_cancellation_email(
+            notify_booking_cancelled(
                 employer_name=booking.employer_name,
-                employer_email=booking.employer_email,
+                email=booking.employer_email,
+                phone=booking.phone or "",
                 company_name=booking.company_name or "",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
             )
         except Exception as e:
-            logger.error(f"Failed to send cancellation email: {e}")
+            logger.error(f"Failed to send booking cancelled notifications: {e}")
 
     booking.status = payload.status
     db.commit()

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:5173"
     BACKEND_URL: str = "http://localhost:8000"
 
-    # Email (Resend) - Phase 3
+    # Email (Resend)
     RESEND_API_KEY: str = ""
     FROM_EMAIL: str = "noreply@ryzerecruiting.com"
     ADMIN_EMAIL: str = ""
@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     ZOOM_CLIENT_SECRET: str = ""
     ZOOM_SECRET_TOKEN: str = ""
 
-    # Google Calendar - Phase 4
+    # Twilio SMS
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_FROM_NUMBER: str = ""
+
+    # Google Calendar - Task 3
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_REFRESH_TOKEN: str = ""
 
