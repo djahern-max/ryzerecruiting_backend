@@ -316,7 +316,7 @@ def send_meeting_confirmed(
         f"""
         <div style="margin: 24px 0;">
             <h3 style="color: #111827; font-size: 15px; margin-bottom: 8px;">
-                🧠 Pre-Call Intelligence Brief
+                ⚡ Pre-Call Intelligence Brief
             </h3>
             <div style="background: #f0f9ff; border-left: 4px solid #0a66c2;
                         border-radius: 0 6px 6px 0; padding: 16px;">

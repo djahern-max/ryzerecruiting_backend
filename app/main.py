@@ -31,6 +31,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    same_site="none",
+    https_only=True,
 )
 
 # Include routers
