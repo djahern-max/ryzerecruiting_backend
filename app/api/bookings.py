@@ -97,6 +97,20 @@ def create_booking(
     return booking
 
 
+@router.get("/my", response_model=List[BookingResponse])
+def get_my_bookings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Employer sees only their own bookings, ordered soonest first."""
+    return (
+        db.query(Booking)
+        .filter(Booking.employer_id == current_user.id)
+        .order_by(Booking.date.asc())
+        .all()
+    )
+
+
 # ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
