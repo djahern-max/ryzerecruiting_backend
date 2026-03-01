@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     # Google Calendar - Task 3
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_REFRESH_TOKEN: str = ""
+    GOOGLE_CALENDAR_CLIENT_ID: str = ""
+    GOOGLE_CALENDAR_CLIENT_SECRET: str = ""
 
     # AI
     ANTHROPIC_API_KEY: str = ""

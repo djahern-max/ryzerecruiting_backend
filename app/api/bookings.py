@@ -15,6 +15,7 @@ from app.models.employer_profile import EmployerProfile
 from app.models.user import User
 from app.schemas.booking import BookingCreate, BookingStatusUpdate, BookingResponse
 from app.services.ai_brief import generate_pre_call_brief
+from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.services.notifications import (
     notify_booking_received,
     notify_booking_confirmed,
@@ -100,6 +101,41 @@ def get_my_bookings(
 
 
 # ---------------------------------------------------------------------------
+# Availability endpoint — Phase 3B: block taken time slots
+# ---------------------------------------------------------------------------
+
+
+@router.get("/availability/{date_str}")
+def get_availability(
+    date_str: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Returns a list of time slots already taken on a given date.
+    Frontend uses this to disable busy slots in the booking form.
+    Format: YYYY-MM-DD
+    """
+    from datetime import date
+
+    try:
+        query_date = date.fromisoformat(date_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="Invalid date format. Use YYYY-MM-DD."
+        )
+
+    taken = (
+        db.query(Booking.time_slot)
+        .filter(
+            Booking.date == query_date,
+            Booking.status.in_(["pending", "confirmed"]),
+        )
+        .all()
+    )
+    return {"date": date_str, "taken_slots": [row.time_slot for row in taken]}
+
+
+# ---------------------------------------------------------------------------
 # Admin endpoints
 # ---------------------------------------------------------------------------
 
@@ -155,7 +191,23 @@ def update_booking_status(
                 status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
             )
 
-        # 2. Generate structured AI brief from employer website
+        # 2. Create Google Calendar event
+        try:
+            event_id = create_calendar_event(
+                company_name=booking.company_name or "",
+                employer_name=booking.employer_name,
+                employer_email=booking.employer_email,
+                date_str=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+            if event_id:
+                booking.calendar_event_id = event_id
+        except Exception as e:
+            logger.error(f"Failed to create Google Calendar event: {e}")
+            # Non-fatal: don't block the confirmation
+
+        # 3. Generate structured AI brief from employer website
         brief_dict = {}
         if booking.website_url:
             try:
@@ -164,7 +216,7 @@ def update_booking_status(
             except Exception as e:
                 logger.error(f"Failed to generate AI brief: {e}")
 
-        # 3. Upsert employer_profiles record with AI intelligence
+        # 4. Upsert employer_profiles record with AI intelligence
         try:
             profile = (
                 db.query(EmployerProfile)
@@ -213,7 +265,7 @@ def update_booking_status(
         except Exception as e:
             logger.error(f"Failed to upsert employer profile: {e}")
 
-        # 4. Send confirmation notifications (email + SMS)
+        # 5. Send confirmation notifications (email + SMS)
         try:
             notify_booking_confirmed(
                 employer_name=booking.employer_name,
@@ -229,8 +281,17 @@ def update_booking_status(
         except Exception as e:
             logger.error(f"Failed to send booking confirmed notifications: {e}")
 
-    # ── Cancelling: notify employer ──
+    # ── Cancelling: delete calendar event, notify employer ──
     if payload.status == "cancelled" and booking.status != "cancelled":
+
+        # Delete Google Calendar event if one exists
+        if booking.calendar_event_id:
+            try:
+                delete_calendar_event(booking.calendar_event_id)
+                booking.calendar_event_id = None
+            except Exception as e:
+                logger.error(f"Failed to delete Google Calendar event: {e}")
+
         try:
             notify_booking_cancelled(
                 employer_name=booking.employer_name,
