@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.models.waitlist import Waitlist
-from app.api.auth import get_current_admin_user
+from app.api.auth import get_current_user
 from app.schemas.waitlist import WaitlistCreate, WaitlistResponse
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,9 @@ def join_waitlist(payload: WaitlistCreate, db: Session = Depends(get_db)):
 @router.get("", response_model=list[WaitlistResponse])
 def list_waitlist(
     db: Session = Depends(get_db),
-    _=Depends(get_current_admin_user),
+    current_user=Depends(get_current_user),
 ):
     """Admin-only: returns all waitlist entries, newest first."""
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required.")
     return db.query(Waitlist).order_by(Waitlist.created_at.desc()).all()
