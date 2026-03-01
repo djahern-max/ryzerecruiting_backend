@@ -21,6 +21,15 @@ def _send_sms(to_phone: str, body: str) -> None:
         logger.info("SMS skipped — Twilio credentials not configured.")
         return
 
+    # Normalize to E.164 format (+1XXXXXXXXXX)
+    digits = "".join(filter(str.isdigit, to_phone))
+    if len(digits) == 10:
+        digits = "1" + digits
+    if not digits.startswith("1") or len(digits) != 11:
+        logger.warning(f"SMS skipped — invalid phone format: {to_phone}")
+        return
+    normalized = "+" + digits
+
     try:
         from twilio.rest import Client
 
@@ -28,11 +37,11 @@ def _send_sms(to_phone: str, body: str) -> None:
         message = client.messages.create(
             body=body,
             from_=settings.TWILIO_FROM_NUMBER,
-            to=to_phone,
+            to=normalized,
         )
-        logger.info(f"SMS sent to {to_phone} — SID: {message.sid}")
+        logger.info(f"SMS sent to {normalized} — SID: {message.sid}")
     except Exception as e:
-        logger.error(f"SMS failed to {to_phone}: {e}")
+        logger.error(f"SMS failed to {normalized}: {e}")
 
 
 # ---------------------------------------------------------------------------
