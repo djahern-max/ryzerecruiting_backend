@@ -15,6 +15,7 @@ from app.core.database import engine, Base
 from app.core.config import settings
 from app.api.bookings import router as bookings_router
 from app.api.employer_profiles import router as employer_profiles_router
+from app.api.waitlist import router as waitlist_router
 
 app = FastAPI(title="RYZE Recruiting API")
 
@@ -49,6 +50,7 @@ app.include_router(blog.router, prefix="/blog", tags=["blog"])
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(bookings_router)
 app.include_router(employer_profiles_router)
+app.include_router(waitlist_router)
 
 
 @app.get("/")
