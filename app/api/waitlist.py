@@ -1,36 +1,17 @@
 # app/api/waitlist.py
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.core.database import get_db
 from app.models.waitlist import Waitlist
-from app.api.auth import require_admin  # reuse existing admin guard
+from app.api.auth import get_current_admin_user
+from app.schemas.waitlist import WaitlistCreate, WaitlistResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/waitlist", tags=["waitlist"])
-
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-
-class WaitlistCreate(BaseModel):
-    email: EmailStr
-    source: str = "landing_page"
-
-
-class WaitlistResponse(BaseModel):
-    id: int
-    email: str
-    source: str | None
-
-    class Config:
-        from_attributes = True
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +46,9 @@ def join_waitlist(payload: WaitlistCreate, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[WaitlistResponse])
-def list_waitlist(db: Session = Depends(get_db), _=Depends(require_admin)):
+def list_waitlist(
+    db: Session = Depends(get_db),
+    _=Depends(get_current_admin_user),
+):
     """Admin-only: returns all waitlist entries, newest first."""
     return db.query(Waitlist).order_by(Waitlist.created_at.desc()).all()
