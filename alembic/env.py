@@ -18,6 +18,7 @@ from app.models.employer_profile import (
     EmployerProfile,
 )  # Must come before Booking (FK dependency)
 from app.models.booking import Booking
+from app.models.waitlist import Waitlist
 
 # this is the Alembic Config object
 config = context.config
