@@ -88,13 +88,15 @@ def send_employer_confirmation(
             <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
-            <h2 style="color: #111827; margin-bottom: 16px;">We've received your request!</h2>
+            <h2 style="color: #111827; margin-bottom: 4px;">We received your call request</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">We'll review it shortly and confirm your Zoom link.</p>
 
             <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
 
             <p style="color: #334155; font-size: 15px;">
-                Thanks for reaching out! We've received your request and will confirm your call shortly.
-                Here's what you requested:
+                Thanks for reaching out! We've received your request for a discovery call and
+                will confirm your booking shortly. Once confirmed, you'll receive a separate
+                email with your Zoom meeting link.
             </p>
 
             <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
@@ -104,26 +106,17 @@ def send_employer_confirmation(
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company_name or "—"}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Requested Date</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
                     </tr>
                     <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Requested Time</td>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
                         <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Status</td>
-                        <td style="padding: 8px 0; font-size: 14px;">
-                            <span style="background: #fef3c7; color: #92400e; padding: 2px 10px; border-radius: 12px; font-size: 13px; font-weight: 600;">
-                                Pending Confirmation
-                            </span>
-                        </td>
                     </tr>
                 </table>
             </div>
 
             <p style="color: #334155; font-size: 15px;">
-                You'll receive a follow-up email with your Zoom link once your call is confirmed.
                 If you have any questions in the meantime, simply reply to this email.
             </p>
 
@@ -239,7 +232,7 @@ def send_meeting_confirmed(
     meeting_url: str,
     phone: str = "",
     notes: str = "",
-    ai_brief: dict = None,  # Now accepts a dict (was str)
+    ai_brief: dict = None,
 ) -> None:
     """Send confirmed call email with Zoom link to both the employer and the recruiter (Dane)."""
 
@@ -527,3 +520,78 @@ def send_cancellation_email(
     )
 
     logger.info(f"Cancellation admin email sent to {settings.ADMIN_EMAIL}")
+
+
+# ---------------------------------------------------------------------------
+# Task 4: 15-minute reminder email
+# ---------------------------------------------------------------------------
+
+
+def send_reminder_email(
+    employer_name: str,
+    employer_email: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+) -> None:
+    """Send a 15-minute reminder email with Zoom link directly to the employer."""
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [employer_email],
+            "subject": "⏰ Your call starts in 15 minutes — Zoom link inside",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">Your call starts in 15 minutes</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">Get ready — your discovery call with RYZE Recruiting is coming up.</p>
+
+            <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
+
+            <p style="color: #334155; font-size: 15px;">
+                Just a quick heads-up that your intro call is starting soon.
+                Click the button below to join the Zoom meeting.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Zoom Link</td>
+                        <td style="padding: 8px 0; font-size: 14px;">
+                            <a href="{meeting_url}" style="color: #0a66c2; font-weight: 600; text-decoration: none;">
+                                Join Zoom Call →
+                            </a>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <a href="{meeting_url}"
+               style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
+                      font-weight: 700; padding: 14px 28px; border-radius: 8px; font-size: 15px; margin-bottom: 24px;">
+                Join Zoom Call →
+            </a>
+
+            <p style="color: #334155; font-size: 15px;">See you in a few minutes!<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Reminder email sent to {employer_email} for {date} at {time_slot}")

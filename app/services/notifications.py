@@ -6,6 +6,7 @@ from app.services.email import (
     send_admin_notification,
     send_meeting_confirmed,
     send_cancellation_email,
+    send_reminder_email,
 )
 
 logger = logging.getLogger(__name__)
@@ -174,8 +175,21 @@ def notify_reminder(
     phone: str,
     date: str,
     time_slot: str,
+    meeting_url: str = "",  # ← new param (scheduler passes this)
 ) -> None:
     """Fire 15 minutes before a confirmed call — used by Task 4 scheduler."""
+
+    # Email
+    try:
+        send_reminder_email(
+            employer_name=employer_name,
+            employer_email=email,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+        )
+    except Exception as e:
+        logger.error(f"notify_reminder — email failed: {e}")
 
     # SMS
     _send_sms(
