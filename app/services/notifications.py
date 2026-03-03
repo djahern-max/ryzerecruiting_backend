@@ -175,11 +175,11 @@ def notify_reminder(
     phone: str,
     date: str,
     time_slot: str,
-    meeting_url: str = "",  # ← new param (scheduler passes this)
+    meeting_url: str = "",
 ) -> None:
     """Fire 15 minutes before a confirmed call — used by Task 4 scheduler."""
 
-    # Email
+    # Email — employer
     try:
         send_reminder_email(
             employer_name=employer_name,
@@ -189,7 +189,19 @@ def notify_reminder(
             meeting_url=meeting_url,
         )
     except Exception as e:
-        logger.error(f"notify_reminder — email failed: {e}")
+        logger.error(f"notify_reminder — employer email failed: {e}")
+
+    # Email — recruiter (Dane)
+    try:
+        send_reminder_email(
+            employer_name=employer_name,
+            employer_email=settings.ADMIN_EMAIL,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+        )
+    except Exception as e:
+        logger.error(f"notify_reminder — admin email failed: {e}")
 
     # SMS
     _send_sms(
