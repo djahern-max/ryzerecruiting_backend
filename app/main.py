@@ -10,25 +10,17 @@ logging.basicConfig(
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from apscheduler.schedulers.background import BackgroundScheduler
-
 from app.api import contact, blog, auth
 from app.core.database import engine, Base
 from app.core.config import settings
 from app.api.bookings import router as bookings_router
 from app.api.employer_profiles import router as employer_profiles_router
 from app.api.waitlist import router as waitlist_router
-from app.services.scheduler import send_upcoming_reminders
 
 app = FastAPI(title="RYZE Recruiting API")
 
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)
-
-# ── APScheduler — 15-minute reminder job ──────────────────────────────────
-scheduler = BackgroundScheduler()
-scheduler.add_job(send_upcoming_reminders, "interval", minutes=1)
-scheduler.start()
 
 # Add SessionMiddleware BEFORE CORS (required for OAuth)
 app.add_middleware(
