@@ -25,12 +25,16 @@ def join_waitlist(payload: WaitlistCreate, db: Session = Depends(get_db)):
     Add an email to the waitlist.
     Returns 409 if the email already exists (frontend treats this as success).
     """
-    entry = Waitlist(email=payload.email.lower(), source=payload.source)
+    entry = Waitlist(
+        email=payload.email.lower(),
+        source=payload.source,
+        intent=payload.intent,
+    )
     db.add(entry)
     try:
         db.commit()
         db.refresh(entry)
-        logger.info(f"Waitlist signup: {entry.email}")
+        logger.info(f"Waitlist signup: {entry.email} | intent={entry.intent}")
         return entry
     except IntegrityError:
         db.rollback()

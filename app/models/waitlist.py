@@ -10,4 +10,7 @@ class Waitlist(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     source = Column(String(100), nullable=True)  # e.g. "landing_page"
+    intent = Column(
+        String(50), nullable=True
+    )  # e.g. "hiring", "job_seeking", "following"
     created_at = Column(DateTime(timezone=True), server_default=func.now())
