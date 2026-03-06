@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
+from app.services.ai_brief import generate_pre_call_brief
+from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.core.config import settings
 from app.core.database import get_db
 from app.api.auth import get_current_user
@@ -18,14 +20,15 @@ from app.schemas.booking import (
     BookingStatusUpdate,
     BookingResponse,
     RecruiterInviteCreate,
+    CandidateBookingCreate,
 )
-from app.services.ai_brief import generate_pre_call_brief
-from app.services.calendar import create_calendar_event, delete_calendar_event
+
 from app.services.notifications import (
     notify_booking_received,
     notify_booking_confirmed,
     notify_booking_cancelled,
     notify_recruiter_invite_sent,
+    notify_candidate_booking_received,
 )
 from app.services.zoom import create_meeting
 
@@ -462,3 +465,53 @@ def delete_booking(
         raise HTTPException(status_code=404, detail="Booking not found.")
     db.delete(booking)
     db.commit()
+
+
+@router.post(
+    "/candidate",
+    response_model=BookingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_candidate_booking(
+    payload: CandidateBookingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Candidate self-books a call with the recruiter.
+    Stored as booking_type='inbound_candidate' — pending until admin confirms.
+    No company_name or website_url — candidates don't have those fields.
+    On confirm, the existing PATCH /{id}/status endpoint handles Zoom + calendar
+    + confirmation email via the standard notify_booking_confirmed() path,
+    which uses employer_name/employer_email (mapped from candidate fields here).
+    """
+    booking = Booking(
+        booking_type="inbound_candidate",
+        employer_id=current_user.id,  # reuse FK — candidate is the authenticated user
+        employer_name=current_user.full_name,
+        employer_email=current_user.email,
+        company_name=None,
+        website_url=None,
+        date=payload.date,
+        time_slot=payload.time_slot,
+        phone=payload.phone,
+        notes=payload.notes,
+        status="pending",
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+
+    try:
+        notify_candidate_booking_received(
+            candidate_name=current_user.full_name,
+            email=current_user.email,
+            phone=payload.phone or "",
+            date=str(payload.date),
+            time_slot=payload.time_slot,
+            notes=payload.notes or "",
+        )
+    except Exception as e:
+        logger.error(f"Failed to send candidate booking received notifications: {e}")
+
+    return booking

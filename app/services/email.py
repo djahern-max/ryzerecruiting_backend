@@ -625,7 +625,9 @@ def send_recruiter_invite(
     else:
         subject = f"You're invited — Discovery call with RYZE Recruiting on {date} at {time_slot}"
         intro_heading = "You're invited to a call with RYZE Recruiting 📅"
-        intro_sub = "Dane Ahern from RYZE Recruiting has scheduled time to connect with you."
+        intro_sub = (
+            "Dane Ahern from RYZE Recruiting has scheduled time to connect with you."
+        )
         greeting = f"<p style='color:#334155;font-size:15px;'>Hi {contact_name},</p>"
         sign_off = f"""
             <p style="color:#334155;font-size:15px;">
@@ -635,19 +637,27 @@ def send_recruiter_invite(
             </p>
         """
 
-    notes_row = f"""
+    notes_row = (
+        f"""
         <tr>
             <td style="padding:8px 0;color:#64748b;font-size:14px;vertical-align:top;">Notes</td>
             <td style="padding:8px 0;color:#111827;font-size:14px;">{notes}</td>
         </tr>
-    """ if notes else ""
+    """
+        if notes
+        else ""
+    )
 
-    company_row = f"""
+    company_row = (
+        f"""
         <tr>
             <td style="padding:8px 0;color:#64748b;font-size:14px;">Company</td>
             <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{company_name}</td>
         </tr>
-    """ if company_name else ""
+    """
+        if company_name
+        else ""
+    )
 
     resend.Emails.send(
         {
@@ -698,3 +708,141 @@ def send_recruiter_invite(
         f"Recruiter invite email sent to {contact_email} "
         f"({'admin copy' if is_admin_copy else contact_type})"
     )
+
+
+def send_candidate_booking_received_admin(
+    candidate_name: str,
+    candidate_email: str,
+    date: str,
+    time_slot: str,
+    phone: str = "",
+    notes: str = "",
+) -> None:
+    """Notify Dane that a candidate has requested a call."""
+
+    admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [settings.ADMIN_EMAIL],
+            "subject": f"New Candidate Call Request — {candidate_name} on {date} at {time_slot} — Confirmation Required",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">New Candidate Call Request 🧑‍💼</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                A candidate has requested a call. Please confirm in the Admin Dashboard
+                to create their Zoom meeting and send them their link.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Name</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{candidate_name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            <a href="mailto:{candidate_email}" style="color: #0a66c2;">{candidate_email}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Phone</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{phone or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Notes</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{notes or "—"}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <a href="{admin_dashboard_url}"
+               style="display: inline-block; background: #0a66c2; color: white; text-decoration: none;
+                      font-weight: 700; padding: 12px 24px; border-radius: 8px; font-size: 14px;">
+                Confirm in Admin Dashboard →
+            </a>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Candidate booking admin notification sent for {candidate_email}")
+
+
+def send_candidate_booking_confirmation(
+    candidate_name: str,
+    candidate_email: str,
+    date: str,
+    time_slot: str,
+) -> None:
+    """Send a booking request confirmation to the candidate.
+    Zoom link is NOT included yet — sent separately when admin confirms."""
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [candidate_email],
+            "subject": "Your call request with RYZE Recruiting has been received!",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE Recruiting</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">We received your call request</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">We'll review it shortly and confirm your Zoom link.</p>
+
+            <p style="color: #334155; font-size: 15px;">Hi {candidate_name},</p>
+
+            <p style="color: #334155; font-size: 15px;">
+                Thanks for reaching out! We've received your request for a call and
+                will confirm your booking shortly. Once confirmed, you'll receive a
+                separate email with your Zoom meeting link.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Date</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Time</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{time_slot} EST</td>
+                    </tr>
+                </table>
+            </div>
+
+            <p style="color: #334155; font-size: 15px;">
+                If you have any questions in the meantime, simply reply to this email.
+            </p>
+
+            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 RYZE Recruiting. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Candidate booking confirmation sent to {candidate_email}")

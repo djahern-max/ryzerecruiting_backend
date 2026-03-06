@@ -7,7 +7,9 @@ from app.services.email import (
     send_meeting_confirmed,
     send_cancellation_email,
     send_reminder_email,
-    send_recruiter_invite,          # new — add this to email.py
+    send_recruiter_invite,
+    send_candidate_booking_received_admin,
+    send_candidate_booking_confirmation,
 )
 
 logger = logging.getLogger(__name__)
@@ -205,7 +207,7 @@ def notify_recruiter_invite_sent(
     contact_name: str,
     contact_email: str,
     contact_phone: str,
-    invite_type: str,           # "outbound_employer" | "outbound_candidate"
+    invite_type: str,  # "outbound_employer" | "outbound_candidate"
     company_name: str,
     date: str,
     time_slot: str,
@@ -260,5 +262,49 @@ def notify_recruiter_invite_sent(
             f"Hi {contact_name}, Dane from RYZE Recruiting has scheduled a call "
             f"with you on {date} at {time_slot} EST. "
             f"Check your email for the Zoom link. Reply STOP to opt out."
+        ),
+    )
+
+
+def notify_candidate_booking_received(
+    candidate_name: str,
+    email: str,
+    phone: str,
+    date: str,
+    time_slot: str,
+    notes: str = "",
+) -> None:
+    """Fire when a candidate submits a booking request — notifies admin and candidate."""
+
+    # Email — admin
+    try:
+        send_candidate_booking_received_admin(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            date=date,
+            time_slot=time_slot,
+            phone=phone,
+            notes=notes,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
+
+    # Email — candidate confirmation
+    try:
+        send_candidate_booking_confirmation(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            date=date,
+            time_slot=time_slot,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_booking_received — candidate email failed: {e}")
+
+    # SMS — candidate
+    _send_sms(
+        to_phone=phone,
+        body=(
+            f"Hi {candidate_name}, RYZE Recruiting received your call request for "
+            f"{date} at {time_slot} EST. We'll be in touch shortly to confirm."
         ),
     )

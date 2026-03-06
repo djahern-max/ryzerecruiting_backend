@@ -11,6 +11,7 @@ from datetime import date, datetime
 
 class BookingCreate(BaseModel):
     """Employer self-books via the booking form — original inbound flow."""
+
     date: date
     time_slot: str
     company_name: Optional[str] = None
@@ -21,6 +22,7 @@ class BookingCreate(BaseModel):
 
 class RecruiterInviteCreate(BaseModel):
     """Recruiter sends an outbound meeting invite to an employer or candidate contact."""
+
     invite_type: Literal["outbound_employer", "outbound_candidate"]
     contact_name: str
     contact_email: EmailStr
@@ -66,3 +68,12 @@ class BookingResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CandidateBookingCreate(BaseModel):
+    """Candidate self-books via the candidate booking form."""
+
+    date: date
+    time_slot: str
+    phone: Optional[str] = None
+    notes: Optional[str] = None
