@@ -63,12 +63,13 @@ def create_booking(
     current_user: User = Depends(get_current_user),
 ):
     booking = Booking(
-        booking_type="inbound_candidate",
+        booking_type="inbound",  # ✓ employer inbound
         employer_id=current_user.id,
-        employer_name=current_user.full_name,
+        employer_name=current_user.full_name
+        or current_user.email,  # ✓ fallback to email
         employer_email=current_user.email,
-        company_name=payload.company_name,  # ← pass through
-        website_url=None,  # no AI brief for candidates
+        company_name=payload.company_name,
+        website_url=payload.website_url,  # ✓ required for AI brief
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -81,7 +82,7 @@ def create_booking(
 
     try:
         notify_booking_received(
-            employer_name=current_user.full_name,
+            employer_name=current_user.full_name or current_user.email,
             email=current_user.email,
             phone=payload.phone or "",
             company_name=payload.company_name or "",
@@ -467,6 +468,11 @@ def delete_booking(
     db.commit()
 
 
+# ---------------------------------------------------------------------------
+# Candidate endpoint — self-book a call (inbound_candidate)
+# ---------------------------------------------------------------------------
+
+
 @router.post(
     "/candidate",
     response_model=BookingResponse,
@@ -488,10 +494,11 @@ def create_candidate_booking(
     booking = Booking(
         booking_type="inbound_candidate",
         employer_id=current_user.id,  # reuse FK — candidate is the authenticated user
-        employer_name=current_user.full_name,
+        employer_name=current_user.full_name
+        or current_user.email,  # ✓ fallback to email
         employer_email=current_user.email,
         company_name=None,
-        website_url=None,
+        website_url=None,  # ✓ no AI brief for candidates
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -504,7 +511,8 @@ def create_candidate_booking(
 
     try:
         notify_candidate_booking_received(
-            candidate_name=payload.name,
+            candidate_name=current_user.full_name
+            or current_user.email,  # ✓ use auth user, not payload.name
             email=current_user.email,
             phone=payload.phone or "",
             date=str(payload.date),
