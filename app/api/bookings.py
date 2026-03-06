@@ -65,7 +65,7 @@ def create_booking(
     booking = Booking(
         booking_type="inbound_candidate",
         employer_id=current_user.id,
-        employer_name=payload.name,  # ← use submitted name
+        employer_name=current_user.full_name,
         employer_email=current_user.email,
         company_name=payload.company_name,  # ← pass through
         website_url=None,  # no AI brief for candidates
