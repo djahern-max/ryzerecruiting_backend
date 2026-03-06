@@ -7,6 +7,7 @@ from app.services.email import (
     send_meeting_confirmed,
     send_cancellation_email,
     send_reminder_email,
+    send_recruiter_invite,          # new — add this to email.py
 )
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,6 @@ def _send_sms(to_phone: str, body: str) -> None:
         logger.info("SMS skipped — Twilio credentials not configured.")
         return
 
-    # Normalize to E.164 format (+1XXXXXXXXXX)
     digits = "".join(filter(str.isdigit, to_phone))
     if len(digits) == 10:
         digits = "1" + digits
@@ -46,7 +46,7 @@ def _send_sms(to_phone: str, body: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Public notification functions
+# Inbound booking notifications (existing flows — unchanged)
 # ---------------------------------------------------------------------------
 
 
@@ -60,9 +60,6 @@ def notify_booking_received(
     website_url: str = "",
     notes: str = "",
 ) -> None:
-    """Fire when a new booking is submitted — confirms receipt to employer, alerts admin."""
-
-    # Email
     try:
         send_employer_confirmation(
             employer_name=employer_name,
@@ -88,7 +85,6 @@ def notify_booking_received(
     except Exception as e:
         logger.error(f"notify_booking_received — admin email failed: {e}")
 
-    # SMS
     _send_sms(
         to_phone=phone,
         body=(
@@ -109,9 +105,6 @@ def notify_booking_confirmed(
     notes: str = "",
     ai_brief: dict = None,
 ) -> None:
-    """Fire when admin confirms a booking — sends Zoom link to employer, brief to admin."""
-
-    # Email
     try:
         send_meeting_confirmed(
             employer_name=employer_name,
@@ -127,7 +120,6 @@ def notify_booking_confirmed(
     except Exception as e:
         logger.error(f"notify_booking_confirmed — email failed: {e}")
 
-    # SMS
     _send_sms(
         to_phone=phone,
         body=(
@@ -145,9 +137,6 @@ def notify_booking_cancelled(
     date: str,
     time_slot: str,
 ) -> None:
-    """Fire when a booking is cancelled — notifies employer by email and SMS."""
-
-    # Email
     try:
         send_cancellation_email(
             employer_name=employer_name,
@@ -159,7 +148,6 @@ def notify_booking_cancelled(
     except Exception as e:
         logger.error(f"notify_booking_cancelled — email failed: {e}")
 
-    # SMS
     _send_sms(
         to_phone=phone,
         body=(
@@ -177,9 +165,6 @@ def notify_reminder(
     time_slot: str,
     meeting_url: str = "",
 ) -> None:
-    """Fire 15 minutes before a confirmed call — used by Task 4 scheduler."""
-
-    # Email — employer
     try:
         send_reminder_email(
             employer_name=employer_name,
@@ -191,7 +176,6 @@ def notify_reminder(
     except Exception as e:
         logger.error(f"notify_reminder — employer email failed: {e}")
 
-    # Email — recruiter (Dane)
     try:
         send_reminder_email(
             employer_name=employer_name,
@@ -203,11 +187,78 @@ def notify_reminder(
     except Exception as e:
         logger.error(f"notify_reminder — admin email failed: {e}")
 
-    # SMS
     _send_sms(
         to_phone=phone,
         body=(
             f"Reminder: Your call with RYZE Recruiting is in 15 minutes. "
+            f"Check your email for the Zoom link. Reply STOP to opt out."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Outbound invite notification (new — recruiter-initiated)
+# ---------------------------------------------------------------------------
+
+
+def notify_recruiter_invite_sent(
+    contact_name: str,
+    contact_email: str,
+    contact_phone: str,
+    invite_type: str,           # "outbound_employer" | "outbound_candidate"
+    company_name: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+    notes: str = "",
+    ai_brief: dict = None,
+) -> None:
+    """
+    Fire when the recruiter sends an outbound meeting invite.
+    - Sends invite email to the contact with the Zoom link
+    - Sends admin copy to the recruiter
+    - Fires SMS if phone is present
+    """
+
+    contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
+
+    # Email to contact
+    try:
+        send_recruiter_invite(
+            contact_name=contact_name,
+            contact_email=contact_email,
+            contact_type=contact_type,
+            company_name=company_name,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+            notes=notes,
+        )
+    except Exception as e:
+        logger.error(f"notify_recruiter_invite_sent — contact email failed: {e}")
+
+    # Admin copy
+    try:
+        send_recruiter_invite(
+            contact_name=contact_name,
+            contact_email=settings.ADMIN_EMAIL,
+            contact_type=contact_type,
+            company_name=company_name,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+            notes=notes,
+            is_admin_copy=True,
+        )
+    except Exception as e:
+        logger.error(f"notify_recruiter_invite_sent — admin copy failed: {e}")
+
+    # SMS to contact
+    _send_sms(
+        to_phone=contact_phone,
+        body=(
+            f"Hi {contact_name}, Dane from RYZE Recruiting has scheduled a call "
+            f"with you on {date} at {time_slot} EST. "
             f"Check your email for the Zoom link. Reply STOP to opt out."
         ),
     )

@@ -1,6 +1,6 @@
 # app/schemas/booking.py
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, EmailStr
+from typing import Optional, Literal
 from datetime import date, datetime
 
 
@@ -10,11 +10,25 @@ from datetime import date, datetime
 
 
 class BookingCreate(BaseModel):
+    """Employer self-books via the booking form — original inbound flow."""
     date: date
     time_slot: str
     company_name: Optional[str] = None
     website_url: Optional[str] = None
     phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class RecruiterInviteCreate(BaseModel):
+    """Recruiter sends an outbound meeting invite to an employer or candidate contact."""
+    invite_type: Literal["outbound_employer", "outbound_candidate"]
+    contact_name: str
+    contact_email: EmailStr
+    contact_phone: Optional[str] = None
+    company_name: Optional[str] = None
+    website_url: Optional[str] = None
+    date: date
+    time_slot: str
     notes: Optional[str] = None
 
 
@@ -29,7 +43,8 @@ class BookingStatusUpdate(BaseModel):
 
 class BookingResponse(BaseModel):
     id: int
-    employer_id: int
+    booking_type: str
+    employer_id: Optional[int]
     employer_name: str
     employer_email: str
     company_name: Optional[str]

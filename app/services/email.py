@@ -595,3 +595,106 @@ def send_reminder_email(
     )
 
     logger.info(f"Reminder email sent to {employer_email} for {date} at {time_slot}")
+
+
+# ---------------------------------------------------------------------------
+# Recruiter-initiated outbound invite email
+# ---------------------------------------------------------------------------
+
+
+def send_recruiter_invite(
+    contact_name: str,
+    contact_email: str,
+    contact_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+    notes: str = "",
+    is_admin_copy: bool = False,
+) -> None:
+    type_label = "Employer" if contact_type == "employer" else "Candidate"
+    company_line = f" ({company_name})" if company_name else ""
+
+    if is_admin_copy:
+        subject = f"Outbound Invite Sent — {contact_name}{company_line} on {date} at {time_slot}"
+        intro_heading = f"Invite Sent — {type_label} ✉️"
+        intro_sub = f"You've sent a meeting invite to {contact_name}{company_line}. Here's a copy for your records."
+        greeting = f"<p style='color:#334155;font-size:15px;'>Contact: <strong>{contact_name}</strong></p>"
+        sign_off = ""
+    else:
+        subject = f"You're invited — Discovery call with RYZE Recruiting on {date} at {time_slot}"
+        intro_heading = "You're invited to a call with RYZE Recruiting 📅"
+        intro_sub = "Dane Ahern from RYZE Recruiting has scheduled time to connect with you."
+        greeting = f"<p style='color:#334155;font-size:15px;'>Hi {contact_name},</p>"
+        sign_off = f"""
+            <p style="color:#334155;font-size:15px;">
+                Looking forward to connecting.<br/>
+                <strong>Dane Ahern</strong><br/>
+                RYZE Recruiting
+            </p>
+        """
+
+    notes_row = f"""
+        <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;vertical-align:top;">Notes</td>
+            <td style="padding:8px 0;color:#111827;font-size:14px;">{notes}</td>
+        </tr>
+    """ if notes else ""
+
+    company_row = f"""
+        <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;">Company</td>
+            <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{company_name}</td>
+        </tr>
+    """ if company_name else ""
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [contact_email],
+            "subject": subject,
+            "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;" />
+            <h2 style="color:#111827;margin-bottom:4px;">{intro_heading}</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">{intro_sub}</p>
+            {greeting}
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    {company_row}
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Date</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Time</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Zoom Link</td>
+                        <td style="padding:8px 0;font-size:14px;">
+                            <a href="{meeting_url}" style="color:#0a66c2;font-weight:600;text-decoration:none;">Join Zoom Call →</a>
+                        </td>
+                    </tr>
+                    {notes_row}
+                </table>
+            </div>
+            <a href="{meeting_url}"
+               style="display:inline-block;background:#0a66c2;color:white;text-decoration:none;
+                      font-weight:700;padding:12px 24px;border-radius:8px;font-size:14px;margin-bottom:24px;">
+                Join Zoom Call →
+            </a>
+            {sign_off}
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;" />
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE Recruiting. All rights reserved.</p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(
+        f"Recruiter invite email sent to {contact_email} "
+        f"({'admin copy' if is_admin_copy else contact_type})"
+    )
