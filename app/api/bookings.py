@@ -63,12 +63,12 @@ def create_booking(
     current_user: User = Depends(get_current_user),
 ):
     booking = Booking(
-        booking_type="inbound",
+        booking_type="inbound_candidate",
         employer_id=current_user.id,
-        employer_name=current_user.full_name,
+        employer_name=payload.name,  # ← use submitted name
         employer_email=current_user.email,
-        company_name=payload.company_name,
-        website_url=payload.website_url,
+        company_name=payload.company_name,  # ← pass through
+        website_url=None,  # no AI brief for candidates
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -504,7 +504,7 @@ def create_candidate_booking(
 
     try:
         notify_candidate_booking_received(
-            candidate_name=current_user.full_name,
+            candidate_name=payload.name,
             email=current_user.email,
             phone=payload.phone or "",
             date=str(payload.date),

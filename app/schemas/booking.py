@@ -73,7 +73,9 @@ class BookingResponse(BaseModel):
 class CandidateBookingCreate(BaseModel):
     """Candidate self-books via the candidate booking form."""
 
+    name: str
     date: date
     time_slot: str
+    company_name: Optional[str] = None
     phone: Optional[str] = None
     notes: Optional[str] = None
