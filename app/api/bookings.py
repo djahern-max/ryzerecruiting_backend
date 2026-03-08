@@ -65,8 +65,7 @@ def create_booking(
     booking = Booking(
         booking_type="inbound",  # ✓ employer inbound
         employer_id=current_user.id,
-        employer_name=current_user.full_name
-        or current_user.email,  # ✓ fallback to email
+        employer_name=current_user.full_name or current_user.email,
         employer_email=current_user.email,
         company_name=payload.company_name,
         website_url=payload.website_url,  # ✓ required for AI brief
@@ -165,18 +164,17 @@ def send_recruiter_invite(
             booking.calendar_event_id = event_id
     except Exception as e:
         logger.error(f"Failed to create Google Calendar event: {e}")
-        # Non-fatal
 
-    # 4. Generate AI brief if website provided
+    # 4. Generate AI brief if website provided (employer invites only)
     brief_dict = {}
-    if payload.website_url:
+    if payload.invite_type == "outbound_employer" and payload.website_url:
         try:
             brief_dict = generate_pre_call_brief(payload.website_url)
             logger.info(f"AI brief generated for {payload.website_url}")
         except Exception as e:
             logger.error(f"Failed to generate AI brief: {e}")
 
-    # 5. Upsert employer profile for employer-type invites
+    # 5. Upsert employer profile for employer-type invites only
     if payload.invite_type == "outbound_employer":
         try:
             profile = (
@@ -361,56 +359,65 @@ def update_booking_status(
         except Exception as e:
             logger.error(f"Failed to create Google Calendar event: {e}")
 
+        # Generate AI brief for employer bookings only
+        is_candidate_booking = booking.booking_type in (
+            "inbound_candidate",
+            "outbound_candidate",
+        )
         brief_dict = {}
-        if booking.website_url:
+        if not is_candidate_booking and booking.website_url:
             try:
                 brief_dict = generate_pre_call_brief(booking.website_url)
             except Exception as e:
                 logger.error(f"Failed to generate AI brief: {e}")
 
-        try:
-            profile = (
-                db.query(EmployerProfile)
-                .filter(
-                    EmployerProfile.company_name == booking.company_name,
-                    EmployerProfile.tenant_id.is_(None),
+        # Upsert employer profile for employer bookings only
+        if not is_candidate_booking:
+            try:
+                profile = (
+                    db.query(EmployerProfile)
+                    .filter(
+                        EmployerProfile.company_name == booking.company_name,
+                        EmployerProfile.tenant_id.is_(None),
+                    )
+                    .first()
                 )
-                .first()
-            )
 
-            if not profile:
-                profile = EmployerProfile(
-                    company_name=booking.company_name or "",
-                    website_url=booking.website_url,
-                    primary_contact_email=booking.employer_email,
-                    phone=booking.phone,
-                    user_id=booking.employer_id,
-                    tenant_id=None,
-                )
-                db.add(profile)
-            else:
-                if booking.website_url:
-                    profile.website_url = booking.website_url
-                if booking.phone:
-                    profile.phone = booking.phone
+                if not profile:
+                    profile = EmployerProfile(
+                        company_name=booking.company_name or "",
+                        website_url=booking.website_url,
+                        primary_contact_email=booking.employer_email,
+                        phone=booking.phone,
+                        user_id=booking.employer_id,
+                        tenant_id=None,
+                    )
+                    db.add(profile)
+                else:
+                    if booking.website_url:
+                        profile.website_url = booking.website_url
+                    if booking.phone:
+                        profile.phone = booking.phone
 
-            if brief_dict:
-                profile.ai_industry = brief_dict.get("industry")
-                profile.ai_company_size = brief_dict.get("estimated_size")
-                profile.ai_company_overview = brief_dict.get("company_overview")
-                profile.ai_hiring_needs = json.dumps(brief_dict.get("hiring_needs", []))
-                profile.ai_talking_points = json.dumps(
-                    brief_dict.get("talking_points", [])
-                )
-                profile.ai_red_flags = brief_dict.get("red_flags")
-                profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
-                profile.ai_brief_updated_at = datetime.utcnow()
+                if brief_dict:
+                    profile.ai_industry = brief_dict.get("industry")
+                    profile.ai_company_size = brief_dict.get("estimated_size")
+                    profile.ai_company_overview = brief_dict.get("company_overview")
+                    profile.ai_hiring_needs = json.dumps(
+                        brief_dict.get("hiring_needs", [])
+                    )
+                    profile.ai_talking_points = json.dumps(
+                        brief_dict.get("talking_points", [])
+                    )
+                    profile.ai_red_flags = brief_dict.get("red_flags")
+                    profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
+                    profile.ai_brief_updated_at = datetime.utcnow()
 
-            db.flush()
-            booking.employer_profile_id = profile.id
+                db.flush()
+                booking.employer_profile_id = profile.id
 
-        except Exception as e:
-            logger.error(f"Failed to upsert employer profile: {e}")
+            except Exception as e:
+                logger.error(f"Failed to upsert employer profile: {e}")
 
         try:
             notify_booking_confirmed(
@@ -494,8 +501,7 @@ def create_candidate_booking(
     booking = Booking(
         booking_type="inbound_candidate",
         employer_id=current_user.id,  # reuse FK — candidate is the authenticated user
-        employer_name=current_user.full_name
-        or current_user.email,  # ✓ fallback to email
+        employer_name=current_user.full_name or current_user.email,
         employer_email=current_user.email,
         company_name=None,
         website_url=None,  # ✓ no AI brief for candidates
@@ -511,8 +517,7 @@ def create_candidate_booking(
 
     try:
         notify_candidate_booking_received(
-            candidate_name=current_user.full_name
-            or current_user.email,  # ✓ use auth user, not payload.name
+            candidate_name=current_user.full_name or current_user.email,
             email=current_user.email,
             phone=payload.phone or "",
             date=str(payload.date),
