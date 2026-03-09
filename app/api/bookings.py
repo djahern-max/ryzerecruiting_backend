@@ -266,11 +266,12 @@ def respond_to_invite(
                     profile.ai_red_flags = brief_dict.get("red_flags")
                     profile.ai_brief_updated_at = datetime.utcnow()
                 booking.employer_profile_id = profile.id
+                db.flush()  # catch any DB errors inside the try
             except Exception as e:
                 logger.error(f"Failed to generate AI brief on accept: {e}")
 
         booking.status = "confirmed"
-        booking.response_token = None  # invalidate token
+        booking.response_token = None
         db.commit()
 
         # Send confirmation with Zoom link
@@ -395,17 +396,17 @@ def update_booking_status(
                     db.flush()
 
                 if brief_dict:
-                    for field in [
-                        "company_overview",
-                        "hiring_context",
-                        "culture_values",
-                        "recent_news",
-                        "talking_points",
-                        "red_flags",
-                    ]:
-                        if field in brief_dict:
-                            setattr(profile, field, brief_dict[field])
-                    profile.ai_brief_generated_at = datetime.utcnow()
+                    profile.ai_company_overview = brief_dict.get("company_overview")
+                    profile.ai_industry = brief_dict.get("industry")
+                    profile.ai_company_size = brief_dict.get("estimated_size")
+                    profile.ai_hiring_needs = json.dumps(
+                        brief_dict.get("hiring_needs", [])
+                    )
+                    profile.ai_talking_points = json.dumps(
+                        brief_dict.get("talking_points", [])
+                    )
+                    profile.ai_red_flags = brief_dict.get("red_flags")
+                    profile.ai_brief_updated_at = datetime.utcnow()
                 booking.employer_profile_id = profile.id
             except Exception as e:
                 logger.error(f"Failed to generate AI brief: {e}")
