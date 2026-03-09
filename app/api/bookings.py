@@ -241,9 +241,11 @@ def respond_to_invite(
             try:
                 brief_dict = generate_pre_call_brief(booking.website_url)
                 # Upsert employer profile
-                profile = db.query(EmployerProfile).filter(
-                    EmployerProfile.website_url == booking.website_url
-                ).first()
+                profile = (
+                    db.query(EmployerProfile)
+                    .filter(EmployerProfile.website_url == booking.website_url)
+                    .first()
+                )
                 if not profile:
                     profile = EmployerProfile(
                         website_url=booking.website_url,
@@ -252,11 +254,17 @@ def respond_to_invite(
                     db.add(profile)
                     db.flush()
                 if brief_dict:
-                    for field in ["company_overview", "hiring_context", "culture_values",
-                                  "recent_news", "talking_points", "red_flags"]:
-                        if field in brief_dict:
-                            setattr(profile, field, brief_dict[field])
-                    profile.ai_brief_generated_at = datetime.utcnow()
+                    profile.ai_company_overview = brief_dict.get("company_overview")
+                    profile.ai_industry = brief_dict.get("industry")
+                    profile.ai_company_size = brief_dict.get("estimated_size")
+                    profile.ai_hiring_needs = json.dumps(
+                        brief_dict.get("hiring_needs", [])
+                    )
+                    profile.ai_talking_points = json.dumps(
+                        brief_dict.get("talking_points", [])
+                    )
+                    profile.ai_red_flags = brief_dict.get("red_flags")
+                    profile.ai_brief_updated_at = datetime.utcnow()
                 booking.employer_profile_id = profile.id
             except Exception as e:
                 logger.error(f"Failed to generate AI brief on accept: {e}")
@@ -329,7 +337,10 @@ def update_booking_status(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
-    is_candidate_booking = booking.booking_type in ("inbound_candidate", "outbound_candidate")
+    is_candidate_booking = booking.booking_type in (
+        "inbound_candidate",
+        "outbound_candidate",
+    )
 
     # ── Confirming ──────────────────────────────────────────────────────
     if payload.status == "confirmed" and booking.status != "confirmed":
@@ -343,7 +354,9 @@ def update_booking_status(
             booking.meeting_url = zoom["join_url"]
         except Exception as e:
             logger.error(f"Failed to create Zoom meeting: {e}")
-            raise HTTPException(status_code=500, detail=f"Could not create Zoom meeting: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
+            )
 
         # Create Google Calendar event
         try:
@@ -365,9 +378,13 @@ def update_booking_status(
         if not is_candidate_booking and booking.website_url:
             try:
                 brief_dict = generate_pre_call_brief(booking.website_url)
-                profile = db.query(EmployerProfile).filter(
-                    EmployerProfile.id == booking.employer_profile_id
-                ).first() if booking.employer_profile_id else None
+                profile = (
+                    db.query(EmployerProfile)
+                    .filter(EmployerProfile.id == booking.employer_profile_id)
+                    .first()
+                    if booking.employer_profile_id
+                    else None
+                )
 
                 if not profile:
                     profile = EmployerProfile(
@@ -378,8 +395,14 @@ def update_booking_status(
                     db.flush()
 
                 if brief_dict:
-                    for field in ["company_overview", "hiring_context", "culture_values",
-                                  "recent_news", "talking_points", "red_flags"]:
+                    for field in [
+                        "company_overview",
+                        "hiring_context",
+                        "culture_values",
+                        "recent_news",
+                        "talking_points",
+                        "red_flags",
+                    ]:
                         if field in brief_dict:
                             setattr(profile, field, brief_dict[field])
                     profile.ai_brief_generated_at = datetime.utcnow()
@@ -497,10 +520,13 @@ def create_candidate_booking(
 @router.get("/availability/{date_str}")
 def get_availability(date_str: str, db: Session = Depends(get_db)):
     from datetime import date
+
     try:
         query_date = date.fromisoformat(date_str)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+        raise HTTPException(
+            status_code=400, detail="Invalid date format. Use YYYY-MM-DD."
+        )
 
     taken = (
         db.query(Booking.time_slot)
@@ -519,7 +545,9 @@ def get_availability(date_str: str, db: Session = Depends(get_db)):
 
 
 @router.get("/my", response_model=List[BookingResponse])
-def get_my_bookings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_my_bookings(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
     return (
         db.query(Booking)
         .filter(Booking.employer_id == current_user.id)
@@ -539,7 +567,9 @@ def list_bookings(db: Session = Depends(get_db), _: User = Depends(require_admin
 
 
 @router.get("/{booking_id}", response_model=BookingResponse)
-def get_booking(booking_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+def get_booking(
+    booking_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+):
     booking = db.query(Booking).filter(Booking.id == booking_id).first()
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
