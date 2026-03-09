@@ -312,3 +312,44 @@ def notify_invite_declined(
         )
     except Exception as e:
         logger.error(f"notify_invite_declined — admin email failed: {e}")
+
+
+def notify_candidate_booking_received(
+    candidate_name: str,
+    email: str,
+    phone: str,
+    date: str,
+    time_slot: str,
+    notes: str = "",
+) -> None:
+    try:
+        send_candidate_booking_confirmation(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            date=date,
+            time_slot=time_slot,
+        )
+    except Exception as e:
+        logger.error(
+            f"notify_candidate_booking_received — confirmation email failed: {e}"
+        )
+
+    try:
+        send_candidate_booking_received_admin(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            date=date,
+            time_slot=time_slot,
+            phone=phone,
+            notes=notes,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
+
+    _send_sms(
+        to_phone=phone,
+        body=(
+            f"Hi {candidate_name}, RYZE Recruiting received your call request for {date} at {time_slot} EST. "
+            f"We'll confirm shortly. Reply STOP to opt out."
+        ),
+    )
