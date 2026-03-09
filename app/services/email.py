@@ -846,3 +846,279 @@ def send_candidate_booking_confirmation(
     )
 
     logger.info(f"Candidate booking confirmation sent to {candidate_email}")
+# ADD THESE FUNCTIONS to app/services/email.py
+# ---------------------------------------------------------------------------
+# Outbound invite email — Accept / Decline buttons (replaces Zoom link)
+# ---------------------------------------------------------------------------
+
+
+def send_recruiter_invite_with_response(
+    contact_name: str,
+    contact_email: str,
+    contact_type: str,  # "employer" | "candidate"
+    company_name: str,
+    date: str,
+    time_slot: str,
+    booking_id: int,
+    response_token: str,
+    notes: str = "",
+) -> None:
+    """
+    Outbound invite email sent to the contact.
+    Contains Accept and Decline buttons — NO Zoom link yet.
+    Zoom link is only sent after they accept.
+    """
+    import resend
+    from app.core.config import settings
+
+    accept_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=accept"
+    decline_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=decline"
+
+    company_line = f" ({company_name})" if company_name else ""
+    notes_row = f"""
+        <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;vertical-align:top;">Notes</td>
+            <td style="padding:8px 0;color:#111827;font-size:14px;">{notes}</td>
+        </tr>""" if notes else ""
+
+    company_row = f"""
+        <tr>
+            <td style="padding:8px 0;color:#64748b;font-size:14px;">Company</td>
+            <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{company_name}</td>
+        </tr>""" if company_name else ""
+
+    resend.Emails.send({
+        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+        "to": [contact_email],
+        "subject": f"Dane Ahern from RYZE Recruiting wants to connect — {date} at {time_slot}",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
+
+            <h2 style="color:#111827;margin-bottom:4px;">You're invited to a call 📅</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">
+                Dane Ahern from RYZE Recruiting would like to connect with you.
+            </p>
+
+            <p style="color:#334155;font-size:15px;">Hi {contact_name},</p>
+            <p style="color:#334155;font-size:15px;">
+                I'd love to set up a quick intro call to learn more about you
+                {"and your hiring needs" if contact_type == "employer" else "and your career goals"}.
+                I've proposed the time below — does this work for you?
+            </p>
+
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    {company_row}
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Date</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Time</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Duration</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;">30 minutes via Zoom</td>
+                    </tr>
+                    {notes_row}
+                </table>
+            </div>
+
+            <p style="color:#334155;font-size:14px;margin-bottom:20px;">
+                Please let me know if this works — just click one of the buttons below:
+            </p>
+
+            <div style="display:flex;gap:12px;margin-bottom:28px;">
+                <a href="{accept_url}"
+                   style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;
+                          font-weight:700;padding:14px 32px;border-radius:8px;font-size:15px;margin-right:12px;">
+                    ✓ Accept
+                </a>
+                <a href="{decline_url}"
+                   style="display:inline-block;background:#f1f5f9;color:#475569;text-decoration:none;
+                          font-weight:700;padding:14px 32px;border-radius:8px;font-size:15px;
+                          border:1px solid #e2e8f0;">
+                    Decline
+                </a>
+            </div>
+
+            <p style="color:#334155;font-size:15px;">
+                Looking forward to connecting.<br/>
+                <strong>Dane Ahern</strong><br/>
+                RYZE Recruiting
+            </p>
+
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">
+                © 2026 RYZE Recruiting. You received this because someone requested a meeting with you.
+            </p>
+        </div>
+        """,
+    })
+
+    logger.info(f"Outbound invite with Accept/Decline sent to {contact_email}")
+
+
+def send_invite_admin_copy(
+    contact_name: str,
+    contact_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+) -> None:
+    """Admin copy confirming the outbound invite was sent — awaiting response."""
+    import resend
+    from app.core.config import settings
+
+    company_line = f" ({company_name})" if company_name else ""
+    type_label = "Employer" if contact_type == "employer" else "Candidate"
+
+    resend.Emails.send({
+        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+        "to": [settings.ADMIN_EMAIL],
+        "subject": f"Outbound Invite Sent — {contact_name}{company_line} · Awaiting Response",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
+            <h2 style="color:#111827;margin-bottom:4px;">Invite Sent — Awaiting Response ⏳</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">
+                Your outbound invite has been sent to <strong>{contact_name}</strong>.
+                The booking is <strong>pending</strong> until they accept.
+                Zoom and Calendar will be created automatically when they do.
+            </p>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;margin:20px 0;">
+                <p style="margin:0;color:#92400e;font-size:14px;">
+                    <strong>Status:</strong> Pending — no Zoom link or Calendar event yet
+                </p>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:20px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:6px 0;color:#64748b;font-size:14px;width:40%;">Contact</td>
+                        <td style="padding:6px 0;color:#111827;font-size:14px;font-weight:600;">{contact_name}{company_line}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;color:#64748b;font-size:14px;">Type</td>
+                        <td style="padding:6px 0;color:#111827;font-size:14px;">{type_label}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;color:#64748b;font-size:14px;">Date</td>
+                        <td style="padding:6px 0;color:#111827;font-size:14px;font-weight:600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:6px 0;color:#64748b;font-size:14px;">Time</td>
+                        <td style="padding:6px 0;color:#111827;font-size:14px;font-weight:600;">{time_slot} EST</td>
+                    </tr>
+                </table>
+            </div>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE Recruiting</p>
+        </div>
+        """,
+    })
+    logger.info(f"Admin copy (invite sent, awaiting response) sent for {contact_name}")
+
+
+def send_invite_accepted_confirmation(
+    contact_name: str,
+    contact_email: str,
+    contact_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+) -> None:
+    """Confirmation email to contact after they accept — includes Zoom link."""
+    import resend
+    from app.core.config import settings
+
+    company_line = f" ({company_name})" if company_name else ""
+
+    resend.Emails.send({
+        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+        "to": [contact_email],
+        "subject": f"You're confirmed — Call with RYZE Recruiting on {date} at {time_slot}",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
+            <h2 style="color:#111827;margin-bottom:4px;">You're confirmed! ✅</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">Your call with Dane at RYZE Recruiting is all set.</p>
+            <p style="color:#334155;font-size:15px;">Hi {contact_name},</p>
+            <p style="color:#334155;font-size:15px;">Great — looking forward to our conversation. Here are your call details:</p>
+
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Date</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Time</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{time_slot} EST</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Zoom Link</td>
+                        <td style="padding:8px 0;font-size:14px;">
+                            <a href="{meeting_url}" style="color:#0a66c2;font-weight:600;text-decoration:none;">
+                                Join Zoom Call →
+                            </a>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <a href="{meeting_url}"
+               style="display:inline-block;background:#0a66c2;color:#fff;text-decoration:none;
+                      font-weight:700;padding:14px 28px;border-radius:8px;font-size:15px;margin-bottom:24px;">
+                Join Zoom Call →
+            </a>
+
+            <p style="color:#334155;font-size:15px;">
+                See you then!<br/><strong>Dane Ahern</strong><br/>RYZE Recruiting
+            </p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE Recruiting</p>
+        </div>
+        """,
+    })
+    logger.info(f"Acceptance confirmation with Zoom link sent to {contact_email}")
+
+
+def send_invite_declined_admin(
+    contact_name: str,
+    contact_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+) -> None:
+    """Notify admin that the contact declined the invite."""
+    import resend
+    from app.core.config import settings
+
+    company_line = f" ({company_name})" if company_name else ""
+
+    resend.Emails.send({
+        "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+        "to": [settings.ADMIN_EMAIL],
+        "subject": f"Invite Declined — {contact_name}{company_line}",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
+            <h2 style="color:#111827;margin-bottom:4px;">Invite Declined ❌</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">
+                <strong>{contact_name}</strong>{company_line} has declined your meeting request
+                for {date} at {time_slot} EST.
+                The booking has been marked as cancelled.
+            </p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE Recruiting</p>
+        </div>
+        """,
+    })
+    logger.info(f"Admin notified of declined invite from {contact_name}")

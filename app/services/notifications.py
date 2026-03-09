@@ -10,6 +10,10 @@ from app.services.email import (
     send_recruiter_invite,
     send_candidate_booking_received_admin,
     send_candidate_booking_confirmation,
+    send_recruiter_invite_with_response,
+    send_invite_admin_copy,
+    send_invite_accepted_confirmation,
+    send_invite_declined_admin,
 )
 
 logger = logging.getLogger(__name__)
@@ -207,26 +211,66 @@ def notify_recruiter_invite_sent(
     contact_name: str,
     contact_email: str,
     contact_phone: str,
-    invite_type: str,  # "outbound_employer" | "outbound_candidate"
+    invite_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+    booking_id: int,
+    response_token: str,
+    notes: str = "",
+) -> None:
+    contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
+
+    try:
+        send_recruiter_invite_with_response(
+            contact_name=contact_name,
+            contact_email=contact_email,
+            contact_type=contact_type,
+            company_name=company_name,
+            date=date,
+            time_slot=time_slot,
+            booking_id=booking_id,
+            response_token=response_token,
+            notes=notes,
+        )
+    except Exception as e:
+        logger.error(f"notify_recruiter_invite_sent — contact email failed: {e}")
+
+    try:
+        send_invite_admin_copy(
+            contact_name=contact_name,
+            contact_type=contact_type,
+            company_name=company_name,
+            date=date,
+            time_slot=time_slot,
+        )
+    except Exception as e:
+        logger.error(f"notify_recruiter_invite_sent — admin copy failed: {e}")
+
+    _send_sms(
+        to_phone=contact_phone,
+        body=(
+            f"Hi {contact_name}, Dane from RYZE Recruiting sent you a meeting invite "
+            f"for {date} at {time_slot} EST. "
+            f"Check your email to accept or decline. Reply STOP to opt out."
+        ),
+    )
+
+
+def notify_invite_accepted(
+    contact_name: str,
+    contact_email: str,
+    contact_phone: str,
+    invite_type: str,
     company_name: str,
     date: str,
     time_slot: str,
     meeting_url: str,
-    notes: str = "",
-    ai_brief: dict = None,
 ) -> None:
-    """
-    Fire when the recruiter sends an outbound meeting invite.
-    - Sends invite email to the contact with the Zoom link
-    - Sends admin copy to the recruiter
-    - Fires SMS if phone is present
-    """
-
     contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
 
-    # Email to contact
     try:
-        send_recruiter_invite(
+        send_invite_accepted_confirmation(
             contact_name=contact_name,
             contact_email=contact_email,
             contact_type=contact_type,
@@ -234,77 +278,37 @@ def notify_recruiter_invite_sent(
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
-            notes=notes,
         )
     except Exception as e:
-        logger.error(f"notify_recruiter_invite_sent — contact email failed: {e}")
+        logger.error(f"notify_invite_accepted — confirmation email failed: {e}")
 
-    # Admin copy
-    try:
-        send_recruiter_invite(
-            contact_name=contact_name,
-            contact_email=settings.ADMIN_EMAIL,
-            contact_type=contact_type,
-            company_name=company_name,
-            date=date,
-            time_slot=time_slot,
-            meeting_url=meeting_url,
-            notes=notes,
-            is_admin_copy=True,
-        )
-    except Exception as e:
-        logger.error(f"notify_recruiter_invite_sent — admin copy failed: {e}")
-
-    # SMS to contact
     _send_sms(
         to_phone=contact_phone,
         body=(
-            f"Hi {contact_name}, Dane from RYZE Recruiting has scheduled a call "
-            f"with you on {date} at {time_slot} EST. "
-            f"Check your email for the Zoom link. Reply STOP to opt out."
+            f"Hi {contact_name}, your call with RYZE Recruiting is confirmed for "
+            f"{date} at {time_slot} EST. "
+            f"Zoom: {meeting_url} — Reply STOP to opt out."
         ),
     )
 
 
-def notify_candidate_booking_received(
-    candidate_name: str,
-    email: str,
-    phone: str,
+def notify_invite_declined(
+    contact_name: str,
+    contact_email: str,
+    invite_type: str,
+    company_name: str,
     date: str,
     time_slot: str,
-    notes: str = "",
 ) -> None:
-    """Fire when a candidate submits a booking request — notifies admin and candidate."""
-
-    # Email — admin
     try:
-        send_candidate_booking_received_admin(
-            candidate_name=candidate_name,
-            candidate_email=email,
-            date=date,
-            time_slot=time_slot,
-            phone=phone,
-            notes=notes,
-        )
-    except Exception as e:
-        logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
-
-    # Email — candidate confirmation
-    try:
-        send_candidate_booking_confirmation(
-            candidate_name=candidate_name,
-            candidate_email=email,
+        send_invite_declined_admin(
+            contact_name=contact_name,
+            contact_type=(
+                "employer" if invite_type == "outbound_employer" else "candidate"
+            ),
+            company_name=company_name,
             date=date,
             time_slot=time_slot,
         )
     except Exception as e:
-        logger.error(f"notify_candidate_booking_received — candidate email failed: {e}")
-
-    # SMS — candidate
-    _send_sms(
-        to_phone=phone,
-        body=(
-            f"Hi {candidate_name}, RYZE Recruiting received your call request for "
-            f"{date} at {time_slot} EST. We'll be in touch shortly to confirm."
-        ),
-    )
+        logger.error(f"notify_invite_declined — admin email failed: {e}")

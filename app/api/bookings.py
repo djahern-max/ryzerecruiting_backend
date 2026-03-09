@@ -2,8 +2,10 @@
 from datetime import datetime
 import json
 import logging
+import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -29,6 +31,8 @@ from app.services.notifications import (
     notify_booking_cancelled,
     notify_recruiter_invite_sent,
     notify_candidate_booking_received,
+    notify_invite_accepted,
+    notify_invite_declined,
 )
 from app.services.zoom import create_meeting
 
@@ -63,12 +67,12 @@ def create_booking(
     current_user: User = Depends(get_current_user),
 ):
     booking = Booking(
-        booking_type="inbound",  # ✓ employer inbound
+        booking_type="inbound",
         employer_id=current_user.id,
         employer_name=current_user.full_name or current_user.email,
         employer_email=current_user.email,
         company_name=payload.company_name,
-        website_url=payload.website_url,  # ✓ required for AI brief
+        website_url=payload.website_url,
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -97,7 +101,7 @@ def create_booking(
 
 
 # ---------------------------------------------------------------------------
-# Recruiter endpoint — send outbound meeting invite
+# Recruiter endpoint — send outbound meeting invite (NOW PENDING + TOKEN)
 # ---------------------------------------------------------------------------
 
 
@@ -113,29 +117,17 @@ def send_recruiter_invite(
 ):
     """
     Recruiter sends an outbound meeting invite to an employer contact or candidate.
-    Booking is created as confirmed immediately — no pending step.
-    Zoom meeting is created, calendar event is fired, invite email sent to contact.
+    Booking is created as PENDING — no Zoom or Calendar until the contact accepts.
+    A response_token is generated and embedded in Accept/Decline links in the email.
     """
 
-    # 1. Create Zoom meeting
-    try:
-        zoom = create_meeting(
-            topic=f"RYZE Recruiting — {payload.company_name or payload.contact_name}",
-            date=str(payload.date),
-            time_slot=payload.time_slot,
-        )
-        meeting_url = zoom["join_url"]
-        logger.info(f"Zoom meeting created: {zoom['meeting_id']}")
-    except Exception as e:
-        logger.error(f"Failed to create Zoom meeting: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
-        )
+    # 1. Generate a secure token for the Accept/Decline links
+    token = secrets.token_urlsafe(32)
 
-    # 2. Persist booking as confirmed
+    # 2. Persist booking as PENDING (no Zoom yet)
     booking = Booking(
         booking_type=payload.invite_type,
-        employer_id=None,  # contact is not a registered user
+        employer_id=None,
         employer_name=payload.contact_name,
         employer_email=payload.contact_email,
         company_name=payload.company_name,
@@ -144,85 +136,14 @@ def send_recruiter_invite(
         time_slot=payload.time_slot,
         phone=payload.contact_phone,
         notes=payload.notes,
-        status="confirmed",
-        meeting_url=meeting_url,
+        status="pending",
+        response_token=token,
     )
     db.add(booking)
-    db.flush()  # get booking.id before calendar call
-
-    # 3. Create Google Calendar event
-    try:
-        event_id = create_calendar_event(
-            company_name=payload.company_name or "",
-            employer_name=payload.contact_name,
-            employer_email=payload.contact_email,
-            date_str=str(payload.date),
-            time_slot=payload.time_slot,
-            meeting_url=meeting_url,
-        )
-        if event_id:
-            booking.calendar_event_id = event_id
-    except Exception as e:
-        logger.error(f"Failed to create Google Calendar event: {e}")
-
-    # 4. Generate AI brief if website provided (employer invites only)
-    brief_dict = {}
-    if payload.invite_type == "outbound_employer" and payload.website_url:
-        try:
-            brief_dict = generate_pre_call_brief(payload.website_url)
-            logger.info(f"AI brief generated for {payload.website_url}")
-        except Exception as e:
-            logger.error(f"Failed to generate AI brief: {e}")
-
-    # 5. Upsert employer profile for employer-type invites only
-    if payload.invite_type == "outbound_employer":
-        try:
-            profile = (
-                db.query(EmployerProfile)
-                .filter(
-                    EmployerProfile.primary_contact_email == payload.contact_email,
-                    EmployerProfile.tenant_id.is_(None),
-                )
-                .first()
-            )
-
-            if not profile:
-                profile = EmployerProfile(
-                    company_name=payload.company_name or "",
-                    website_url=payload.website_url,
-                    primary_contact_email=payload.contact_email,
-                    phone=payload.contact_phone,
-                    user_id=None,
-                    tenant_id=None,
-                )
-                db.add(profile)
-                logger.info(f"Created employer profile for: {payload.company_name}")
-            else:
-                if payload.website_url:
-                    profile.website_url = payload.website_url
-
-            if brief_dict:
-                profile.ai_industry = brief_dict.get("industry")
-                profile.ai_company_size = brief_dict.get("estimated_size")
-                profile.ai_company_overview = brief_dict.get("company_overview")
-                profile.ai_hiring_needs = json.dumps(brief_dict.get("hiring_needs", []))
-                profile.ai_talking_points = json.dumps(
-                    brief_dict.get("talking_points", [])
-                )
-                profile.ai_red_flags = brief_dict.get("red_flags")
-                profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
-                profile.ai_brief_updated_at = datetime.utcnow()
-
-            db.flush()
-            booking.employer_profile_id = profile.id
-
-        except Exception as e:
-            logger.error(f"Failed to upsert employer profile: {e}")
-
     db.commit()
     db.refresh(booking)
 
-    # 6. Send invite notification
+    # 3. Send invite email with Accept/Decline links (no Zoom link yet)
     try:
         notify_recruiter_invite_sent(
             contact_name=payload.contact_name,
@@ -232,9 +153,9 @@ def send_recruiter_invite(
             company_name=payload.company_name or "",
             date=str(payload.date),
             time_slot=payload.time_slot,
-            meeting_url=meeting_url,
+            booking_id=booking.id,
+            response_token=token,
             notes=payload.notes or "",
-            ai_brief=brief_dict,
         )
     except Exception as e:
         logger.error(f"Failed to send recruiter invite notifications: {e}")
@@ -243,94 +164,47 @@ def send_recruiter_invite(
 
 
 # ---------------------------------------------------------------------------
-# Availability endpoint
+# Public endpoint — candidate/employer responds to invite (no auth required)
 # ---------------------------------------------------------------------------
 
 
-@router.get("/availability/{date_str}")
-def get_availability(
-    date_str: str,
+@router.get("/respond", response_class=HTMLResponse)
+def respond_to_invite(
+    token: str = Query(...),
+    action: str = Query(...),  # "accept" | "decline"
     db: Session = Depends(get_db),
 ):
-    from datetime import date
+    """
+    Token-based accept/decline endpoint — no login required.
+    Linked from the invite email buttons.
+    On accept: creates Zoom + Calendar, flips to confirmed, sends confirmation.
+    On decline: flips to cancelled, notifies admin.
+    """
 
-    try:
-        query_date = date.fromisoformat(date_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail="Invalid date format. Use YYYY-MM-DD."
+    # Validate token
+    booking = db.query(Booking).filter(Booking.response_token == token).first()
+
+    if not booking:
+        return _response_page(
+            "Invalid Link",
+            "This link is no longer valid or has already been used.",
+            success=False,
         )
 
-    taken = (
-        db.query(Booking.time_slot)
-        .filter(
-            Booking.date == query_date,
-            Booking.status.in_(["pending", "confirmed"]),
+    if booking.status != "pending":
+        already = "accepted" if booking.status == "confirmed" else "declined"
+        return _response_page(
+            "Already Responded",
+            f"You've already {already} this meeting request.",
+            success=booking.status == "confirmed",
         )
-        .all()
-    )
-    return {"date": date_str, "taken_slots": [row.time_slot for row in taken]}
 
+    if action not in ("accept", "decline"):
+        raise HTTPException(status_code=400, detail="Invalid action.")
 
-# ---------------------------------------------------------------------------
-# Employer endpoint — my bookings
-# ---------------------------------------------------------------------------
-
-
-@router.get("/my", response_model=List[BookingResponse])
-def get_my_bookings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    return (
-        db.query(Booking)
-        .filter(Booking.employer_id == current_user.id)
-        .order_by(Booking.date.asc())
-        .all()
-    )
-
-
-# ---------------------------------------------------------------------------
-# Admin endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("", response_model=List[BookingResponse])
-def list_bookings(
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    return db.query(Booking).order_by(Booking.date.asc()).all()
-
-
-@router.get("/{booking_id}", response_model=BookingResponse)
-def get_booking(
-    booking_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found.")
-    return booking
-
-
-@router.patch("/{booking_id}/status", response_model=BookingResponse)
-def update_booking_status(
-    booking_id: int,
-    payload: BookingStatusUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found.")
-    if payload.status not in ("pending", "confirmed", "cancelled"):
-        raise HTTPException(status_code=400, detail="Invalid status value.")
-
-    # ── Confirming ──────────────────────────────────────────────────────
-    if payload.status == "confirmed" and booking.status != "confirmed":
-
+    # ── ACCEPT ──────────────────────────────────────────────────────────
+    if action == "accept":
+        # Create Zoom meeting
         try:
             zoom = create_meeting(
                 topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
@@ -338,13 +212,16 @@ def update_booking_status(
                 time_slot=booking.time_slot,
             )
             booking.meeting_url = zoom["join_url"]
-            logger.info(f"Zoom meeting created: {zoom['meeting_id']}")
+            logger.info(f"Zoom meeting created on accept: {zoom['meeting_id']}")
         except Exception as e:
-            logger.error(f"Failed to create Zoom meeting: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
+            logger.error(f"Failed to create Zoom meeting on accept: {e}")
+            return _response_page(
+                "Something Went Wrong",
+                "We couldn't set up the Zoom meeting. Please contact RYZE Recruiting directly.",
+                success=False,
             )
 
+        # Create Google Calendar event
         try:
             event_id = create_calendar_event(
                 company_name=booking.company_name or "",
@@ -357,69 +234,161 @@ def update_booking_status(
             if event_id:
                 booking.calendar_event_id = event_id
         except Exception as e:
-            logger.error(f"Failed to create Google Calendar event: {e}")
+            logger.error(f"Failed to create Calendar event on accept: {e}")
 
-        # Generate AI brief for employer bookings only
-        is_candidate_booking = booking.booking_type in (
-            "inbound_candidate",
-            "outbound_candidate",
+        # Generate AI brief for employer invites
+        if booking.booking_type == "outbound_employer" and booking.website_url:
+            try:
+                brief_dict = generate_pre_call_brief(booking.website_url)
+                # Upsert employer profile
+                profile = db.query(EmployerProfile).filter(
+                    EmployerProfile.website_url == booking.website_url
+                ).first()
+                if not profile:
+                    profile = EmployerProfile(
+                        website_url=booking.website_url,
+                        company_name=booking.company_name or "",
+                    )
+                    db.add(profile)
+                    db.flush()
+                if brief_dict:
+                    for field in ["company_overview", "hiring_context", "culture_values",
+                                  "recent_news", "talking_points", "red_flags"]:
+                        if field in brief_dict:
+                            setattr(profile, field, brief_dict[field])
+                    profile.ai_brief_generated_at = datetime.utcnow()
+                booking.employer_profile_id = profile.id
+            except Exception as e:
+                logger.error(f"Failed to generate AI brief on accept: {e}")
+
+        booking.status = "confirmed"
+        booking.response_token = None  # invalidate token
+        db.commit()
+
+        # Send confirmation with Zoom link
+        try:
+            notify_invite_accepted(
+                contact_name=booking.employer_name,
+                contact_email=booking.employer_email,
+                contact_phone=booking.phone or "",
+                invite_type=booking.booking_type,
+                company_name=booking.company_name or "",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send acceptance notifications: {e}")
+
+        return _response_page(
+            "You're Confirmed! 🎉",
+            f"Your call with Dane at RYZE Recruiting is set for {booking.date.strftime('%B %d, %Y')} at {booking.time_slot} EST. Check your email for the Zoom link.",
+            success=True,
+            meeting_url=booking.meeting_url,
         )
+
+    # ── DECLINE ─────────────────────────────────────────────────────────
+    if action == "decline":
+        booking.status = "cancelled"
+        booking.response_token = None
+        db.commit()
+
+        try:
+            notify_invite_declined(
+                contact_name=booking.employer_name,
+                contact_email=booking.employer_email,
+                invite_type=booking.booking_type,
+                company_name=booking.company_name or "",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send decline notifications: {e}")
+
+        return _response_page(
+            "Got it — maybe next time.",
+            "You've declined this meeting request. No worries — if you change your mind, reach out to RYZE Recruiting directly.",
+            success=False,
+            show_site_link=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Status update (admin PATCH — inbound flows)
+# ---------------------------------------------------------------------------
+
+
+@router.patch("/{booking_id}/status", response_model=BookingResponse)
+def update_booking_status(
+    booking_id: int,
+    payload: BookingStatusUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    is_candidate_booking = booking.booking_type in ("inbound_candidate", "outbound_candidate")
+
+    # ── Confirming ──────────────────────────────────────────────────────
+    if payload.status == "confirmed" and booking.status != "confirmed":
+        # Create Zoom meeting
+        try:
+            zoom = create_meeting(
+                topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+            )
+            booking.meeting_url = zoom["join_url"]
+        except Exception as e:
+            logger.error(f"Failed to create Zoom meeting: {e}")
+            raise HTTPException(status_code=500, detail=f"Could not create Zoom meeting: {str(e)}")
+
+        # Create Google Calendar event
+        try:
+            event_id = create_calendar_event(
+                company_name=booking.company_name or "",
+                employer_name=booking.employer_name,
+                employer_email=booking.employer_email,
+                date_str=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+            if event_id:
+                booking.calendar_event_id = event_id
+        except Exception as e:
+            logger.error(f"Failed to create Calendar event: {e}")
+
+        # AI brief (employer inbound only)
         brief_dict = {}
         if not is_candidate_booking and booking.website_url:
             try:
                 brief_dict = generate_pre_call_brief(booking.website_url)
-            except Exception as e:
-                logger.error(f"Failed to generate AI brief: {e}")
-
-        # Upsert employer profile for employer bookings only
-        if not is_candidate_booking:
-            try:
-                profile = (
-                    db.query(EmployerProfile)
-                    .filter(
-                        EmployerProfile.company_name == booking.company_name,
-                        EmployerProfile.tenant_id.is_(None),
-                    )
-                    .first()
-                )
+                profile = db.query(EmployerProfile).filter(
+                    EmployerProfile.id == booking.employer_profile_id
+                ).first() if booking.employer_profile_id else None
 
                 if not profile:
                     profile = EmployerProfile(
-                        company_name=booking.company_name or "",
                         website_url=booking.website_url,
-                        primary_contact_email=booking.employer_email,
-                        phone=booking.phone,
-                        user_id=booking.employer_id,
-                        tenant_id=None,
+                        company_name=booking.company_name or "",
                     )
                     db.add(profile)
-                else:
-                    if booking.website_url:
-                        profile.website_url = booking.website_url
-                    if booking.phone:
-                        profile.phone = booking.phone
+                    db.flush()
 
                 if brief_dict:
-                    profile.ai_industry = brief_dict.get("industry")
-                    profile.ai_company_size = brief_dict.get("estimated_size")
-                    profile.ai_company_overview = brief_dict.get("company_overview")
-                    profile.ai_hiring_needs = json.dumps(
-                        brief_dict.get("hiring_needs", [])
-                    )
-                    profile.ai_talking_points = json.dumps(
-                        brief_dict.get("talking_points", [])
-                    )
-                    profile.ai_red_flags = brief_dict.get("red_flags")
-                    profile.ai_brief_raw = brief_dict.get("ai_brief_raw", "")
-                    profile.ai_brief_updated_at = datetime.utcnow()
-
-                db.flush()
+                    for field in ["company_overview", "hiring_context", "culture_values",
+                                  "recent_news", "talking_points", "red_flags"]:
+                        if field in brief_dict:
+                            setattr(profile, field, brief_dict[field])
+                    profile.ai_brief_generated_at = datetime.utcnow()
                 booking.employer_profile_id = profile.id
-
             except Exception as e:
-                logger.error(f"Failed to upsert employer profile: {e}")
+                logger.error(f"Failed to generate AI brief: {e}")
 
         try:
+            brief_dict_safe = brief_dict if isinstance(brief_dict, dict) else {}
             notify_booking_confirmed(
                 employer_name=booking.employer_name,
                 email=booking.employer_email,
@@ -429,14 +398,13 @@ def update_booking_status(
                 time_slot=booking.time_slot,
                 meeting_url=booking.meeting_url,
                 notes=booking.notes or "",
-                ai_brief=brief_dict,
+                ai_brief=brief_dict_safe,
             )
         except Exception as e:
             logger.error(f"Failed to send booking confirmed notifications: {e}")
 
     # ── Cancelling ──────────────────────────────────────────────────────
     if payload.status == "cancelled" and booking.status != "cancelled":
-
         if booking.calendar_event_id:
             try:
                 delete_calendar_event(booking.calendar_event_id)
@@ -490,21 +458,12 @@ def create_candidate_booking(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Candidate self-books a call with the recruiter.
-    Stored as booking_type='inbound_candidate' — pending until admin confirms.
-    No company_name or website_url — candidates don't have those fields.
-    On confirm, the existing PATCH /{id}/status endpoint handles Zoom + calendar
-    + confirmation email via the standard notify_booking_confirmed() path,
-    which uses employer_name/employer_email (mapped from candidate fields here).
-    """
     booking = Booking(
         booking_type="inbound_candidate",
-        employer_id=current_user.id,  # reuse FK — candidate is the authenticated user
-        employer_name=current_user.full_name or current_user.email,
+        employer_id=current_user.id,
+        employer_name=payload.name,
         employer_email=current_user.email,
-        company_name=None,
-        website_url=None,  # ✓ no AI brief for candidates
+        company_name=payload.company_name,
         date=payload.date,
         time_slot=payload.time_slot,
         phone=payload.phone,
@@ -517,7 +476,7 @@ def create_candidate_booking(
 
     try:
         notify_candidate_booking_received(
-            candidate_name=current_user.full_name or current_user.email,
+            candidate_name=payload.name,
             email=current_user.email,
             phone=payload.phone or "",
             date=str(payload.date),
@@ -525,6 +484,118 @@ def create_candidate_booking(
             notes=payload.notes or "",
         )
     except Exception as e:
-        logger.error(f"Failed to send candidate booking received notifications: {e}")
+        logger.error(f"Failed to send candidate booking notifications: {e}")
 
     return booking
+
+
+# ---------------------------------------------------------------------------
+# Availability endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/availability/{date_str}")
+def get_availability(date_str: str, db: Session = Depends(get_db)):
+    from datetime import date
+    try:
+        query_date = date.fromisoformat(date_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD.")
+
+    taken = (
+        db.query(Booking.time_slot)
+        .filter(
+            Booking.date == query_date,
+            Booking.status.in_(["pending", "confirmed"]),
+        )
+        .all()
+    )
+    return {"date": date_str, "taken_slots": [row.time_slot for row in taken]}
+
+
+# ---------------------------------------------------------------------------
+# Employer endpoint — my bookings
+# ---------------------------------------------------------------------------
+
+
+@router.get("/my", response_model=List[BookingResponse])
+def get_my_bookings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return (
+        db.query(Booking)
+        .filter(Booking.employer_id == current_user.id)
+        .order_by(Booking.date.asc())
+        .all()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("", response_model=List[BookingResponse])
+def list_bookings(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    return db.query(Booking).order_by(Booking.date.asc()).all()
+
+
+@router.get("/{booking_id}", response_model=BookingResponse)
+def get_booking(booking_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    return booking
+
+
+# ---------------------------------------------------------------------------
+# Response page helper
+# ---------------------------------------------------------------------------
+
+
+def _response_page(
+    title: str,
+    message: str,
+    success: bool,
+    meeting_url: str = None,
+    show_site_link: bool = False,
+) -> str:
+    icon = "✅" if success else "👋"
+    accent = "#16a34a" if success else "#0a66c2"
+    btn = ""
+    if meeting_url:
+        btn = f"""
+        <a href="{meeting_url}"
+           style="display:inline-block;margin-top:24px;background:#0a66c2;color:#fff;
+                  text-decoration:none;font-weight:700;padding:14px 32px;border-radius:10px;
+                  font-size:15px;font-family:sans-serif;">
+            Join Zoom Call →
+        </a>"""
+    if show_site_link:
+        btn = """
+        <a href="https://ryzerecruiting.com"
+           style="display:inline-block;margin-top:24px;background:#f0f2f5;color:#0a66c2;
+                  text-decoration:none;font-weight:700;padding:14px 32px;border-radius:10px;
+                  font-size:15px;font-family:sans-serif;">
+            Visit RYZE Recruiting
+        </a>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>{title} — RYZE Recruiting</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+</head>
+<body style="margin:0;padding:0;background:#f0f2f5;font-family:'DM Sans',sans-serif;min-height:100vh;
+             display:flex;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:48px 40px;max-width:480px;width:100%;
+              text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+    <div style="font-size:3rem;margin-bottom:16px;">{icon}</div>
+    <div style="font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                color:{accent};margin-bottom:12px;">RYZE Recruiting</div>
+    <h1 style="font-size:1.6rem;color:#1a1a2e;margin:0 0 16px;font-weight:700;">{title}</h1>
+    <p style="font-size:1rem;color:#6b7280;line-height:1.6;margin:0;">{message}</p>
+    {btn}
+  </div>
+</body>
+</html>"""
