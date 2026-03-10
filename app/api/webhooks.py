@@ -67,15 +67,19 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
         logger.warning("Zoom webhook signature verification failed")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # ── meeting.ended — fetch summary from Zoom API ──────────────────────
+    # ── meeting.ended — fetch summary using UUID ─────────────────────────
     if event == "meeting.ended":
         object_data = payload.get("payload", {}).get("object", {})
         meeting_id = str(object_data.get("id", ""))
-        logger.info(f"meeting.ended received for meeting_id: {meeting_id}")
+        meeting_uuid = object_data.get("uuid", "")
 
-        if not meeting_id:
-            return {"status": "ignored", "reason": "no meeting_id"}
+        logger.info(f"meeting.ended — id: {meeting_id}, uuid: {meeting_uuid}")
 
+        if not meeting_uuid:
+            logger.warning("No UUID in meeting.ended payload")
+            return {"status": "ok", "reason": "no uuid"}
+
+        # Match booking by numeric meeting_id in the join URL
         booking = (
             db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
         )
@@ -84,17 +88,17 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
             logger.warning(f"No booking found for meeting_id: {meeting_id}")
             return {"status": "ok", "reason": "no matching booking"}
 
-        # Fetch summary from Zoom API
-        summary_text = get_meeting_summary(meeting_id)
+        # Fetch summary using UUID
+        summary_text = get_meeting_summary(meeting_uuid)
 
         if summary_text:
             booking.meeting_summary = summary_text
             db.commit()
-            logger.info(
-                f"Meeting summary saved for booking {booking.id} (meeting {meeting_id})"
-            )
+            logger.info(f"Meeting summary saved for booking {booking.id}")
         else:
-            logger.info(f"No summary available yet for meeting {meeting_id}")
+            logger.info(
+                f"No summary available for meeting {meeting_id} — AI Companion may not have been active"
+            )
 
         return {"status": "ok"}
 
@@ -120,7 +124,7 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
             booking.meeting_summary = summary_text
             db.commit()
             logger.info(
-                f"Summary updated via summary_updated event for booking {booking.id}"
+                f"Summary saved via summary_updated event for booking {booking.id}"
             )
 
         return {"status": "ok"}

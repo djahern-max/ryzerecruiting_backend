@@ -2,6 +2,7 @@
 import httpx
 import base64
 import logging
+from urllib.parse import quote
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -59,32 +60,41 @@ def create_meeting(topic: str, date: str, time_slot: str) -> dict:
     }
 
 
-def get_meeting_summary(meeting_id: str) -> str | None:
+def get_meeting_summary(meeting_uuid: str) -> str | None:
     """
     Fetch the AI Companion meeting summary for a completed meeting.
-    Returns the summary text or None if not available yet.
+    Requires the meeting UUID (not numeric ID).
+    UUIDs containing '//' must be double URL-encoded per Zoom docs.
     """
     try:
         token = get_access_token()
+
+        # Double-encode UUIDs that contain '/' or '//'
+        encoded_uuid = quote(quote(meeting_uuid, safe=""), safe="")
+
         response = httpx.get(
-            f"{ZOOM_API_BASE}/meetings/{meeting_id}/meeting_summary",
+            f"{ZOOM_API_BASE}/meetings/{encoded_uuid}/meeting_summary",
             headers={"Authorization": f"Bearer {token}"},
         )
 
+        logger.info(
+            f"Zoom summary API status {response.status_code} for UUID {meeting_uuid}"
+        )
+
         if response.status_code == 404:
-            logger.info(f"No summary available yet for meeting {meeting_id}")
+            logger.info(f"No summary available yet for meeting {meeting_uuid}")
             return None
 
         if response.status_code != 200:
             logger.warning(
-                f"Zoom summary API returned {response.status_code} for meeting {meeting_id}: {response.text}"
+                f"Zoom summary API returned {response.status_code} for {meeting_uuid}: {response.text}"
             )
             return None
 
         data = response.json()
-        logger.info(f"Zoom summary API response for {meeting_id}: {data}")
+        logger.info(f"Zoom summary API response: {data}")
 
-        # Try the most common response shapes Zoom uses
+        # Try all known response shapes
         summary_text = (
             data.get("summary_overview")
             or data.get("summary")
@@ -92,7 +102,6 @@ def get_meeting_summary(meeting_id: str) -> str | None:
             or ""
         )
 
-        # Sometimes it's nested under a "summary" object
         if not summary_text and isinstance(data.get("summary"), dict):
             summary_text = data["summary"].get("summary_overview") or data[
                 "summary"
@@ -101,7 +110,7 @@ def get_meeting_summary(meeting_id: str) -> str | None:
         return summary_text or None
 
     except Exception as e:
-        logger.error(f"Failed to fetch Zoom meeting summary for {meeting_id}: {e}")
+        logger.error(f"Failed to fetch Zoom meeting summary for {meeting_uuid}: {e}")
         return None
 
 
