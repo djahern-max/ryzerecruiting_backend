@@ -59,6 +59,52 @@ def create_meeting(topic: str, date: str, time_slot: str) -> dict:
     }
 
 
+def get_meeting_summary(meeting_id: str) -> str | None:
+    """
+    Fetch the AI Companion meeting summary for a completed meeting.
+    Returns the summary text or None if not available yet.
+    """
+    try:
+        token = get_access_token()
+        response = httpx.get(
+            f"{ZOOM_API_BASE}/meetings/{meeting_id}/meeting_summary",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        if response.status_code == 404:
+            logger.info(f"No summary available yet for meeting {meeting_id}")
+            return None
+
+        if response.status_code != 200:
+            logger.warning(
+                f"Zoom summary API returned {response.status_code} for meeting {meeting_id}: {response.text}"
+            )
+            return None
+
+        data = response.json()
+        logger.info(f"Zoom summary API response for {meeting_id}: {data}")
+
+        # Try the most common response shapes Zoom uses
+        summary_text = (
+            data.get("summary_overview")
+            or data.get("summary")
+            or data.get("meeting_summary")
+            or ""
+        )
+
+        # Sometimes it's nested under a "summary" object
+        if not summary_text and isinstance(data.get("summary"), dict):
+            summary_text = data["summary"].get("summary_overview") or data[
+                "summary"
+            ].get("summary", "")
+
+        return summary_text or None
+
+    except Exception as e:
+        logger.error(f"Failed to fetch Zoom meeting summary for {meeting_id}: {e}")
+        return None
+
+
 def convert_time(time_slot: str) -> str:
     """Convert '9:00 AM' to '09:00:00' for Zoom API."""
     from datetime import datetime
