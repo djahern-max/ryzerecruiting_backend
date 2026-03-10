@@ -73,7 +73,7 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     # ── meeting.summary_completed ────────────────────────────────────────
-    if event == "meeting.summary_completed":
+    if event == "meeting.summary_updated":
         meeting_payload = payload.get("payload", {})
         object_data = meeting_payload.get("object", {})
         meeting_id = str(object_data.get("id", ""))
