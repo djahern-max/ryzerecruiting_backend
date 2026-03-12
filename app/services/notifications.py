@@ -2,57 +2,41 @@
 import logging
 from app.core.config import settings
 from app.services.email import (
-    send_employer_confirmation,
-    send_admin_notification,
+    send_booking_received_email,
     send_meeting_confirmed,
     send_cancellation_email,
     send_reminder_email,
-    send_recruiter_invite,
-    send_candidate_booking_received_admin,
-    send_candidate_booking_confirmation,
     send_recruiter_invite_with_response,
     send_invite_admin_copy,
     send_invite_accepted_confirmation,
-    send_invite_declined_admin,
+    send_invite_accepted_admin_notify,
+    send_invite_declined_admin_notify,
+    send_candidate_booking_confirmation,
+    send_candidate_booking_admin_notify,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def _send_sms(to_phone: str, body: str) -> None:
-    """Send an SMS via Twilio. Skips silently if phone is missing or Twilio is not configured."""
-    if not to_phone or not to_phone.strip():
-        logger.info("SMS skipped — no phone number provided.")
+    """Send SMS via Twilio. Silently skips if phone is blank or Twilio unavailable."""
+    if not to_phone:
         return
-
-    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
-        logger.info("SMS skipped — Twilio credentials not configured.")
-        return
-
-    digits = "".join(filter(str.isdigit, to_phone))
-    if len(digits) == 10:
-        digits = "1" + digits
-    if not digits.startswith("1") or len(digits) != 11:
-        logger.warning(f"SMS skipped — invalid phone format: {to_phone}")
-        return
-    normalized = "+" + digits
-
     try:
         from twilio.rest import Client
 
         client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-        message = client.messages.create(
+        client.messages.create(
             body=body,
             from_=settings.TWILIO_FROM_NUMBER,
-            to=normalized,
+            to=to_phone,
         )
-        logger.info(f"SMS sent to {normalized} — SID: {message.sid}")
     except Exception as e:
-        logger.error(f"SMS failed to {normalized}: {e}")
+        logger.error(f"SMS failed to {to_phone}: {e}")
 
 
 # ---------------------------------------------------------------------------
-# Inbound booking notifications (existing flows — unchanged)
+# Inbound employer — booking received (pending, awaiting admin confirmation)
 # ---------------------------------------------------------------------------
 
 
@@ -61,24 +45,13 @@ def notify_booking_received(
     email: str,
     phone: str,
     company_name: str,
+    website_url: str,
     date: str,
     time_slot: str,
-    website_url: str = "",
     notes: str = "",
 ) -> None:
     try:
-        send_employer_confirmation(
-            employer_name=employer_name,
-            employer_email=email,
-            company_name=company_name,
-            date=date,
-            time_slot=time_slot,
-        )
-    except Exception as e:
-        logger.error(f"notify_booking_received — email failed: {e}")
-
-    try:
-        send_admin_notification(
+        send_booking_received_email(
             employer_name=employer_name,
             employer_email=email,
             company_name=company_name,
@@ -89,15 +62,21 @@ def notify_booking_received(
             notes=notes,
         )
     except Exception as e:
-        logger.error(f"notify_booking_received — admin email failed: {e}")
+        logger.error(f"notify_booking_received — email failed: {e}")
 
     _send_sms(
         to_phone=phone,
         body=(
-            f"Hi {employer_name}, RYZE Recruiting received your call request "
-            f"for {date} at {time_slot}. We will confirm shortly."
+            f"Hi {employer_name}, RYZE Recruiting received your call request for "
+            f"{date} at {time_slot} EST. "
+            f"We will confirm shortly. Reply STOP to opt out."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Inbound employer — booking confirmed
+# ---------------------------------------------------------------------------
 
 
 def notify_booking_confirmed(
@@ -130,9 +109,14 @@ def notify_booking_confirmed(
         to_phone=phone,
         body=(
             f"Your call with RYZE Recruiting is confirmed for {date} at {time_slot} EST. "
-            f"Your Zoom link has been sent to your email."
+            f"Your Zoom link has been sent to your email. Reply STOP to opt out."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Inbound employer — booking cancelled
+# ---------------------------------------------------------------------------
 
 
 def notify_booking_cancelled(
@@ -161,6 +145,11 @@ def notify_booking_cancelled(
             f"has been cancelled. Visit ryzerecruiting.com to rebook. Reply STOP to opt out."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — 15-minute reminder
+# ---------------------------------------------------------------------------
 
 
 def notify_reminder(
@@ -203,7 +192,7 @@ def notify_reminder(
 
 
 # ---------------------------------------------------------------------------
-# Outbound invite notification (new — recruiter-initiated)
+# Outbound invite — sent to contact (email + admin copy + SMS)
 # ---------------------------------------------------------------------------
 
 
@@ -257,6 +246,11 @@ def notify_recruiter_invite_sent(
     )
 
 
+# ---------------------------------------------------------------------------
+# Outbound invite — accepted by contact (confirmation to contact)
+# ---------------------------------------------------------------------------
+
+
 def notify_invite_accepted(
     contact_name: str,
     contact_email: str,
@@ -292,6 +286,41 @@ def notify_invite_accepted(
     )
 
 
+# ---------------------------------------------------------------------------
+# Outbound invite — accepted: notify RECRUITER (new — fixes missing email bug)
+# ---------------------------------------------------------------------------
+
+
+def notify_invite_accepted_admin(
+    contact_name: str,
+    contact_type: str,
+    company_name: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+) -> None:
+    """
+    Fires when an outbound invite is accepted by the contact.
+    Sends a confirmation email to ADMIN_EMAIL so the recruiter knows the call is locked in.
+    """
+    try:
+        send_invite_accepted_admin_notify(
+            contact_name=contact_name,
+            contact_type=contact_type,
+            company_name=company_name,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+        )
+    except Exception as e:
+        logger.error(f"notify_invite_accepted_admin — admin email failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Outbound invite — declined by contact
+# ---------------------------------------------------------------------------
+
+
 def notify_invite_declined(
     contact_name: str,
     contact_email: str,
@@ -300,18 +329,23 @@ def notify_invite_declined(
     date: str,
     time_slot: str,
 ) -> None:
+    contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
+
     try:
-        send_invite_declined_admin(
+        send_invite_declined_admin_notify(
             contact_name=contact_name,
-            contact_type=(
-                "employer" if invite_type == "outbound_employer" else "candidate"
-            ),
+            contact_type=contact_type,
             company_name=company_name,
             date=date,
             time_slot=time_slot,
         )
     except Exception as e:
         logger.error(f"notify_invite_declined — admin email failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Candidate — self-booking received
+# ---------------------------------------------------------------------------
 
 
 def notify_candidate_booking_received(
@@ -323,6 +357,18 @@ def notify_candidate_booking_received(
     notes: str = "",
 ) -> None:
     try:
+        send_candidate_booking_admin_notify(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            phone=phone,
+            date=date,
+            time_slot=time_slot,
+            notes=notes,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
+
+    try:
         send_candidate_booking_confirmation(
             candidate_name=candidate_name,
             candidate_email=email,
@@ -330,26 +376,12 @@ def notify_candidate_booking_received(
             time_slot=time_slot,
         )
     except Exception as e:
-        logger.error(
-            f"notify_candidate_booking_received — confirmation email failed: {e}"
-        )
-
-    try:
-        send_candidate_booking_received_admin(
-            candidate_name=candidate_name,
-            candidate_email=email,
-            date=date,
-            time_slot=time_slot,
-            phone=phone,
-            notes=notes,
-        )
-    except Exception as e:
-        logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
+        logger.error(f"notify_candidate_booking_received — candidate email failed: {e}")
 
     _send_sms(
         to_phone=phone,
         body=(
-            f"Hi {candidate_name}, RYZE Recruiting received your call request for {date} at {time_slot} EST. "
-            f"We'll confirm shortly. Reply STOP to opt out."
+            f"Hi {candidate_name}, RYZE Recruiting received your call request for "
+            f"{date} at {time_slot} EST. We'll be in touch shortly. Reply STOP to opt out."
         ),
     )

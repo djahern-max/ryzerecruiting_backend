@@ -4,7 +4,7 @@ import json
 import logging
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -12,7 +12,7 @@ from typing import List
 from app.services.ai_brief import generate_pre_call_brief
 from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.api.auth import get_current_user
 from app.models.booking import Booking
 from app.models.employer_profile import EmployerProfile
@@ -32,6 +32,7 @@ from app.services.notifications import (
     notify_recruiter_invite_sent,
     notify_candidate_booking_received,
     notify_invite_accepted,
+    notify_invite_accepted_admin,
     notify_invite_declined,
 )
 from app.services.zoom import create_meeting
@@ -53,6 +54,62 @@ def require_admin(current_user: User = Depends(get_current_user)):
             detail="Admin access required.",
         )
     return current_user
+
+
+# ---------------------------------------------------------------------------
+# Background task — AI brief generation after accept
+# Runs after the response page is already returned to the employer.
+# ---------------------------------------------------------------------------
+
+
+def _generate_brief_background(booking_id: int) -> None:
+    """
+    Generates AI brief and upserts employer profile for an accepted outbound invite.
+    Runs as a FastAPI BackgroundTask so the employer sees the confirmation page
+    immediately without waiting 10-30s for the Claude API.
+    """
+    db: Session = SessionLocal()
+    try:
+        booking = db.query(Booking).filter(Booking.id == booking_id).first()
+        if not booking or not booking.website_url:
+            return
+
+        logger.info(
+            f"Background AI brief starting for booking #{booking_id} — {booking.website_url}"
+        )
+        brief_dict = generate_pre_call_brief(booking.website_url)
+
+        profile = (
+            db.query(EmployerProfile)
+            .filter(EmployerProfile.website_url == booking.website_url)
+            .first()
+        )
+        if not profile:
+            profile = EmployerProfile(
+                website_url=booking.website_url,
+                company_name=booking.company_name or "",
+            )
+            db.add(profile)
+            db.flush()
+
+        if brief_dict:
+            profile.ai_company_overview = brief_dict.get("company_overview")
+            profile.ai_industry = brief_dict.get("industry")
+            profile.ai_company_size = brief_dict.get("estimated_size")
+            profile.ai_hiring_needs = json.dumps(brief_dict.get("hiring_needs", []))
+            profile.ai_talking_points = json.dumps(brief_dict.get("talking_points", []))
+            profile.ai_red_flags = brief_dict.get("red_flags")
+            profile.ai_brief_updated_at = datetime.utcnow()
+
+        booking.employer_profile_id = profile.id
+        db.commit()
+        logger.info(f"Background AI brief complete for booking #{booking_id}")
+
+    except Exception as e:
+        logger.error(f"Background AI brief failed for booking #{booking_id}: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +158,7 @@ def create_booking(
 
 
 # ---------------------------------------------------------------------------
-# Recruiter endpoint — send outbound meeting invite (NOW PENDING + TOKEN)
+# Recruiter endpoint — send outbound meeting invite (PENDING + TOKEN)
 # ---------------------------------------------------------------------------
 
 
@@ -115,16 +172,8 @@ def send_recruiter_invite(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """
-    Recruiter sends an outbound meeting invite to an employer contact or candidate.
-    Booking is created as PENDING — no Zoom or Calendar until the contact accepts.
-    A response_token is generated and embedded in Accept/Decline links in the email.
-    """
-
-    # 1. Generate a secure token for the Accept/Decline links
     token = secrets.token_urlsafe(32)
 
-    # 2. Persist booking as PENDING (no Zoom yet)
     booking = Booking(
         booking_type=payload.invite_type,
         employer_id=None,
@@ -143,7 +192,6 @@ def send_recruiter_invite(
     db.commit()
     db.refresh(booking)
 
-    # 3. Send invite email with Accept/Decline links (no Zoom link yet)
     try:
         notify_recruiter_invite_sent(
             contact_name=payload.contact_name,
@@ -172,16 +220,16 @@ def send_recruiter_invite(
 def respond_to_invite(
     token: str = Query(...),
     action: str = Query(...),  # "accept" | "decline"
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
 ):
     """
     Token-based accept/decline endpoint — no login required.
-    Linked from the invite email buttons.
-    On accept: creates Zoom + Calendar, flips to confirmed, sends confirmation.
+    On accept: creates Zoom + Calendar immediately, returns confirmation page,
+    then generates AI brief in the background (non-blocking).
     On decline: flips to cancelled, notifies admin.
     """
 
-    # Validate token
     booking = db.query(Booking).filter(Booking.response_token == token).first()
 
     if not booking:
@@ -204,7 +252,7 @@ def respond_to_invite(
 
     # ── ACCEPT ──────────────────────────────────────────────────────────
     if action == "accept":
-        # Create Zoom meeting
+        # 1. Create Zoom meeting
         try:
             zoom = create_meeting(
                 topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
@@ -221,7 +269,7 @@ def respond_to_invite(
                 success=False,
             )
 
-        # Create Google Calendar event
+        # 2. Create Google Calendar event
         try:
             event_id = create_calendar_event(
                 company_name=booking.company_name or "",
@@ -236,45 +284,17 @@ def respond_to_invite(
         except Exception as e:
             logger.error(f"Failed to create Calendar event on accept: {e}")
 
-        # Generate AI brief for employer invites
-        if booking.booking_type == "outbound_employer" and booking.website_url:
-            try:
-                brief_dict = generate_pre_call_brief(booking.website_url)
-                # Upsert employer profile
-                profile = (
-                    db.query(EmployerProfile)
-                    .filter(EmployerProfile.website_url == booking.website_url)
-                    .first()
-                )
-                if not profile:
-                    profile = EmployerProfile(
-                        website_url=booking.website_url,
-                        company_name=booking.company_name or "",
-                    )
-                    db.add(profile)
-                    db.flush()
-                if brief_dict:
-                    profile.ai_company_overview = brief_dict.get("company_overview")
-                    profile.ai_industry = brief_dict.get("industry")
-                    profile.ai_company_size = brief_dict.get("estimated_size")
-                    profile.ai_hiring_needs = json.dumps(
-                        brief_dict.get("hiring_needs", [])
-                    )
-                    profile.ai_talking_points = json.dumps(
-                        brief_dict.get("talking_points", [])
-                    )
-                    profile.ai_red_flags = brief_dict.get("red_flags")
-                    profile.ai_brief_updated_at = datetime.utcnow()
-                booking.employer_profile_id = profile.id
-                db.flush()  # catch any DB errors inside the try
-            except Exception as e:
-                logger.error(f"Failed to generate AI brief on accept: {e}")
-
+        # 3. Commit confirmed status — do this BEFORE kicking off background task
         booking.status = "confirmed"
         booking.response_token = None
         db.commit()
 
-        # Send confirmation with Zoom link
+        # 4. Queue AI brief generation in background (non-blocking)
+        if booking.booking_type == "outbound_employer" and booking.website_url:
+            background_tasks.add_task(_generate_brief_background, booking.id)
+            logger.info(f"AI brief queued in background for booking #{booking.id}")
+
+        # 5. Send confirmation email + SMS to contact
         try:
             notify_invite_accepted(
                 contact_name=booking.employer_name,
@@ -288,6 +308,23 @@ def respond_to_invite(
             )
         except Exception as e:
             logger.error(f"Failed to send acceptance notifications: {e}")
+
+        # 6. Notify recruiter that invite was accepted
+        try:
+            notify_invite_accepted_admin(
+                contact_name=booking.employer_name,
+                contact_type=(
+                    "employer"
+                    if booking.booking_type == "outbound_employer"
+                    else "candidate"
+                ),
+                company_name=booking.company_name or "",
+                date=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send admin acceptance notification: {e}")
 
         return _response_page(
             "You're Confirmed! 🎉",
@@ -331,6 +368,7 @@ def respond_to_invite(
 def update_booking_status(
     booking_id: int,
     payload: BookingStatusUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -345,7 +383,6 @@ def update_booking_status(
 
     # ── Confirming ──────────────────────────────────────────────────────
     if payload.status == "confirmed" and booking.status != "confirmed":
-        # Create Zoom meeting
         try:
             zoom = create_meeting(
                 topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
@@ -355,11 +392,7 @@ def update_booking_status(
             booking.meeting_url = zoom["join_url"]
         except Exception as e:
             logger.error(f"Failed to create Zoom meeting: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"Could not create Zoom meeting: {str(e)}"
-            )
 
-        # Create Google Calendar event
         try:
             event_id = create_calendar_event(
                 company_name=booking.company_name or "",
@@ -367,52 +400,39 @@ def update_booking_status(
                 employer_email=booking.employer_email,
                 date_str=str(booking.date),
                 time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url,
+                meeting_url=booking.meeting_url or "",
             )
             if event_id:
                 booking.calendar_event_id = event_id
         except Exception as e:
-            logger.error(f"Failed to create Calendar event: {e}")
+            logger.error(f"Failed to create Google Calendar event: {e}")
 
-        # AI brief (employer inbound only)
-        brief_dict = {}
+        # AI brief — employer bookings only, run in background
         if not is_candidate_booking and booking.website_url:
+            background_tasks.add_task(_generate_brief_background, booking.id)
+
+        # Load brief for email (may be None if just queued — that's fine)
+        brief_dict_safe = {}
+        if not is_candidate_booking and booking.employer_profile_id:
             try:
-                brief_dict = generate_pre_call_brief(booking.website_url)
                 profile = (
                     db.query(EmployerProfile)
                     .filter(EmployerProfile.id == booking.employer_profile_id)
                     .first()
-                    if booking.employer_profile_id
-                    else None
                 )
-
-                if not profile:
-                    profile = EmployerProfile(
-                        website_url=booking.website_url,
-                        company_name=booking.company_name or "",
-                    )
-                    db.add(profile)
-                    db.flush()
-
-                if brief_dict:
-                    profile.ai_company_overview = brief_dict.get("company_overview")
-                    profile.ai_industry = brief_dict.get("industry")
-                    profile.ai_company_size = brief_dict.get("estimated_size")
-                    profile.ai_hiring_needs = json.dumps(
-                        brief_dict.get("hiring_needs", [])
-                    )
-                    profile.ai_talking_points = json.dumps(
-                        brief_dict.get("talking_points", [])
-                    )
-                    profile.ai_red_flags = brief_dict.get("red_flags")
-                    profile.ai_brief_updated_at = datetime.utcnow()
-                booking.employer_profile_id = profile.id
+                if profile and profile.ai_company_overview:
+                    brief_dict_safe = {
+                        "company_overview": profile.ai_company_overview,
+                        "industry": profile.ai_industry,
+                        "estimated_size": profile.ai_company_size,
+                        "hiring_needs": json.loads(profile.ai_hiring_needs or "[]"),
+                        "talking_points": json.loads(profile.ai_talking_points or "[]"),
+                        "red_flags": profile.ai_red_flags,
+                    }
             except Exception as e:
-                logger.error(f"Failed to generate AI brief: {e}")
+                logger.error(f"Failed to load brief for confirmation email: {e}")
 
         try:
-            brief_dict_safe = brief_dict if isinstance(brief_dict, dict) else {}
             notify_booking_confirmed(
                 employer_name=booking.employer_name,
                 email=booking.employer_email,
@@ -420,7 +440,7 @@ def update_booking_status(
                 company_name=booking.company_name or "",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url,
+                meeting_url=booking.meeting_url or "",
                 notes=booking.notes or "",
                 ai_brief=brief_dict_safe,
             )
