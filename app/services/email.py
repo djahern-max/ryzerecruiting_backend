@@ -1223,3 +1223,40 @@ def send_invite_declined_admin(
         }
     )
     logger.info(f"Admin notified of declined invite from {contact_name}")
+
+
+# ---------------------------------------------------------------------------
+# Aliases — bridge notifications.py import names to actual function names
+# ---------------------------------------------------------------------------
+
+def send_booking_received_email(
+    employer_name: str,
+    employer_email: str,
+    company_name: str,
+    website_url: str,
+    date: str,
+    time_slot: str,
+    phone: str = "",
+    notes: str = "",
+) -> None:
+    send_employer_confirmation(
+        employer_name=employer_name,
+        employer_email=employer_email,
+        company_name=company_name,
+        date=date,
+        time_slot=time_slot,
+    )
+    send_admin_notification(
+        employer_name=employer_name,
+        employer_email=employer_email,
+        company_name=company_name,
+        website_url=website_url,
+        date=date,
+        time_slot=time_slot,
+        phone=phone,
+        notes=notes,
+    )
+
+
+send_invite_declined_admin_notify = send_invite_declined_admin
+send_candidate_booking_admin_notify = send_candidate_booking_received_admin
