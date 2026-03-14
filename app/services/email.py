@@ -450,7 +450,7 @@ def send_cancellation_email(
             </div>
 
             <p style="color: #334155; font-size: 15px;">
-                Visit <a href="{settings.FRONTEND_URL}" style="color: #0a66c2;">ryzerecruiting.com</a>
+                Visit <a href="{settings.FRONTEND_URL}" style="color: #0a66c2;">ryze.ai</a>
                 to schedule a new time.
             </p>
 
