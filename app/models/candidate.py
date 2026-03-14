@@ -1,6 +1,6 @@
 # app/models/candidate.py
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
 from app.core.database import Base
 
 
@@ -24,10 +24,18 @@ class Candidate(Base):
     current_company = Column(String, nullable=True)
     location = Column(String, nullable=True)
 
-    # AI generated fields
+    # AI generated fields — core
     ai_summary = Column(Text, nullable=True)
+    ai_career_level = Column(String, nullable=True)  # junior | mid | senior | executive
     ai_outreach_message = Column(Text, nullable=True)
     ai_parsed_at = Column(DateTime, nullable=True)
+
+    # AI generated fields — structured profile
+    ai_experience = Column(Text, nullable=True)  # work history narrative
+    ai_education = Column(Text, nullable=True)  # degrees, schools, years
+    ai_certifications = Column(Text, nullable=True)  # CPA, CFA, CMA, etc.
+    ai_skills = Column(JSON, nullable=True)  # list of skills
+    ai_years_experience = Column(Integer, nullable=True)  # total years
 
     # Recruiter notes
     notes = Column(Text, nullable=True)

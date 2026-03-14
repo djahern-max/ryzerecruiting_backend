@@ -1,6 +1,6 @@
 # app/schemas/candidate.py
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -13,6 +13,13 @@ class CandidateCreate(BaseModel):
     current_title: Optional[str] = None
     current_company: Optional[str] = None
     location: Optional[str] = None
+    ai_summary: Optional[str] = None
+    ai_career_level: Optional[str] = None
+    ai_experience: Optional[str] = None
+    ai_education: Optional[str] = None
+    ai_certifications: Optional[str] = None
+    ai_skills: Optional[List[str]] = None
+    ai_years_experience: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -26,6 +33,12 @@ class CandidateUpdate(BaseModel):
     current_company: Optional[str] = None
     location: Optional[str] = None
     ai_summary: Optional[str] = None
+    ai_career_level: Optional[str] = None
+    ai_experience: Optional[str] = None
+    ai_education: Optional[str] = None
+    ai_certifications: Optional[str] = None
+    ai_skills: Optional[List[str]] = None
+    ai_years_experience: Optional[int] = None
     ai_outreach_message: Optional[str] = None
     notes: Optional[str] = None
 
@@ -42,6 +55,12 @@ class CandidateResponse(BaseModel):
     current_company: Optional[str] = None
     location: Optional[str] = None
     ai_summary: Optional[str] = None
+    ai_career_level: Optional[str] = None
+    ai_experience: Optional[str] = None
+    ai_education: Optional[str] = None
+    ai_certifications: Optional[str] = None
+    ai_skills: Optional[List[str]] = None
+    ai_years_experience: Optional[int] = None
     ai_outreach_message: Optional[str] = None
     ai_parsed_at: Optional[datetime] = None
     notes: Optional[str] = None
@@ -65,3 +84,9 @@ class CandidateParseResponse(BaseModel):
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     ai_summary: Optional[str] = None
+    ai_career_level: Optional[str] = None
+    ai_experience: Optional[str] = None
+    ai_education: Optional[str] = None
+    ai_certifications: Optional[str] = None
+    ai_skills: Optional[List[str]] = None
+    ai_years_experience: Optional[int] = None
