@@ -12,6 +12,7 @@ from app.services.email import (
     send_invite_accepted_admin_notify,
     send_invite_declined_admin_notify,
     send_candidate_booking_confirmation,
+    send_candidate_confirmed_email,
     send_candidate_booking_admin_notify,
 )
 
@@ -383,5 +384,39 @@ def notify_candidate_booking_received(
         body=(
             f"Hi {candidate_name}, RYZE Recruiting received your call request for "
             f"{date} at {time_slot} EST. We'll be in touch shortly. Reply STOP to opt out."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Candidate — confirmed by admin (Zoom link sent to candidate)
+# ---------------------------------------------------------------------------
+
+
+def notify_candidate_confirmed(
+    candidate_name: str,
+    email: str,
+    phone: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str = "",
+) -> None:
+    try:
+        send_candidate_confirmed_email(
+            candidate_name=candidate_name,
+            candidate_email=email,
+            date=date,
+            time_slot=time_slot,
+            meeting_url=meeting_url,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_confirmed — email failed: {e}")
+
+    _send_sms(
+        to_phone=phone,
+        body=(
+            f"Hi {candidate_name}, your call with RYZE Recruiting is confirmed for "
+            f"{date} at {time_slot} EST. "
+            f"Zoom link is in your email. Reply STOP to opt out."
         ),
     )

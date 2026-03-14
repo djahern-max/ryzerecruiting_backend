@@ -29,8 +29,9 @@ from app.services.notifications import (
     notify_booking_received,
     notify_booking_confirmed,
     notify_booking_cancelled,
-    notify_recruiter_invite_sent,
     notify_candidate_booking_received,
+    notify_candidate_confirmed,
+    notify_recruiter_invite_sent,
     notify_invite_accepted,
     notify_invite_accepted_admin,
     notify_invite_declined,
@@ -411,7 +412,7 @@ def update_booking_status(
         if not is_candidate_booking and booking.website_url:
             background_tasks.add_task(_generate_brief_background, booking.id)
 
-        # Load brief for email (may be None if just queued — that's fine)
+        # Load existing brief for confirmation email (may be empty — that's fine)
         brief_dict_safe = {}
         if not is_candidate_booking and booking.employer_profile_id:
             try:
@@ -432,20 +433,34 @@ def update_booking_status(
             except Exception as e:
                 logger.error(f"Failed to load brief for confirmation email: {e}")
 
-        try:
-            notify_booking_confirmed(
-                employer_name=booking.employer_name,
-                email=booking.employer_email,
-                phone=booking.phone or "",
-                company_name=booking.company_name or "",
-                date=str(booking.date),
-                time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url or "",
-                notes=booking.notes or "",
-                ai_brief=brief_dict_safe,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send booking confirmed notifications: {e}")
+        # Send confirmation notifications
+        if is_candidate_booking:
+            try:
+                notify_candidate_confirmed(
+                    candidate_name=booking.employer_name,
+                    email=booking.employer_email,
+                    phone=booking.phone or "",
+                    date=str(booking.date),
+                    time_slot=booking.time_slot,
+                    meeting_url=booking.meeting_url or "",
+                )
+            except Exception as e:
+                logger.error(f"Failed to send candidate confirmed notifications: {e}")
+        else:
+            try:
+                notify_booking_confirmed(
+                    employer_name=booking.employer_name,
+                    email=booking.employer_email,
+                    phone=booking.phone or "",
+                    company_name=booking.company_name or "",
+                    date=str(booking.date),
+                    time_slot=booking.time_slot,
+                    meeting_url=booking.meeting_url or "",
+                    notes=booking.notes or "",
+                    ai_brief=brief_dict_safe,
+                )
+            except Exception as e:
+                logger.error(f"Failed to send employer confirmed notifications: {e}")
 
     # ── Cancelling ──────────────────────────────────────────────────────
     if payload.status == "cancelled" and booking.status != "cancelled":

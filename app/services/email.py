@@ -1229,6 +1229,7 @@ def send_invite_declined_admin(
 # Aliases — bridge notifications.py import names to actual function names
 # ---------------------------------------------------------------------------
 
+
 def send_booking_received_email(
     employer_name: str,
     employer_email: str,
@@ -1260,3 +1261,55 @@ def send_booking_received_email(
 
 send_invite_declined_admin_notify = send_invite_declined_admin
 send_candidate_booking_admin_notify = send_candidate_booking_received_admin
+
+
+def send_candidate_confirmed_email(
+    candidate_name: str,
+    candidate_email: str,
+    date: str,
+    time_slot: str,
+    meeting_url: str,
+) -> None:
+    """Confirmation email sent to candidate when admin confirms their booking."""
+    zoom_button = (
+        f'<a href="{meeting_url}" style="display:inline-block;background:#0a66c2;'
+        f"color:white;text-decoration:none;font-weight:700;padding:12px 24px;"
+        f'border-radius:8px;font-size:14px;">Join Zoom Call →</a>'
+        if meeting_url
+        else ""
+    )
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE Recruiting <{settings.FROM_EMAIL}>",
+            "to": [candidate_email],
+            "subject": f"You're confirmed — Call with RYZE Recruiting on {date} at {time_slot}",
+            "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE Recruiting</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
+            <h2 style="color:#111827;margin-bottom:4px;">You're confirmed! ✅</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">Your screening call with Dane at RYZE Recruiting is all set.</p>
+            <p style="color:#334155;font-size:15px;">Hi {candidate_name},</p>
+            <p style="color:#334155;font-size:15px;">Looking forward to connecting and learning more about your background.</p>
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Date</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Time</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{time_slot} EST</td>
+                    </tr>
+                </table>
+            </div>
+            {zoom_button}
+            <p style="color:#334155;font-size:15px;margin-top:24px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE Recruiting</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE Recruiting. All rights reserved.</p>
+        </div>
+        """,
+        }
+    )
+    logger.info(f"Candidate confirmed email sent to {candidate_email}")
