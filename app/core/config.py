@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     # App
     SECRET_KEY: str
-    APP_NAME: str = "RYZE Recruiting API"
+    APP_NAME: str = "RYZE.ai API"
     DEBUG: bool = False
 
     # OAuth - Google

@@ -18,7 +18,7 @@ from app.api.employer_profiles import router as employer_profiles_router
 from app.api.waitlist import router as waitlist_router
 from app.api.webhooks import router as webhooks_router
 
-app = FastAPI(title="RYZE Recruiting API")
+app = FastAPI(title="RYZE.ai API")
 
 # Create database tables on startup
 Base.metadata.create_all(bind=engine)

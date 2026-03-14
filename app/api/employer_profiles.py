@@ -115,7 +115,7 @@ def list_employer_profiles(
     _: User = Depends(require_admin),
 ):
     """
-    List all employer profiles for RYZE Recruiting (tenant_id IS NULL).
+    List all employer profiles for RYZE.ai (tenant_id IS NULL).
     Sorted newest first. Admin only.
     """
     profiles = (

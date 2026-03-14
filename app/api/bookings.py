@@ -256,7 +256,7 @@ def respond_to_invite(
         # 1. Create Zoom meeting
         try:
             zoom = create_meeting(
-                topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
+                topic=f"RYZE.ai — {booking.company_name or booking.employer_name}",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
             )
@@ -266,7 +266,7 @@ def respond_to_invite(
             logger.error(f"Failed to create Zoom meeting on accept: {e}")
             return _response_page(
                 "Something Went Wrong",
-                "We couldn't set up the Zoom meeting. Please contact RYZE Recruiting directly.",
+                "We couldn't set up the Zoom meeting. Please contact RYZE.ai directly.",
                 success=False,
             )
 
@@ -329,7 +329,7 @@ def respond_to_invite(
 
         return _response_page(
             "You're Confirmed! 🎉",
-            f"Your call with Dane at RYZE Recruiting is set for {booking.date.strftime('%B %d, %Y')} at {booking.time_slot} EST. Check your email for the Zoom link.",
+            f"Your call with Dane at RYZE.ai is set for {booking.date.strftime('%B %d, %Y')} at {booking.time_slot} EST. Check your email for the Zoom link.",
             success=True,
             meeting_url=booking.meeting_url,
         )
@@ -354,7 +354,7 @@ def respond_to_invite(
 
         return _response_page(
             "Got it — maybe next time.",
-            "You've declined this meeting request. No worries — if you change your mind, reach out to RYZE Recruiting directly.",
+            "You've declined this meeting request. No worries — if you change your mind, reach out to RYZE.ai directly.",
             success=False,
             show_site_link=True,
         )
@@ -386,7 +386,7 @@ def update_booking_status(
     if payload.status == "confirmed" and booking.status != "confirmed":
         try:
             zoom = create_meeting(
-                topic=f"RYZE Recruiting — {booking.company_name or booking.employer_name}",
+                topic=f"RYZE.ai — {booking.company_name or booking.employer_name}",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
             )
@@ -641,7 +641,7 @@ def _response_page(
            style="display:inline-block;margin-top:24px;background:#f0f2f5;color:#0a66c2;
                   text-decoration:none;font-weight:700;padding:14px 32px;border-radius:10px;
                   font-size:15px;font-family:sans-serif;">
-            Visit RYZE Recruiting
+            Visit RYZE.ai
         </a>"""
 
     return f"""<!DOCTYPE html>
@@ -649,7 +649,7 @@ def _response_page(
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>{title} — RYZE Recruiting</title>
+<title>{title} — RYZE.ai</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
 </head>
 <body style="margin:0;padding:0;background:#f0f2f5;font-family:'DM Sans',sans-serif;min-height:100vh;
@@ -658,7 +658,7 @@ def _response_page(
               text-align:center;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
     <div style="font-size:3rem;margin-bottom:16px;">{icon}</div>
     <div style="font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
-                color:{accent};margin-bottom:12px;">RYZE Recruiting</div>
+                color:{accent};margin-bottom:12px;">RYZE.ai</div>
     <h1 style="font-size:1.6rem;color:#1a1a2e;margin:0 0 16px;font-weight:700;">{title}</h1>
     <p style="font-size:1rem;color:#6b7280;line-height:1.6;margin:0;">{message}</p>
     {btn}

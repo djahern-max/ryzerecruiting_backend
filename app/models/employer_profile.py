@@ -9,9 +9,9 @@ class EmployerProfile(Base):
     Persistent intelligence record for each employer company.
     One record per company, enriched over time as more interactions occur.
 
-    tenant_id is NULL for all RYZE Recruiting data.
+    tenant_id is NULL for all RYZE.ai data.
     When RYZE.ai launches, other firms write with tenant_id = 'firm_abc123'.
-    No migration required — RYZE Recruiting rows are already the first tenant.
+    No migration required — RYZE.ai rows are already the first tenant.
     """
 
     __tablename__ = "employer_profiles"
@@ -40,7 +40,7 @@ class EmployerProfile(Base):
     relationship_status = Column(String(50), nullable=True)
     # prospect | active_client | placed | inactive | not_a_fit
 
-    # ── RYZE.ai multi-tenancy scaffold (NULL = RYZE Recruiting) ───────────
+    # ── RYZE.ai multi-tenancy scaffold (NULL = RYZE.ai) ───────────
     tenant_id = Column(String(100), nullable=True, index=True)
 
     # ── Timestamps ────────────────────────────────────────────────────────

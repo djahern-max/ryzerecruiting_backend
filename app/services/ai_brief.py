@@ -91,7 +91,7 @@ def _fetch_website_text(url: str) -> str | None:
 
 def _build_prompt_from_website(website_text: str) -> str:
     return f"""You are an expert recruiting researcher preparing a pre-call brief \
-for a finance and accounting recruiter (CPA background) at RYZE Recruiting.
+for a finance and accounting recruiter (CPA background) at RYZE.ai.
 
 Based on the website content below, return ONLY a valid JSON object.
 No preamble, no explanation, no markdown fences. Just the JSON.
@@ -112,7 +112,7 @@ Website content:
 
 def _build_prompt_from_knowledge(company_name: str, domain: str) -> str:
     return f"""You are an expert recruiting researcher preparing a pre-call brief \
-for a finance and accounting recruiter (CPA background) at RYZE Recruiting.
+for a finance and accounting recruiter (CPA background) at RYZE.ai.
 
 The employer's website could not be scraped. Use your training knowledge about \
 "{company_name}" (website: {domain}) to generate the brief.

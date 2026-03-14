@@ -68,7 +68,7 @@ def notify_booking_received(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Hi {employer_name}, RYZE Recruiting received your call request for "
+            f"Hi {employer_name}, RYZE.ai received your call request for "
             f"{date} at {time_slot} EST. "
             f"We will confirm shortly. Reply STOP to opt out."
         ),
@@ -109,7 +109,7 @@ def notify_booking_confirmed(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Your call with RYZE Recruiting is confirmed for {date} at {time_slot} EST. "
+            f"Your call with RYZE.ai is confirmed for {date} at {time_slot} EST. "
             f"Your Zoom link has been sent to your email. Reply STOP to opt out."
         ),
     )
@@ -142,7 +142,7 @@ def notify_booking_cancelled(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Your RYZE Recruiting call scheduled for {date} at {time_slot} "
+            f"Your RYZE.ai call scheduled for {date} at {time_slot} "
             f"has been cancelled. Visit ryzerecruiting.com to rebook. Reply STOP to opt out."
         ),
     )
@@ -186,7 +186,7 @@ def notify_reminder(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Reminder: Your call with RYZE Recruiting is in 15 minutes. "
+            f"Reminder: Your call with RYZE.ai is in 15 minutes. "
             f"Check your email for the Zoom link. Reply STOP to opt out."
         ),
     )
@@ -240,7 +240,7 @@ def notify_recruiter_invite_sent(
     _send_sms(
         to_phone=contact_phone,
         body=(
-            f"Hi {contact_name}, Dane from RYZE Recruiting sent you a meeting invite "
+            f"Hi {contact_name}, Dane from RYZE.ai sent you a meeting invite "
             f"for {date} at {time_slot} EST. "
             f"Check your email to accept or decline. Reply STOP to opt out."
         ),
@@ -280,7 +280,7 @@ def notify_invite_accepted(
     _send_sms(
         to_phone=contact_phone,
         body=(
-            f"Hi {contact_name}, your call with RYZE Recruiting is confirmed for "
+            f"Hi {contact_name}, your call with RYZE.ai is confirmed for "
             f"{date} at {time_slot} EST. "
             f"Zoom: {meeting_url} — Reply STOP to opt out."
         ),
@@ -382,7 +382,7 @@ def notify_candidate_booking_received(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Hi {candidate_name}, RYZE Recruiting received your call request for "
+            f"Hi {candidate_name}, RYZE.ai received your call request for "
             f"{date} at {time_slot} EST. We'll be in touch shortly. Reply STOP to opt out."
         ),
     )
@@ -415,7 +415,7 @@ def notify_candidate_confirmed(
     _send_sms(
         to_phone=phone,
         body=(
-            f"Hi {candidate_name}, your call with RYZE Recruiting is confirmed for "
+            f"Hi {candidate_name}, your call with RYZE.ai is confirmed for "
             f"{date} at {time_slot} EST. "
             f"Zoom link is in your email. Reply STOP to opt out."
         ),

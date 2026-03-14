@@ -60,7 +60,7 @@ def create_calendar_event(
         tz = "America/New_York"
 
         event = {
-            "summary": f"RYZE Recruiting — {company_name or employer_name}",
+            "summary": f"RYZE.ai — {company_name or employer_name}",
             "location": meeting_url,
             "description": (
                 f"Recruiter call with {employer_name} from {company_name or 'N/A'}.\n\n"
