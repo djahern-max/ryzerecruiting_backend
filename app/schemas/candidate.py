@@ -50,3 +50,18 @@ class CandidateResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CandidateParseRequest(BaseModel):
+    text: str
+
+
+class CandidateParseResponse(BaseModel):
+    name: Optional[str] = None
+    current_title: Optional[str] = None
+    current_company: Optional[str] = None
+    location: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    ai_summary: Optional[str] = None

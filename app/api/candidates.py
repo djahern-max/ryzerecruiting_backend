@@ -9,7 +9,14 @@ from app.core.database import get_db
 from app.models.candidate import Candidate
 from app.api.bookings import require_admin
 from app.models.user import User
-from app.schemas.candidate import CandidateCreate, CandidateUpdate, CandidateResponse
+from app.schemas.candidate import (
+    CandidateCreate,
+    CandidateUpdate,
+    CandidateResponse,
+    CandidateParseRequest,
+    CandidateParseResponse,
+)
+from app.services.ai_parser import parse_candidate_profile
 
 logger = logging.getLogger(__name__)
 
@@ -110,3 +117,29 @@ def delete_candidate(
         raise HTTPException(status_code=404, detail="Candidate not found.")
     db.delete(candidate)
     db.commit()
+
+
+@router.post("/parse", response_model=CandidateParseResponse)
+def parse_candidate(
+    payload: CandidateParseRequest,
+    _: User = Depends(require_admin),
+):
+    """
+    Parse a LinkedIn profile paste or resume text.
+    Returns structured fields for review — does NOT save to database.
+    """
+    if not payload.text or len(payload.text.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Text is too short to parse. Please paste the full profile or resume.",
+        )
+
+    result = parse_candidate_profile(payload.text)
+
+    if not result:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not parse the provided text. Please try again.",
+        )
+
+    return result

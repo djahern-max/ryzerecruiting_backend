@@ -12,7 +12,13 @@ from app.core.database import get_db
 from app.models.employer_profile import EmployerProfile
 from app.api.bookings import require_admin
 from app.models.user import User
-from app.schemas.employer_profile import UpdateRecruiterNotes
+from app.schemas.employer_profile import (
+    UpdateRecruiterNotes,
+    EmployerProfileParseRequest,
+    EmployerProfileParseResponse,
+)
+from app.services.ai_parser import parse_employer_prospect
+
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +199,29 @@ def update_employer_profile(
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
+
+
+@router.post("/parse", response_model=EmployerProfileParseResponse)
+def parse_employer(
+    payload: EmployerProfileParseRequest,
+    _: User = Depends(require_admin),
+):
+    """
+    Parse a job posting, LinkedIn company page, or any employer content.
+    Returns structured fields for review — does NOT save to database.
+    """
+    if not payload.text or len(payload.text.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Text is too short to parse. Please paste more content.",
+        )
+
+    result = parse_employer_prospect(payload.text)
+
+    if not result:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not parse the provided text. Please try again.",
+        )
+
+    return result

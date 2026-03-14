@@ -9,7 +9,14 @@ from app.core.database import get_db
 from app.models.job_order import JobOrder
 from app.api.bookings import require_admin
 from app.models.user import User
-from app.schemas.job_order import JobOrderCreate, JobOrderUpdate, JobOrderResponse
+from app.schemas.job_order import (
+    JobOrderCreate,
+    JobOrderUpdate,
+    JobOrderResponse,
+    JobOrderParseRequest,
+    JobOrderParseResponse,
+)
+from app.services.ai_parser import parse_job_description
 
 logger = logging.getLogger(__name__)
 
@@ -106,3 +113,29 @@ def delete_job_order(
         raise HTTPException(status_code=404, detail="Job order not found.")
     db.delete(job_order)
     db.commit()
+
+
+@router.post("/parse", response_model=JobOrderParseResponse)
+def parse_job_order(
+    payload: JobOrderParseRequest,
+    _: User = Depends(require_admin),
+):
+    """
+    Parse a job description or job posting text.
+    Returns structured fields for review — does NOT save to database.
+    """
+    if not payload.text or len(payload.text.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Text is too short to parse. Please paste the full job description.",
+        )
+
+    result = parse_job_description(payload.text)
+
+    if not result:
+        raise HTTPException(
+            status_code=422,
+            detail="Could not parse the provided text. Please try again.",
+        )
+
+    return result

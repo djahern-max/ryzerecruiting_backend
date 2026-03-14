@@ -44,3 +44,17 @@ class JobOrderResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class JobOrderParseRequest(BaseModel):
+    text: str
+
+
+class JobOrderParseResponse(BaseModel):
+    title: Optional[str] = None
+    location: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    requirements: Optional[str] = None
+    company_name: Optional[str] = None
+    notes: Optional[str] = None
