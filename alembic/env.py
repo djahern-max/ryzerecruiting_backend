@@ -14,11 +14,11 @@ from app.core.database import Base
 # Import all models here so Alembic can detect schema changes
 from app.models.contact import Contact
 from app.models.user import User
-from app.models.employer_profile import (
-    EmployerProfile,
-)  # Must come before Booking (FK dependency)
+from app.models.employer_profile import EmployerProfile
 from app.models.booking import Booking
 from app.models.waitlist import Waitlist
+from app.models.job_order import JobOrder
+from app.models.candidate import Candidate
 
 # this is the Alembic Config object
 config = context.config
