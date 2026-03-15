@@ -87,20 +87,18 @@ class SyncResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _cosine_search(
-    db: Session, table_name: str, id_col: str, query_vector: list, limit: int
-):
+def _cosine_search(db: Session, table_name: str, query_vector: list, limit: int):
     vector_str = "[" + ",".join(str(v) for v in query_vector) + "]"
     sql = text(
         f"""
-        SELECT {id_col}, (embedding <=> :vec::vector) AS distance
+        SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
         FROM {table_name}
         WHERE embedding IS NOT NULL
         ORDER BY distance
         LIMIT :limit
     """
     )
-    rows = db.execute(sql, {"vec": vector_str, "limit": limit}).fetchall()
+    rows = db.execute(sql, {"limit": limit}).fetchall()
     return rows
 
 
@@ -120,7 +118,8 @@ def search_candidates(
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "candidates", "id", query_vector, limit)
+    rows = _cosine_search(db, "candidates", query_vector, limit)
+
     if not rows:
         return []
 
@@ -159,7 +158,7 @@ def search_employers(
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "employer_profiles", "id", query_vector, limit)
+    rows = _cosine_search(db, "employer_profiles", query_vector, limit)
     if not rows:
         return []
 
@@ -194,7 +193,7 @@ def search_job_orders(
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "job_orders", "id", query_vector, limit)
+    rows = _cosine_search(db, "job_orders", query_vector, limit)
     if not rows:
         return []
 
