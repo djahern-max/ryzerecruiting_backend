@@ -37,6 +37,7 @@ app.add_middleware(
     allow_origins=[
         "https://ryze.ai",
         "https://www.ryze.ai",
+        "https://api.ryze.ai",
         "https://ryzerecruiting.com",
         "https://www.ryzerecruiting.com",
         "http://localhost:5173",
