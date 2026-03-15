@@ -39,14 +39,17 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_FROM_NUMBER: str = ""
 
-    # Google Calendar - Task 3
+    # Google Calendar
     GOOGLE_CALENDAR_ID: str = "primary"
     GOOGLE_REFRESH_TOKEN: str = ""
     GOOGLE_CALENDAR_CLIENT_ID: str = ""
     GOOGLE_CALENDAR_CLIENT_SECRET: str = ""
 
-    # AI
+    # AI — Anthropic
     ANTHROPIC_API_KEY: str = ""
+
+    # AI — OpenAI (embeddings)
+    OPENAI_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

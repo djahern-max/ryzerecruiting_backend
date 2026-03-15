@@ -6,7 +6,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
 )
 
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -19,13 +18,12 @@ from app.api.waitlist import router as waitlist_router
 from app.api.webhooks import router as webhooks_router
 from app.api.job_orders import router as job_orders_router
 from app.api.candidates import router as candidates_router
+from app.api.search import router as search_router
 
 app = FastAPI(title="RYZE.ai API")
 
-# Create database tables on startup
 Base.metadata.create_all(bind=engine)
 
-# Add SessionMiddleware BEFORE CORS (required for OAuth)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
@@ -49,7 +47,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(contact.router, prefix="/contact", tags=["contact"])
 app.include_router(blog.router, prefix="/blog", tags=["blog"])
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
@@ -59,6 +56,7 @@ app.include_router(waitlist_router)
 app.include_router(webhooks_router)
 app.include_router(job_orders_router)
 app.include_router(candidates_router)
+app.include_router(search_router)
 
 
 @app.get("/")

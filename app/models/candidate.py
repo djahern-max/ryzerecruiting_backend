@@ -1,6 +1,7 @@
 # app/models/candidate.py
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
+from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
 
@@ -15,9 +16,9 @@ class Candidate(Base):
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
 
-    # LinkedIn
+    # Source
     linkedin_url = Column(String, nullable=True)
-    linkedin_raw_text = Column(Text, nullable=True)
+    linkedin_raw_text = Column(Text, nullable=True)  # stores paste content (any source)
 
     # Current position
     current_title = Column(String, nullable=True)
@@ -31,14 +32,18 @@ class Candidate(Base):
     ai_parsed_at = Column(DateTime, nullable=True)
 
     # AI generated fields — structured profile
-    ai_experience = Column(Text, nullable=True)  # work history narrative
-    ai_education = Column(Text, nullable=True)  # degrees, schools, years
-    ai_certifications = Column(Text, nullable=True)  # CPA, CFA, CMA, etc.
-    ai_skills = Column(JSON, nullable=True)  # list of skills
-    ai_years_experience = Column(Integer, nullable=True)  # total years
+    ai_experience = Column(Text, nullable=True)
+    ai_education = Column(Text, nullable=True)
+    ai_certifications = Column(Text, nullable=True)
+    ai_skills = Column(JSON, nullable=True)
+    ai_years_experience = Column(Integer, nullable=True)
 
     # Recruiter notes
     notes = Column(Text, nullable=True)
+
+    # RAG / PGVector — 1536 dims matches OpenAI text-embedding-3-small
+    embedding = Column(Vector(1536), nullable=True)
+    embedded_at = Column(DateTime, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -2,6 +2,7 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
 
@@ -23,8 +24,15 @@ class JobOrder(Base):
     requirements = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
 
+    # Raw source text (original job posting paste)
+    raw_text = Column(Text, nullable=True)
+
     # Status
     status = Column(String, default="open")  # open | filled | on_hold
+
+    # RAG / PGVector
+    embedding = Column(Vector(1536), nullable=True)
+    embedded_at = Column(DateTime, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
