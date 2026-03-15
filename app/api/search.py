@@ -9,6 +9,7 @@ import logging
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy import cast
+from sqlalchemy.orm import defer as orm_defer
 from pgvector.sqlalchemy import Vector
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
@@ -97,6 +98,7 @@ def _cosine_search(db: Session, model, query_vector: list, limit: int):
             ),
         )
         .filter(model.embedding.isnot(None))
+        .options(orm_defer(model.embedding))
         .order_by("distance")
         .limit(limit)
         .all()
