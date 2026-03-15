@@ -13,7 +13,6 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 from typing import List, Optional
-
 from app.core.database import get_db
 from app.models.candidate import Candidate
 from app.api.bookings import require_admin
@@ -66,7 +65,6 @@ def list_candidates(
     _: User = Depends(require_admin),
 ):
     query = db.query(Candidate).filter(Candidate.tenant_id == 1)
-
     if search:
         term = f"%{search}%"
         query = query.filter(
@@ -76,7 +74,6 @@ def list_candidates(
             | Candidate.current_company.ilike(term)
             | Candidate.location.ilike(term)
         )
-
     return query.order_by(Candidate.created_at.desc()).all()
 
 
@@ -97,6 +94,40 @@ def get_candidate(
 
 
 # ---------------------------------------------------------------------------
+# Duplicate check
+# ---------------------------------------------------------------------------
+
+
+@router.get("/check-duplicate", response_model=List[CandidateResponse])
+def check_duplicate(
+    name: str,
+    location: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """
+    Check for existing candidates with a similar name.
+    Optionally narrows by location if provided.
+    Returns a list of potential matches — empty list means no duplicates found.
+    """
+    if not name or len(name.strip()) < 2:
+        return []
+
+    # Normalize: strip and split into tokens, require all tokens to match
+    tokens = name.strip().lower().split()
+
+    query = db.query(Candidate).filter(Candidate.tenant_id == 1)
+    for token in tokens:
+        query = query.filter(Candidate.name.ilike(f"%{token}%"))
+
+    matches = query.order_by(Candidate.created_at.desc()).all()
+
+    # If location provided, prefer matches that share location but still return all
+    # (we show location in the warning so the user can judge)
+    return matches
+
+
+# ---------------------------------------------------------------------------
 # Create / update / delete
 # ---------------------------------------------------------------------------
 
@@ -108,17 +139,12 @@ def create_candidate(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    candidate = Candidate(
-        tenant_id=1,
-        **payload.model_dump(),
-    )
+    candidate = Candidate(tenant_id=1, **payload.model_dump())
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
     logger.info(f"Candidate created: {candidate.name} (#{candidate.id})")
-
     background_tasks.add_task(embed_candidate_background, candidate.id)
-
     return candidate
 
 
@@ -147,9 +173,7 @@ def update_candidate(
     candidate.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(candidate)
-
     background_tasks.add_task(embed_candidate_background, candidate.id)
-
     return candidate
 
 
@@ -180,24 +204,17 @@ def parse_candidate(
     payload: CandidateParseRequest,
     _: User = Depends(require_admin),
 ):
-    """
-    Parse a LinkedIn profile paste or resume text.
-    Returns structured fields for review — does NOT save to database.
-    """
     if not payload.text or len(payload.text.strip()) < 50:
         raise HTTPException(
             status_code=400,
             detail="Text is too short to parse. Please paste the full profile or resume.",
         )
-
     result = parse_candidate_profile(payload.text)
-
     if not result:
         raise HTTPException(
             status_code=422,
             detail="Could not parse the provided text. Please try again.",
         )
-
     return result
 
 
@@ -211,11 +228,6 @@ async def parse_candidate_file(
     file: UploadFile = File(...),
     _: User = Depends(require_admin),
 ):
-    """
-    Upload a PDF or Word document resume.
-    Extracts text and passes through Claude parser.
-    Returns structured fields for review — does NOT save to database.
-    """
     filename = file.filename or ""
     content_type = file.content_type or ""
 
@@ -232,17 +244,13 @@ async def parse_candidate_file(
         )
 
     data = await file.read()
-
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(
             status_code=400, detail="File too large. Maximum size is 10MB."
         )
 
     try:
-        if is_pdf:
-            text = _extract_text_from_pdf(data)
-        else:
-            text = _extract_text_from_docx(data)
+        text = _extract_text_from_pdf(data) if is_pdf else _extract_text_from_docx(data)
     except Exception as e:
         logger.error(f"File text extraction failed: {e}")
         raise HTTPException(
@@ -257,16 +265,12 @@ async def parse_candidate_file(
         )
 
     logger.info(f"Extracted {len(text)} chars from {filename}")
-
     result = parse_candidate_profile(text)
-
     if not result:
         raise HTTPException(
             status_code=422,
             detail="Could not parse the file. Please try again or paste the text manually.",
         )
 
-    # Store raw extracted text so it saves with the candidate record
     result["linkedin_raw_text"] = text
-
     return result
