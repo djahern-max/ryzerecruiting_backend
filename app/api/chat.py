@@ -585,8 +585,12 @@ def chat(
         # Process tool calls
         if response.stop_reason == "tool_use":
             # Add assistant's response (with tool_use blocks) to history
-            messages.append({"role": "assistant", "content": response.content})
-
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": [block.model_dump() for block in response.content],
+                }
+            )
             # Execute each tool call and collect results
             tool_results = []
             for block in response.content:
