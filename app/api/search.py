@@ -8,6 +8,8 @@ Score returned is 0-1 where 1 = identical, 0 = unrelated.
 import logging
 from typing import Optional, List
 from datetime import datetime
+from sqlalchemy import cast
+from pgvector.sqlalchemy import Vector
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
@@ -29,6 +31,7 @@ router = APIRouter(prefix="/api/search", tags=["search"])
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
+
 
 class CandidateSearchResult(BaseModel):
     id: int
@@ -84,13 +87,15 @@ class SyncResponse(BaseModel):
 # Helper — run cosine search against a model
 # ---------------------------------------------------------------------------
 
+
 def _cosine_search(db: Session, model, query_vector: list, limit: int):
-    """
-    Returns (record, distance) pairs ordered by cosine distance ascending.
-    Lower distance = more similar. We convert to score = 1 - distance.
-    """
     results = (
-        db.query(model, model.embedding.op("<=>")(query_vector).label("distance"))
+        db.query(
+            model,
+            model.embedding.op("<=>")(cast(query_vector, Vector(1536))).label(
+                "distance"
+            ),
+        )
         .filter(model.embedding.isnot(None))
         .order_by("distance")
         .limit(limit)
@@ -102,6 +107,7 @@ def _cosine_search(db: Session, model, query_vector: list, limit: int):
 # ---------------------------------------------------------------------------
 # Search endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("/candidates", response_model=List[CandidateSearchResult])
 def search_candidates(
@@ -205,6 +211,7 @@ def search_job_orders(
 # ---------------------------------------------------------------------------
 # Admin — trigger embedding sync on demand
 # ---------------------------------------------------------------------------
+
 
 @router.post("/embeddings/sync", response_model=SyncResponse)
 def trigger_embedding_sync(
