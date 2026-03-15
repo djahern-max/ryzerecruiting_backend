@@ -1,7 +1,7 @@
 # app/api/job_orders.py
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -17,6 +17,7 @@ from app.schemas.job_order import (
     JobOrderParseResponse,
 )
 from app.services.ai_parser import parse_job_description
+from app.services.embedding_service import embed_job_order_background
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def get_job_order(
 @router.post("", response_model=JobOrderResponse, status_code=status.HTTP_201_CREATED)
 def create_job_order(
     payload: JobOrderCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -65,6 +67,10 @@ def create_job_order(
     db.commit()
     db.refresh(job_order)
     logger.info(f"Job order created: {job_order.title} (#{job_order.id})")
+
+    # Auto-embed in background — non-blocking
+    background_tasks.add_task(embed_job_order_background, job_order.id)
+
     return job_order
 
 
@@ -72,6 +78,7 @@ def create_job_order(
 def update_job_order(
     job_order_id: int,
     payload: JobOrderUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -92,9 +99,16 @@ def update_job_order(
     for field, value in update_data.items():
         setattr(job_order, field, value)
 
+    # Clear old embedding so the record shows as pending until new one lands
+    job_order.embedding = None
+    job_order.embedded_at = None
     job_order.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job_order)
+
+    # Re-embed with updated content
+    background_tasks.add_task(embed_job_order_background, job_order.id)
+
     return job_order
 
 

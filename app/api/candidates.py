@@ -1,7 +1,7 @@
 # app/api/candidates.py
 import logging
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
@@ -17,6 +17,7 @@ from app.schemas.candidate import (
     CandidateParseResponse,
 )
 from app.services.ai_parser import parse_candidate_profile
+from app.services.embedding_service import embed_candidate_background
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ def get_candidate(
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
 def create_candidate(
     payload: CandidateCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -74,6 +76,10 @@ def create_candidate(
     db.commit()
     db.refresh(candidate)
     logger.info(f"Candidate created: {candidate.name} (#{candidate.id})")
+
+    # Auto-embed in background — non-blocking
+    background_tasks.add_task(embed_candidate_background, candidate.id)
+
     return candidate
 
 
@@ -81,6 +87,7 @@ def create_candidate(
 def update_candidate(
     candidate_id: int,
     payload: CandidateUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
@@ -96,9 +103,16 @@ def update_candidate(
     for field, value in update_data.items():
         setattr(candidate, field, value)
 
+    # Clear old embedding so the record shows as pending until the new one lands
+    candidate.embedding = None
+    candidate.embedded_at = None
     candidate.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(candidate)
+
+    # Re-embed with updated content
+    background_tasks.add_task(embed_candidate_background, candidate.id)
+
     return candidate
 
 

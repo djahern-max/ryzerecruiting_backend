@@ -63,6 +63,7 @@ class CandidateResponse(BaseModel):
     ai_years_experience: Optional[int] = None
     ai_outreach_message: Optional[str] = None
     ai_parsed_at: Optional[datetime] = None
+    embedded_at: Optional[datetime] = None
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime

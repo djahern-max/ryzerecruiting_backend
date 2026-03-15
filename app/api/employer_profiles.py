@@ -2,7 +2,7 @@
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -18,6 +18,7 @@ from app.schemas.employer_profile import (
     EmployerProfileParseResponse,
 )
 from app.services.ai_parser import parse_employer_prospect
+from app.services.embedding_service import embed_employer_background
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,9 @@ class EmployerProfileResponse(BaseModel):
     recruiter_notes: Optional[str] = None
     relationship_status: Optional[str] = None
 
+    # Embedding status
+    embedded_at: Optional[datetime] = None
+
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -90,10 +94,6 @@ def get_employer_profile(
     if not profile:
         raise HTTPException(status_code=404, detail="Employer profile not found.")
 
-    # Build dict manually so we can parse JSON strings BEFORE Pydantic validates.
-    # Passing the ORM object directly to model_validate fails because
-    # ai_hiring_needs and ai_talking_points are stored as raw JSON strings,
-    # not Python lists — Pydantic rejects them at validation time.
     return EmployerProfileResponse(
         id=profile.id,
         company_name=profile.company_name,
@@ -110,18 +110,19 @@ def get_employer_profile(
         ai_brief_updated_at=profile.ai_brief_updated_at,
         recruiter_notes=profile.recruiter_notes,
         relationship_status=profile.relationship_status,
+        embedded_at=getattr(profile, "embedded_at", None),
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )
 
 
-@router.get("/", response_model=List[EmployerProfileResponse])
+@router.get("", response_model=List[EmployerProfileResponse])
 def list_employer_profiles(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     """
-    List all employer profiles for RYZE.ai (tenant_id IS NULL).
+    List all employer intelligence profiles.
     Sorted newest first. Admin only.
     """
     profiles = (
@@ -150,6 +151,7 @@ def list_employer_profiles(
                 ai_brief_updated_at=profile.ai_brief_updated_at,
                 recruiter_notes=profile.recruiter_notes,
                 relationship_status=profile.relationship_status,
+                embedded_at=getattr(profile, "embedded_at", None),
                 created_at=profile.created_at,
                 updated_at=profile.updated_at,
             )
@@ -161,12 +163,13 @@ def list_employer_profiles(
 def update_employer_profile(
     profile_id: int,
     payload: UpdateRecruiterNotes,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
     """
     Update recruiter notes and/or relationship status on an employer profile.
-    Admin only.
+    Admin only. Triggers a background re-embed after save.
     """
     profile = db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
     if not profile:
@@ -179,6 +182,9 @@ def update_employer_profile(
 
     db.commit()
     db.refresh(profile)
+
+    # Re-embed in background — recruiter_notes is part of the embedded text
+    background_tasks.add_task(embed_employer_background, profile.id)
 
     return EmployerProfileResponse(
         id=profile.id,
@@ -196,6 +202,7 @@ def update_employer_profile(
         ai_brief_updated_at=profile.ai_brief_updated_at,
         recruiter_notes=profile.recruiter_notes,
         relationship_status=profile.relationship_status,
+        embedded_at=getattr(profile, "embedded_at", None),
         created_at=profile.created_at,
         updated_at=profile.updated_at,
     )

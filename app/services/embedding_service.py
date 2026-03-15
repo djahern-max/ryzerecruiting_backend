@@ -50,39 +50,45 @@ def build_candidate_text(candidate: Candidate) -> Optional[str]:
     if candidate.name:
         parts.append(candidate.name)
 
-    if candidate.current_title and candidate.current_company:
-        parts.append(f"{candidate.current_title} at {candidate.current_company}")
-    elif candidate.current_title:
-        parts.append(candidate.current_title)
+    if candidate.current_title:
+        parts.append(f"Title: {candidate.current_title}")
+
+    if candidate.current_company:
+        parts.append(f"Company: {candidate.current_company}")
 
     if candidate.location:
         parts.append(f"Location: {candidate.location}")
 
-    if candidate.ai_years_experience:
-        parts.append(f"{candidate.ai_years_experience} years of experience")
-
     if candidate.ai_career_level:
         parts.append(f"Career level: {candidate.ai_career_level}")
+
+    if candidate.ai_years_experience:
+        parts.append(f"Years of experience: {candidate.ai_years_experience}")
+
+    if candidate.ai_certifications:
+        parts.append(f"Certifications: {candidate.ai_certifications}")
 
     if candidate.ai_summary:
         parts.append(candidate.ai_summary)
 
     if candidate.ai_experience:
-        parts.append(f"Work history: {candidate.ai_experience}")
+        parts.append(candidate.ai_experience)
 
     if candidate.ai_education:
         parts.append(f"Education: {candidate.ai_education}")
 
-    if candidate.ai_certifications:
-        parts.append(f"Certifications: {candidate.ai_certifications}")
-
     if candidate.ai_skills:
-        skills = candidate.ai_skills if isinstance(candidate.ai_skills, list) else []
-        if skills:
-            parts.append(f"Skills: {', '.join(skills)}")
+        try:
+            skills = json.loads(candidate.ai_skills) if isinstance(candidate.ai_skills, str) else candidate.ai_skills
+            if isinstance(skills, list) and skills:
+                parts.append(f"Skills: {', '.join(skills)}")
+        except (json.JSONDecodeError, TypeError):
+            parts.append(f"Skills: {candidate.ai_skills}")
 
-    if candidate.notes:
-        parts.append(f"Recruiter notes: {candidate.notes}")
+    # Include raw source text as additional context
+    raw = candidate.linkedin_raw_text
+    if raw:
+        parts.append(raw[:2000])
 
     text = "\n".join(parts).strip()
     return text if len(text) > 20 else None
@@ -90,7 +96,7 @@ def build_candidate_text(candidate: Candidate) -> Optional[str]:
 
 def build_employer_text(employer: EmployerProfile) -> Optional[str]:
     """
-    Compose a rich text representation of an employer profile from AI intelligence fields.
+    Compose a rich text representation of an employer profile.
     """
     parts = []
 
@@ -125,9 +131,10 @@ def build_employer_text(employer: EmployerProfile) -> Optional[str]:
     if employer.recruiter_notes:
         parts.append(f"Recruiter notes: {employer.recruiter_notes}")
 
-    if employer.raw_text:
-        # Include raw source text as additional context if available
-        parts.append(employer.raw_text[:2000])  # cap to avoid token limits
+    # Include raw source text if available
+    raw = getattr(employer, "raw_text", None)
+    if raw:
+        parts.append(raw[:2000])
 
     text = "\n".join(parts).strip()
     return text if len(text) > 20 else None
@@ -156,8 +163,10 @@ def build_job_order_text(job_order: JobOrder) -> Optional[str]:
     if job_order.notes:
         parts.append(f"Notes: {job_order.notes}")
 
-    if job_order.raw_text:
-        parts.append(job_order.raw_text[:2000])
+    # Include raw source text if available
+    raw = getattr(job_order, "raw_text", None)
+    if raw:
+        parts.append(raw[:2000])
 
     text = "\n".join(parts).strip()
     return text if len(text) > 20 else None
@@ -174,10 +183,9 @@ def generate_embedding(text: str) -> Optional[list[float]]:
     """
     try:
         client = get_openai_client()
-        # text-embedding-3-small: 1536 dims, ~$0.02 per million tokens
         response = client.embeddings.create(
             model="text-embedding-3-small",
-            input=text.replace("\n", " "),  # OpenAI recommends replacing newlines
+            input=text,
         )
         return response.data[0].embedding
     except Exception as e:
@@ -186,12 +194,114 @@ def generate_embedding(text: str) -> Optional[list[float]]:
 
 
 # ---------------------------------------------------------------------------
-# Background sync — processes all unembedded records
+# Per-record background embedding helpers
+# Called as FastAPI BackgroundTasks after POST/PATCH saves.
+# Each opens its own DB session — safe to run after the request completes.
+# ---------------------------------------------------------------------------
+
+def embed_candidate_background(candidate_id: int) -> None:
+    """
+    Generate and store an embedding for a single candidate.
+    Designed to run as a FastAPI BackgroundTask.
+    """
+    db: Session = SessionLocal()
+    try:
+        candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
+        if not candidate:
+            logger.warning(f"embed_candidate_background: candidate #{candidate_id} not found")
+            return
+
+        text = build_candidate_text(candidate)
+        if not text:
+            logger.warning(f"embed_candidate_background: no embeddable text for candidate #{candidate_id}")
+            return
+
+        vector = generate_embedding(text)
+        if vector:
+            candidate.embedding = vector
+            candidate.embedded_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Embedded candidate #{candidate_id} ({candidate.name})")
+        else:
+            logger.error(f"embed_candidate_background: embedding failed for candidate #{candidate_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"embed_candidate_background error for #{candidate_id}: {e}")
+    finally:
+        db.close()
+
+
+def embed_employer_background(profile_id: int) -> None:
+    """
+    Generate and store an embedding for a single employer profile.
+    Designed to run as a FastAPI BackgroundTask.
+    """
+    db: Session = SessionLocal()
+    try:
+        employer = db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
+        if not employer:
+            logger.warning(f"embed_employer_background: employer #{profile_id} not found")
+            return
+
+        text = build_employer_text(employer)
+        if not text:
+            logger.warning(f"embed_employer_background: no embeddable text for employer #{profile_id}")
+            return
+
+        vector = generate_embedding(text)
+        if vector:
+            employer.embedding = vector
+            employer.embedded_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Embedded employer #{profile_id} ({employer.company_name})")
+        else:
+            logger.error(f"embed_employer_background: embedding failed for employer #{profile_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"embed_employer_background error for #{profile_id}: {e}")
+    finally:
+        db.close()
+
+
+def embed_job_order_background(job_order_id: int) -> None:
+    """
+    Generate and store an embedding for a single job order.
+    Designed to run as a FastAPI BackgroundTask.
+    """
+    db: Session = SessionLocal()
+    try:
+        job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
+        if not job_order:
+            logger.warning(f"embed_job_order_background: job order #{job_order_id} not found")
+            return
+
+        text = build_job_order_text(job_order)
+        if not text:
+            logger.warning(f"embed_job_order_background: no embeddable text for job order #{job_order_id}")
+            return
+
+        vector = generate_embedding(text)
+        if vector:
+            job_order.embedding = vector
+            job_order.embedded_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Embedded job order #{job_order_id} ({job_order.title})")
+        else:
+            logger.error(f"embed_job_order_background: embedding failed for job order #{job_order_id}")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"embed_job_order_background error for #{job_order_id}: {e}")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Batch sync — used by the /embeddings/sync admin endpoints
 # ---------------------------------------------------------------------------
 
 def sync_embeddings(batch_size: int = 50) -> dict:
     """
-    Find all records without embeddings, generate and store them.
+    Find all records without embeddings and generate them in batches.
     Returns a summary dict for logging / API response.
 
     Designed to be called:
