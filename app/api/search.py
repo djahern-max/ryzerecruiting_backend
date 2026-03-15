@@ -8,13 +8,11 @@ Score returned is 0-1 where 1 = identical, 0 = unrelated.
 import logging
 from typing import Optional, List
 from datetime import datetime
-from sqlalchemy import cast
-from sqlalchemy.orm import defer as orm_defer
-from pgvector.sqlalchemy import Vector
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.core.database import get_db
 from app.api.bookings import require_admin
@@ -89,21 +87,21 @@ class SyncResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _cosine_search(db: Session, model, query_vector: list, limit: int):
-    results = (
-        db.query(
-            model,
-            model.embedding.op("<=>")(cast(query_vector, Vector(1536))).label(
-                "distance"
-            ),
-        )
-        .filter(model.embedding.isnot(None))
-        .options(orm_defer(model.embedding))
-        .order_by("distance")
-        .limit(limit)
-        .all()
+def _cosine_search(
+    db: Session, table_name: str, id_col: str, query_vector: list, limit: int
+):
+    vector_str = "[" + ",".join(str(v) for v in query_vector) + "]"
+    sql = text(
+        f"""
+        SELECT {id_col}, (embedding <=> :vec::vector) AS distance
+        FROM {table_name}
+        WHERE embedding IS NOT NULL
+        ORDER BY distance
+        LIMIT :limit
+    """
     )
-    return results
+    rows = db.execute(sql, {"vec": vector_str, "limit": limit}).fetchall()
+    return rows
 
 
 # ---------------------------------------------------------------------------
@@ -113,100 +111,112 @@ def _cosine_search(db: Session, model, query_vector: list, limit: int):
 
 @router.get("/candidates", response_model=List[CandidateSearchResult])
 def search_candidates(
-    q: str = Query(..., min_length=3, description="Natural language search query"),
+    q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """
-    Semantic search over candidates using vector similarity.
-    Example: "senior CPA with public accounting Big 4 experience in Boston"
-    """
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, Candidate, query_vector, limit)
-
+    rows = _cosine_search(db, "candidates", "id", query_vector, limit)
     if not rows:
         return []
 
+    ids = [row[0] for row in rows]
+    distances = {row[0]: row[1] for row in rows}
+
+    candidates = db.query(Candidate).filter(Candidate.id.in_(ids)).all()
+    candidate_map = {c.id: c for c in candidates}
+
     return [
         CandidateSearchResult(
-            id=candidate.id,
-            name=candidate.name,
-            current_title=candidate.current_title,
-            current_company=candidate.current_company,
-            location=candidate.location,
-            ai_summary=candidate.ai_summary,
-            ai_career_level=candidate.ai_career_level,
-            ai_certifications=candidate.ai_certifications,
-            ai_years_experience=candidate.ai_years_experience,
-            score=round(max(0.0, 1.0 - float(distance)), 4),
+            id=candidate_map[id].id,
+            name=candidate_map[id].name,
+            current_title=candidate_map[id].current_title,
+            current_company=candidate_map[id].current_company,
+            location=candidate_map[id].location,
+            ai_summary=candidate_map[id].ai_summary,
+            ai_career_level=candidate_map[id].ai_career_level,
+            ai_certifications=candidate_map[id].ai_certifications,
+            ai_years_experience=candidate_map[id].ai_years_experience,
+            score=round(max(0.0, 1.0 - float(distances[id])), 4),
         )
-        for candidate, distance in rows
+        for id in ids
+        if id in candidate_map
     ]
 
 
 @router.get("/employers", response_model=List[EmployerSearchResult])
 def search_employers(
-    q: str = Query(..., min_length=3, description="Natural language search query"),
+    q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """
-    Semantic search over employer profiles.
-    Example: "manufacturing company needing cost accountants in New England"
-    """
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, EmployerProfile, query_vector, limit)
+    rows = _cosine_search(db, "employer_profiles", "id", query_vector, limit)
+    if not rows:
+        return []
+
+    ids = [row[0] for row in rows]
+    distances = {row[0]: row[1] for row in rows}
+
+    employers = db.query(EmployerProfile).filter(EmployerProfile.id.in_(ids)).all()
+    employer_map = {e.id: e for e in employers}
 
     return [
         EmployerSearchResult(
-            id=employer.id,
-            company_name=employer.company_name,
-            ai_industry=employer.ai_industry,
-            ai_company_overview=employer.ai_company_overview,
-            relationship_status=employer.relationship_status,
-            score=round(max(0.0, 1.0 - float(distance)), 4),
+            id=employer_map[id].id,
+            company_name=employer_map[id].company_name,
+            ai_industry=employer_map[id].ai_industry,
+            ai_company_overview=employer_map[id].ai_company_overview,
+            relationship_status=employer_map[id].relationship_status,
+            score=round(max(0.0, 1.0 - float(distances[id])), 4),
         )
-        for employer, distance in rows
+        for id in ids
+        if id in employer_map
     ]
 
 
 @router.get("/job-orders", response_model=List[JobOrderSearchResult])
 def search_job_orders(
-    q: str = Query(..., min_length=3, description="Natural language search query"),
+    q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """
-    Semantic search over open job orders.
-    Example: "controller role 150k remote with NetSuite experience"
-    """
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, JobOrder, query_vector, limit)
+    rows = _cosine_search(db, "job_orders", "id", query_vector, limit)
+    if not rows:
+        return []
+
+    ids = [row[0] for row in rows]
+    distances = {row[0]: row[1] for row in rows}
+
+    jobs = db.query(JobOrder).filter(JobOrder.id.in_(ids)).all()
+    job_map = {j.id: j for j in jobs}
 
     return [
         JobOrderSearchResult(
-            id=job.id,
-            title=job.title,
-            location=job.location,
-            salary_min=job.salary_min,
-            salary_max=job.salary_max,
-            requirements=job.requirements,
-            status=job.status,
-            score=round(max(0.0, 1.0 - float(distance)), 4),
+            id=job_map[id].id,
+            title=job_map[id].title,
+            location=job_map[id].location,
+            salary_min=job_map[id].salary_min,
+            salary_max=job_map[id].salary_max,
+            requirements=job_map[id].requirements,
+            status=job_map[id].status,
+            score=round(max(0.0, 1.0 - float(distances[id])), 4),
         )
-        for job, distance in rows
+        for id in ids
+        if id in job_map
     ]
 
 
