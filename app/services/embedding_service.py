@@ -29,9 +29,7 @@ def get_openai_client() -> OpenAI:
     global _openai_client
     if _openai_client is None:
         if not settings.OPENAI_API_KEY:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not set. Add it to your .env file."
-            )
+            raise RuntimeError("OPENAI_API_KEY is not set. Add it to your .env file.")
         _openai_client = OpenAI(api_key=settings.OPENAI_API_KEY)
     return _openai_client
 
@@ -39,6 +37,7 @@ def get_openai_client() -> OpenAI:
 # ---------------------------------------------------------------------------
 # Text composition — what gets embedded for each entity type
 # ---------------------------------------------------------------------------
+
 
 def build_candidate_text(candidate: Candidate) -> Optional[str]:
     """
@@ -79,7 +78,11 @@ def build_candidate_text(candidate: Candidate) -> Optional[str]:
 
     if candidate.ai_skills:
         try:
-            skills = json.loads(candidate.ai_skills) if isinstance(candidate.ai_skills, str) else candidate.ai_skills
+            skills = (
+                json.loads(candidate.ai_skills)
+                if isinstance(candidate.ai_skills, str)
+                else candidate.ai_skills
+            )
             if isinstance(skills, list) and skills:
                 parts.append(f"Skills: {', '.join(skills)}")
         except (json.JSONDecodeError, TypeError):
@@ -153,7 +156,9 @@ def build_job_order_text(job_order: JobOrder) -> Optional[str]:
         parts.append(f"Location: {job_order.location}")
 
     if job_order.salary_min and job_order.salary_max:
-        parts.append(f"Salary range: ${job_order.salary_min:,} - ${job_order.salary_max:,}")
+        parts.append(
+            f"Salary range: ${job_order.salary_min:,} - ${job_order.salary_max:,}"
+        )
     elif job_order.salary_min:
         parts.append(f"Salary: ${job_order.salary_min:,}+")
 
@@ -175,6 +180,7 @@ def build_job_order_text(job_order: JobOrder) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Core embedding call
 # ---------------------------------------------------------------------------
+
 
 def generate_embedding(text: str) -> Optional[list[float]]:
     """
@@ -199,6 +205,7 @@ def generate_embedding(text: str) -> Optional[list[float]]:
 # Each opens its own DB session — safe to run after the request completes.
 # ---------------------------------------------------------------------------
 
+
 def embed_candidate_background(candidate_id: int) -> None:
     """
     Generate and store an embedding for a single candidate.
@@ -208,12 +215,16 @@ def embed_candidate_background(candidate_id: int) -> None:
     try:
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
         if not candidate:
-            logger.warning(f"embed_candidate_background: candidate #{candidate_id} not found")
+            logger.warning(
+                f"embed_candidate_background: candidate #{candidate_id} not found"
+            )
             return
 
         text = build_candidate_text(candidate)
         if not text:
-            logger.warning(f"embed_candidate_background: no embeddable text for candidate #{candidate_id}")
+            logger.warning(
+                f"embed_candidate_background: no embeddable text for candidate #{candidate_id}"
+            )
             return
 
         vector = generate_embedding(text)
@@ -223,7 +234,9 @@ def embed_candidate_background(candidate_id: int) -> None:
             db.commit()
             logger.info(f"Embedded candidate #{candidate_id} ({candidate.name})")
         else:
-            logger.error(f"embed_candidate_background: embedding failed for candidate #{candidate_id}")
+            logger.error(
+                f"embed_candidate_background: embedding failed for candidate #{candidate_id}"
+            )
     except Exception as e:
         db.rollback()
         logger.error(f"embed_candidate_background error for #{candidate_id}: {e}")
@@ -238,14 +251,20 @@ def embed_employer_background(profile_id: int) -> None:
     """
     db: Session = SessionLocal()
     try:
-        employer = db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
+        employer = (
+            db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
+        )
         if not employer:
-            logger.warning(f"embed_employer_background: employer #{profile_id} not found")
+            logger.warning(
+                f"embed_employer_background: employer #{profile_id} not found"
+            )
             return
 
         text = build_employer_text(employer)
         if not text:
-            logger.warning(f"embed_employer_background: no embeddable text for employer #{profile_id}")
+            logger.warning(
+                f"embed_employer_background: no embeddable text for employer #{profile_id}"
+            )
             return
 
         vector = generate_embedding(text)
@@ -255,7 +274,9 @@ def embed_employer_background(profile_id: int) -> None:
             db.commit()
             logger.info(f"Embedded employer #{profile_id} ({employer.company_name})")
         else:
-            logger.error(f"embed_employer_background: embedding failed for employer #{profile_id}")
+            logger.error(
+                f"embed_employer_background: embedding failed for employer #{profile_id}"
+            )
     except Exception as e:
         db.rollback()
         logger.error(f"embed_employer_background error for #{profile_id}: {e}")
@@ -272,12 +293,16 @@ def embed_job_order_background(job_order_id: int) -> None:
     try:
         job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
         if not job_order:
-            logger.warning(f"embed_job_order_background: job order #{job_order_id} not found")
+            logger.warning(
+                f"embed_job_order_background: job order #{job_order_id} not found"
+            )
             return
 
         text = build_job_order_text(job_order)
         if not text:
-            logger.warning(f"embed_job_order_background: no embeddable text for job order #{job_order_id}")
+            logger.warning(
+                f"embed_job_order_background: no embeddable text for job order #{job_order_id}"
+            )
             return
 
         vector = generate_embedding(text)
@@ -287,7 +312,9 @@ def embed_job_order_background(job_order_id: int) -> None:
             db.commit()
             logger.info(f"Embedded job order #{job_order_id} ({job_order.title})")
         else:
-            logger.error(f"embed_job_order_background: embedding failed for job order #{job_order_id}")
+            logger.error(
+                f"embed_job_order_background: embedding failed for job order #{job_order_id}"
+            )
     except Exception as e:
         db.rollback()
         logger.error(f"embed_job_order_background error for #{job_order_id}: {e}")
@@ -295,9 +322,110 @@ def embed_job_order_background(job_order_id: int) -> None:
         db.close()
 
 
+def build_booking_text(booking) -> Optional[str]:
+    """
+    Compose embeddable text from a booking's meeting summary and context.
+    """
+    parts = []
+
+    if booking.company_name:
+        parts.append(f"Company: {booking.company_name}")
+
+    if booking.employer_name:
+        parts.append(f"Contact: {booking.employer_name}")
+
+    if booking.date:
+        parts.append(f"Meeting date: {booking.date}")
+
+    if booking.call_notes:
+        parts.append(f"Call notes: {booking.call_notes}")
+
+    if booking.meeting_summary:
+        parts.append(booking.meeting_summary)
+
+    text = "\n".join(parts).strip()
+    return text if len(text) > 20 else None
+
+
+def embed_booking_background(booking_id: int) -> None:
+    """
+    Generate and store an embedding for a single booking's meeting notes.
+    Designed to run as a FastAPI BackgroundTask.
+    """
+    from app.models.booking import Booking
+
+    db: Session = SessionLocal()
+    try:
+        booking = db.query(Booking).filter(Booking.id == booking_id).first()
+        if not booking:
+            logger.warning(f"embed_booking_background: booking #{booking_id} not found")
+            return
+
+        text = build_booking_text(booking)
+        if not text:
+            logger.warning(
+                f"embed_booking_background: no embeddable text for booking #{booking_id}"
+            )
+            return
+
+        vector = generate_embedding(text)
+        if vector:
+            booking.embedding = vector
+            booking.embedded_at = datetime.utcnow()
+            db.commit()
+            logger.info(f"Embedded booking #{booking_id} ({booking.company_name})")
+        else:
+            logger.error(
+                f"embed_booking_background: embedding failed for booking #{booking_id}"
+            )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"embed_booking_background error for #{booking_id}: {e}")
+    finally:
+        db.close()
+
+
+def backfill_bookings() -> dict:
+    """
+    One-time backfill: embed all bookings that have meeting_summary but no embedding.
+    Run after seeding demo data.
+    """
+    from app.models.booking import Booking
+
+    db: Session = SessionLocal()
+    count, errors = 0, 0
+    try:
+        bookings = (
+            db.query(Booking)
+            .filter(Booking.meeting_summary.isnot(None))
+            .filter(Booking.embedding.is_(None))
+            .all()
+        )
+        for booking in bookings:
+            text = build_booking_text(booking)
+            if not text:
+                continue
+            vector = generate_embedding(text)
+            if vector:
+                booking.embedding = vector
+                booking.embedded_at = datetime.utcnow()
+                count += 1
+            else:
+                errors += 1
+        db.commit()
+        logger.info(f"Booking backfill complete: {count} embedded, {errors} errors")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Booking backfill failed: {e}")
+    finally:
+        db.close()
+    return {"embedded": count, "errors": errors}
+
+
 # ---------------------------------------------------------------------------
 # Batch sync — used by the /embeddings/sync admin endpoints
 # ---------------------------------------------------------------------------
+
 
 def sync_embeddings(batch_size: int = 50) -> dict:
     """

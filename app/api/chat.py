@@ -68,6 +68,7 @@ TOOL_STATUS_MESSAGES = {
     "get_candidate_by_name": "Looking up candidate...",
     "get_employer_by_name": "Looking up employer...",
     "match_candidates_to_job": "Matching candidates to role...",
+    "search_meeting_notes": "Searching meeting notes...",
 }
 
 
@@ -231,6 +232,29 @@ TOOLS = [
                 },
             },
             "required": ["job_title"],
+        },
+    },
+    {
+        "name": "search_meeting_notes",
+        "description": (
+            "Semantic vector search over Zoom meeting notes and call summaries. "
+            "Use when asked about past calls, what was discussed with a company, "
+            "follow-ups from meetings, or any question about meeting history."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural language query about meeting notes or call history",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 5)",
+                    "default": 5,
+                },
+            },
+            "required": ["query"],
         },
     },
 ]
@@ -486,6 +510,36 @@ def tool_match_candidates_to_job(db: Session, job_title: str, limit: int = 5) ->
     return tool_search_candidates(db, job_title, limit)
 
 
+def tool_search_meeting_notes(db: Session, query: str, limit: int = 5) -> dict:
+    rows = _vector_search(db, "bookings", query, limit)
+    if not rows:
+        return {"meetings": [], "count": 0}
+
+    ids = [r[0] for r in rows]
+    bookings = (
+        db.query(Booking)
+        .filter(Booking.id.in_(ids))
+        .filter(Booking.meeting_summary.isnot(None))
+        .all()
+    )
+
+    results = []
+    for b in bookings:
+        results.append(
+            {
+                "id": b.id,
+                "company_name": b.company_name,
+                "employer_name": b.employer_name,
+                "date": str(b.date),
+                "time_slot": b.time_slot,
+                "meeting_summary": b.meeting_summary,
+                "call_notes": b.call_notes,
+            }
+        )
+
+    return {"meetings": results, "count": len(results)}
+
+
 # ---------------------------------------------------------------------------
 # Tool dispatch
 # ---------------------------------------------------------------------------
@@ -510,6 +564,9 @@ TOOL_DISPATCH = {
     "get_employer_by_name": lambda db, inp: tool_get_employer_by_name(db, inp["name"]),
     "match_candidates_to_job": lambda db, inp: tool_match_candidates_to_job(
         db, inp["job_title"], inp.get("limit", 5)
+    ),
+    "search_meeting_notes": lambda db, inp: tool_search_meeting_notes(
+        db, inp["query"], inp.get("limit", 5)
     ),
 }
 

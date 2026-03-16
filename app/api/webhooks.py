@@ -7,11 +7,13 @@ import time
 
 from fastapi import APIRouter, HTTPException, Request, Depends
 from sqlalchemy.orm import Session
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.booking import Booking
 from app.services.zoom import get_meeting_summary
+from app.services.embedding_service import embed_booking_background
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,9 @@ def _verify_zoom_signature(request_body: bytes, timestamp: str, signature: str) 
 
 
 @router.post("/zoom")
-async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
+async def zoom_webhook(
+    request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     body_bytes = await request.body()
 
     try:
@@ -94,6 +98,7 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
         if summary_text:
             booking.meeting_summary = summary_text
             db.commit()
+            background_tasks.add_task(embed_booking_background, booking.id)
             logger.info(f"Meeting summary saved for booking {booking.id}")
         else:
             logger.info(
@@ -123,6 +128,7 @@ async def zoom_webhook(request: Request, db: Session = Depends(get_db)):
         if booking:
             booking.meeting_summary = summary_text
             db.commit()
+            background_tasks.add_task(embed_booking_background, booking.id)
             logger.info(
                 f"Summary saved via summary_updated event for booking {booking.id}"
             )
