@@ -1,14 +1,15 @@
 # app/api/chat.py
 """
-RYZE.ai Chat — Phase 3 (Streaming)
+RYZE.ai Chat — Phase 3 (Streaming + Progress Signals)
 
 Agentic loop runs tool calls synchronously (fast DB queries),
 then streams the final Claude text response token-by-token.
 A trailing JSON chunk carries structured data (candidate/meeting cards).
 
 Stream protocol (newline-delimited):
-  - Text chunks:  plain text fragments streamed as they arrive
-  - Final chunk:  "\n__DATA__\n" + JSON with candidates/employers/meetings/job_orders
+  - Status chunks:  "__STATUS__:Message\n" — emitted during tool-call phase
+  - Text chunks:    plain text fragments streamed as they arrive
+  - Final chunk:    "\n__DATA__\n" + JSON with candidates/employers/meetings/job_orders
 """
 import json
 import logging
@@ -55,7 +56,23 @@ class ChatRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Tool definitions — unchanged from original
+# Tool status messages — shown in the UI during the tool-call phase
+# ---------------------------------------------------------------------------
+
+TOOL_STATUS_MESSAGES = {
+    "search_candidates": "Searching candidate database...",
+    "search_employers": "Searching employer profiles...",
+    "search_job_orders": "Searching job orders...",
+    "get_todays_meetings": "Checking today's schedule...",
+    "get_meetings_by_date": "Checking your calendar...",
+    "get_candidate_by_name": "Looking up candidate...",
+    "get_employer_by_name": "Looking up employer...",
+    "match_candidates_to_job": "Matching candidates to role...",
+}
+
+
+# ---------------------------------------------------------------------------
+# Tool definitions
 # ---------------------------------------------------------------------------
 
 TOOLS = [
@@ -220,16 +237,17 @@ TOOLS = [
 
 
 # ---------------------------------------------------------------------------
-# Tool execution functions — preserved exactly from original
+# Tool execution functions
 # ---------------------------------------------------------------------------
 
 
 def _vector_search(db: Session, table_name: str, query: str, limit: int) -> list:
     """Run cosine similarity search using raw SQL."""
-    vector = generate_embedding(query)
-    if not vector:
+    embedding = generate_embedding(query)
+    if not embedding:
         return []
-    vector_str = "[" + ",".join(str(v) for v in vector) + "]"
+
+    vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
     sql = text(
         f"""
         SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
@@ -237,9 +255,10 @@ def _vector_search(db: Session, table_name: str, query: str, limit: int) -> list
         WHERE embedding IS NOT NULL
         ORDER BY distance
         LIMIT :limit
-    """
+        """
     )
-    return db.execute(sql, {"limit": limit}).fetchall()
+    rows = db.execute(sql, {"limit": limit}).fetchall()
+    return rows
 
 
 def tool_search_candidates(db: Session, query: str, limit: int = 5) -> dict:
@@ -268,7 +287,6 @@ def tool_search_candidates(db: Session, query: str, limit: int = 5) -> dict:
                 "ai_career_level": c.ai_career_level,
                 "ai_certifications": c.ai_certifications,
                 "ai_years_experience": c.ai_years_experience,
-                "ai_skills": c.ai_skills or [],
                 "score": round(max(0.0, 1.0 - float(distances[cid])), 4),
             }
         )
@@ -324,11 +342,9 @@ def tool_search_job_orders(db: Session, query: str, limit: int = 5) -> dict:
             {
                 "id": j.id,
                 "title": j.title,
+                "company_name": j.company_name,
                 "location": j.location,
-                "salary_min": j.salary_min,
-                "salary_max": j.salary_max,
-                "requirements": j.requirements,
-                "status": j.status,
+                "salary_range": j.salary_range,
                 "score": round(max(0.0, 1.0 - float(distances[jid])), 4),
             }
         )
@@ -336,91 +352,88 @@ def tool_search_job_orders(db: Session, query: str, limit: int = 5) -> dict:
     return {"job_orders": results, "count": len(results)}
 
 
-def _format_booking(b: Booking) -> dict:
-    return {
-        "id": b.id,
-        "date": str(b.date),
-        "time_slot": b.time_slot,
-        "status": b.status,
-        "employer_name": b.employer_name,
-        "company_name": b.company_name,
-        "booking_type": b.booking_type,
-        "meeting_url": b.meeting_url,
-        "meeting_summary": b.meeting_summary,
-        "notes": b.notes,
-    }
-
-
 def tool_get_todays_meetings(db: Session) -> dict:
     today = date.today()
     bookings = (
         db.query(Booking)
-        .filter(Booking.date == today)
+        .filter(Booking.date == today.isoformat())
         .order_by(Booking.time_slot)
         .all()
     )
-    return {
-        "date": str(today),
-        "meetings": [_format_booking(b) for b in bookings],
-        "count": len(bookings),
-    }
+
+    results = []
+    for b in bookings:
+        results.append(
+            {
+                "id": b.id,
+                "employer_name": b.employer_name,
+                "company_name": b.company_name,
+                "date": b.date,
+                "time_slot": b.time_slot,
+                "status": b.status,
+                "meeting_url": b.meeting_url,
+                "meeting_type": b.meeting_type,
+            }
+        )
+
+    return {"meetings": results, "count": len(results)}
 
 
 def tool_get_meetings_by_date(
     db: Session, start_date: str, end_date: Optional[str] = None
 ) -> dict:
-    try:
-        start = date.fromisoformat(start_date)
-        end = date.fromisoformat(end_date) if end_date else start
-    except ValueError:
-        return {"error": "Invalid date format. Use YYYY-MM-DD."}
-
+    end = end_date or start_date
     bookings = (
         db.query(Booking)
-        .filter(Booking.date >= start, Booking.date <= end)
+        .filter(Booking.date >= start_date, Booking.date <= end)
         .order_by(Booking.date, Booking.time_slot)
         .all()
     )
-    return {
-        "start_date": str(start),
-        "end_date": str(end),
-        "meetings": [_format_booking(b) for b in bookings],
-        "count": len(bookings),
-    }
+
+    results = []
+    for b in bookings:
+        results.append(
+            {
+                "id": b.id,
+                "employer_name": b.employer_name,
+                "company_name": b.company_name,
+                "date": b.date,
+                "time_slot": b.time_slot,
+                "status": b.status,
+                "meeting_url": b.meeting_url,
+                "meeting_type": b.meeting_type,
+            }
+        )
+
+    return {"meetings": results, "count": len(results)}
 
 
 def tool_get_candidate_by_name(db: Session, name: str) -> dict:
-    tokens = name.strip().lower().split()
-    query = db.query(Candidate).filter(Candidate.tenant_id == 1)
-    for token in tokens:
-        query = query.filter(Candidate.name.ilike(f"%{token}%"))
-    candidates = query.limit(5).all()
+    candidates = (
+        db.query(Candidate).filter(Candidate.name.ilike(f"%{name}%")).limit(5).all()
+    )
 
     if not candidates:
         return {"candidates": [], "count": 0}
 
-    return {
-        "candidates": [
+    results = []
+    for c in candidates:
+        results.append(
             {
                 "id": c.id,
                 "name": c.name,
                 "current_title": c.current_title,
                 "current_company": c.current_company,
                 "location": c.location,
-                "email": c.email,
-                "phone": c.phone,
                 "ai_summary": c.ai_summary,
                 "ai_career_level": c.ai_career_level,
                 "ai_certifications": c.ai_certifications,
                 "ai_years_experience": c.ai_years_experience,
-                "ai_skills": c.ai_skills or [],
-                "ai_experience": c.ai_experience,
-                "notes": c.notes,
+                "score": None,
             }
-            for c in candidates
-        ],
-        "count": len(candidates),
-    }
+        )
+
+    return {"candidates": results, "count": len(results)}
 
 
 def tool_get_employer_by_name(db: Session, name: str) -> dict:
@@ -474,7 +487,7 @@ def tool_match_candidates_to_job(db: Session, job_title: str, limit: int = 5) ->
 
 
 # ---------------------------------------------------------------------------
-# Tool dispatch — unchanged from original
+# Tool dispatch
 # ---------------------------------------------------------------------------
 
 TOOL_DISPATCH = {
@@ -502,10 +515,12 @@ TOOL_DISPATCH = {
 
 
 # ---------------------------------------------------------------------------
-# System prompt — tightened for concise, prose-first responses
+# System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston. You have direct access to the recruiter's live database.
+SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston.
+
+You have direct access to the recruiter's live database.
 
 Today's date is {date.today().strftime("%B %d, %Y")}.
 
@@ -526,9 +541,15 @@ RESPONSE STYLE — follow these rules strictly:
 
 def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     """
-    1. Run agentic tool-call loop synchronously (fast DB queries).
-    2. Stream the final Claude text response token by token.
-    3. Emit a trailing __DATA__ chunk with structured card data.
+    1. Yield __STATUS__ progress signals during the tool-call loop.
+    2. Run agentic tool-call loop synchronously (fast DB queries).
+    3. Stream the final Claude text response token by token.
+    4. Emit a trailing __DATA__ chunk with structured card data.
+
+    Stream protocol:
+      "__STATUS__:Message\n"  — progress update (tool-call phase only)
+      text chunks             — streamed response tokens
+      "\n__DATA__\n" + JSON   — trailing structured data
     """
     messages = []
     for msg in payload.history or []:
@@ -539,6 +560,9 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     all_employers: list = []
     all_meetings: list = []
     all_job_orders: list = []
+
+    # Emit immediately so the client gets feedback before any Claude call
+    yield "__STATUS__:Thinking...\n"
 
     # ── Agentic tool-call loop (non-streaming) ─────────────────────────────
     max_iterations = 5
@@ -552,7 +576,6 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
         )
 
         if response.stop_reason == "end_turn":
-            # Tool calls complete — now stream the final answer
             break
 
         if response.stop_reason == "tool_use":
@@ -571,6 +594,10 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
                 tool_name = block.name
                 tool_input = block.input
                 tool_id = block.id
+
+                # ── Emit progress signal before running the tool ───────────
+                status_msg = TOOL_STATUS_MESSAGES.get(tool_name, "Searching...")
+                yield f"__STATUS__:{status_msg}\n"
 
                 logger.info(f"Chat tool call: {tool_name}({tool_input})")
 
@@ -609,6 +636,9 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     else:
         yield "I reached the maximum number of steps. Please ask a simpler question."
         return
+
+    # Signal that we're now generating the written response
+    yield "__STATUS__:Generating response...\n"
 
     # ── Stream the final answer token by token ─────────────────────────────
     with client.messages.stream(
