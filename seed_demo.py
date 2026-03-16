@@ -15,6 +15,9 @@ from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
 from app.models.booking import Booking
+from app.models.user import User
+from app.models.chat_session import ChatSession
+from app.models.chat_message import ChatMessage
 
 db = SessionLocal()
 
