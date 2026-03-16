@@ -425,7 +425,7 @@ def tool_get_meetings_by_date(
                 "time_slot": b.time_slot,
                 "status": b.status,
                 "meeting_url": b.meeting_url,
-                "meeting_type": b.meeting_type,
+                "meeting_type": b.booking_type,
             }
         )
 
