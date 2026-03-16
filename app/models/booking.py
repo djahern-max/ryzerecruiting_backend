@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey
 from sqlalchemy.sql import func
 from app.core.database import Base
+from pgvector.sqlalchemy import Vector
 
 
 class Booking(Base):
@@ -42,7 +43,9 @@ class Booking(Base):
     calendar_event_id = Column(String(255), nullable=True)
 
     # ── Intelligence layer ────────────────────────────────────────────────
-    employer_profile_id = Column(Integer, ForeignKey("employer_profiles.id"), nullable=True)
+    employer_profile_id = Column(
+        Integer, ForeignKey("employer_profiles.id"), nullable=True
+    )
     call_outcome = Column(String(50), nullable=True)
     call_notes = Column(Text, nullable=True)
 
@@ -51,6 +54,10 @@ class Booking(Base):
 
     # ── Zoom AI notes ─────────────────────────────────────────────────────
     meeting_summary = Column(Text, nullable=True)
+
+    # ── Embedding (for meeting notes semantic search) ─────────────────────
+    embedding = Column(Vector(1536), nullable=True)
+    embedded_at = Column(DateTime, nullable=True)
 
     # ── Timestamps ────────────────────────────────────────────────────────
     created_at = Column(DateTime(timezone=True), server_default=func.now())
