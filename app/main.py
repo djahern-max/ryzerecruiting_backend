@@ -20,6 +20,7 @@ from app.api.job_orders import router as job_orders_router
 from app.api.candidates import router as candidates_router
 from app.api.search import router as search_router
 from app.api.chat import router as chat_router
+from app.api import chat_sessions
 
 app = FastAPI(title="RYZE.ai API")
 
@@ -60,6 +61,7 @@ app.include_router(job_orders_router)
 app.include_router(candidates_router)
 app.include_router(search_router)
 app.include_router(chat_router)
+app.include_router(chat_sessions.router)
 
 
 @app.get("/")
