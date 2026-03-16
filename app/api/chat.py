@@ -392,7 +392,7 @@ def tool_get_todays_meetings(db: Session) -> dict:
                 "id": b.id,
                 "employer_name": b.employer_name,
                 "company_name": b.company_name,
-                "date": b.date,
+                "date": str(b.date),
                 "time_slot": b.time_slot,
                 "status": b.status,
                 "meeting_url": b.meeting_url,
@@ -421,11 +421,11 @@ def tool_get_meetings_by_date(
                 "id": b.id,
                 "employer_name": b.employer_name,
                 "company_name": b.company_name,
-                "date": b.date,
+                "date": str(b.date),
                 "time_slot": b.time_slot,
                 "status": b.status,
                 "meeting_url": b.meeting_url,
-                "meeting_type": b.booking_type,
+                "booking_type": b.booking_type,
             }
         )
 
