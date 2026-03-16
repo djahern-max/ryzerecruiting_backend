@@ -641,14 +641,23 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     yield "__STATUS__:Generating response...\n"
 
     # ── Stream the final answer token by token ─────────────────────────────
-    with client.messages.stream(
-        model="claude-opus-4-20250514",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-    ) as stream:
-        for text_chunk in stream.text_stream:
-            yield text_chunk
+    try:
+        with client.messages.stream(
+            model="claude-opus-4-20250514",
+            max_tokens=1024,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+        ) as stream:
+            for text_chunk in stream.text_stream:
+                yield text_chunk
+    except anthropic.APIStatusError as e:
+        logger.error(f"Anthropic streaming error: {e}")
+        yield "\n\nI encountered an error generating a response. Please try again."
+        return
+    except Exception as e:
+        logger.error(f"Unexpected streaming error: {e}")
+        yield "\n\nSomething went wrong. Please try again."
+        return
 
     # ── Deduplicate structured results ─────────────────────────────────────
     def dedup(items):
