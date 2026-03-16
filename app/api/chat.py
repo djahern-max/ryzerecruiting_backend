@@ -568,7 +568,7 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     max_iterations = 5
     for _ in range(max_iterations):
         response = client.messages.create(
-            model="claude-opus-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             tools=TOOLS,
@@ -641,9 +641,10 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     yield "__STATUS__:Generating response...\n"
 
     # ── Stream the final answer token by token ─────────────────────────────
+    # ── Stream the final answer token by token ─────────────────────────────
     try:
         with client.messages.stream(
-            model="claude-opus-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             messages=messages,

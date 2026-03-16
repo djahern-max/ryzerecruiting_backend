@@ -15,7 +15,7 @@ def _call_claude(prompt: str, text: str) -> dict:
     """
     try:
         message = client.messages.create(
-            model="claude-opus-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=1024,
             messages=[{"role": "user", "content": f"{prompt}\n\n---\n\n{text}"}],
         )
