@@ -357,7 +357,7 @@ print("Seeding job orders...")
 job_orders = [
     JobOrder(
         title="Controller",
-        company_name="Acme Manufacturing Corp",
+        employer_profile_id=1,
         location="Boston, MA",
         salary_min=130000,
         salary_max=155000,
@@ -366,7 +366,7 @@ job_orders = [
     ),
     JobOrder(
         title="VP Finance",
-        company_name="Riverside Capital Partners",
+        employer_profile_id=2,
         location="Boston, MA",
         salary_min=175000,
         salary_max=210000,
@@ -375,7 +375,7 @@ job_orders = [
     ),
     JobOrder(
         title="Senior Accountant",
-        company_name="ClearPath Health",
+        employer_profile_id=3,
         location="Waltham, MA",
         salary_min=85000,
         salary_max=105000,
@@ -384,7 +384,7 @@ job_orders = [
     ),
     JobOrder(
         title="FP&A Manager",
-        company_name="Vertex Software Inc",
+        employer_profile_id=4,
         location="Cambridge, MA",
         salary_min=120000,
         salary_max=145000,
@@ -393,7 +393,7 @@ job_orders = [
     ),
     JobOrder(
         title="Director of Finance",
-        company_name="Northeast Biotech Group",
+        employer_profile_id=6,
         location="Lexington, MA",
         salary_min=160000,
         salary_max=195000,
@@ -402,7 +402,7 @@ job_orders = [
     ),
     JobOrder(
         title="Tax Manager",
-        company_name="Summit CPA Group",
+        employer_profile_id=8,
         location="Boston, MA",
         salary_min=110000,
         salary_max=135000,
