@@ -29,7 +29,7 @@ class JobOrderUpdate(BaseModel):
 
 class JobOrderResponse(BaseModel):
     id: int
-    tenant_id: int
+    tenant_id: Optional[str] = None  # String(100) — was Integer, now consistent
     employer_profile_id: Optional[int] = None
     title: str
     location: Optional[str] = None

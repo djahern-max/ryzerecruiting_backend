@@ -4,12 +4,15 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
+RYZE_TENANT = "ryze"
+
 
 class Candidate(Base):
     __tablename__ = "candidates"
 
     id = Column(Integer, primary_key=True)
-    tenant_id = Column(Integer, default=1, nullable=False)
+    # Multi-tenancy — 'ryze' = RYZE Recruiting (default tenant)
+    tenant_id = Column(String(100), nullable=True, default=RYZE_TENANT, index=True)
 
     # Contact info
     name = Column(String, nullable=False)
@@ -18,7 +21,7 @@ class Candidate(Base):
 
     # Source
     linkedin_url = Column(String, nullable=True)
-    linkedin_raw_text = Column(Text, nullable=True)  # stores paste content (any source)
+    linkedin_raw_text = Column(Text, nullable=True)
 
     # Current position
     current_title = Column(String, nullable=True)
@@ -41,7 +44,7 @@ class Candidate(Base):
     # Recruiter notes
     notes = Column(Text, nullable=True)
 
-    # RAG / PGVector — 1536 dims matches OpenAI text-embedding-3-small
+    # RAG / PGVector
     embedding = Column(Vector(1536), nullable=True)
     embedded_at = Column(DateTime, nullable=True)
 

@@ -14,7 +14,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
-from app.models.candidate import Candidate
+from app.models.candidate import Candidate, RYZE_TENANT
 from app.api.bookings import require_admin
 from app.models.user import User
 from app.schemas.candidate import (
@@ -64,7 +64,7 @@ def list_candidates(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    query = db.query(Candidate).filter(Candidate.tenant_id == 1)
+    query = db.query(Candidate).filter(Candidate.tenant_id == RYZE_TENANT)
     if search:
         term = f"%{search}%"
         query = query.filter(
@@ -85,7 +85,7 @@ def get_candidate(
 ):
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == 1)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
         .first()
     )
     if not candidate:
@@ -113,17 +113,13 @@ def check_duplicate(
     if not name or len(name.strip()) < 2:
         return []
 
-    # Normalize: strip and split into tokens, require all tokens to match
     tokens = name.strip().lower().split()
 
-    query = db.query(Candidate).filter(Candidate.tenant_id == 1)
+    query = db.query(Candidate).filter(Candidate.tenant_id == RYZE_TENANT)
     for token in tokens:
         query = query.filter(Candidate.name.ilike(f"%{token}%"))
 
     matches = query.order_by(Candidate.created_at.desc()).all()
-
-    # If location provided, prefer matches that share location but still return all
-    # (we show location in the warning so the user can judge)
     return matches
 
 
@@ -139,7 +135,7 @@ def create_candidate(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    candidate = Candidate(tenant_id=1, **payload.model_dump())
+    candidate = Candidate(tenant_id=RYZE_TENANT, **payload.model_dump())
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
@@ -158,7 +154,7 @@ def update_candidate(
 ):
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == 1)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
         .first()
     )
     if not candidate:
@@ -185,7 +181,7 @@ def delete_candidate(
 ):
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == 1)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
         .first()
     )
     if not candidate:
@@ -250,27 +246,27 @@ async def parse_candidate_file(
         )
 
     try:
-        text = _extract_text_from_pdf(data) if is_pdf else _extract_text_from_docx(data)
+        if is_pdf:
+            text = _extract_text_from_pdf(data)
+        else:
+            text = _extract_text_from_docx(data)
     except Exception as e:
-        logger.error(f"File text extraction failed: {e}")
+        logger.error(f"File extraction failed: {e}")
         raise HTTPException(
             status_code=422,
-            detail="Could not extract text from the file. Please try a different file or paste the text instead.",
+            detail="Could not extract text from the uploaded file.",
         )
 
     if not text or len(text.strip()) < 50:
         raise HTTPException(
             status_code=422,
-            detail="Could not extract enough text from the file. Try pasting the content directly instead.",
+            detail="The file appears to be empty or contains very little text.",
         )
 
-    logger.info(f"Extracted {len(text)} chars from {filename}")
     result = parse_candidate_profile(text)
     if not result:
         raise HTTPException(
             status_code=422,
-            detail="Could not parse the file. Please try again or paste the text manually.",
+            detail="Could not parse the provided file. Please try again.",
         )
-
-    result["linkedin_raw_text"] = text
     return result

@@ -45,7 +45,7 @@ class CandidateUpdate(BaseModel):
 
 class CandidateResponse(BaseModel):
     id: int
-    tenant_id: int
+    tenant_id: Optional[str] = None  # String(100) — was int, now consistent
     name: str
     email: Optional[str] = None
     phone: Optional[str] = None
