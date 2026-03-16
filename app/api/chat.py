@@ -366,9 +366,9 @@ def tool_search_job_orders(db: Session, query: str, limit: int = 5) -> dict:
             {
                 "id": j.id,
                 "title": j.title,
-                "company_name": j.company_name,
                 "location": j.location,
-                "salary_range": j.salary_range,
+                "salary_min": j.salary_min,
+                "salary_max": j.salary_max,
                 "score": round(max(0.0, 1.0 - float(distances[jid])), 4),
             }
         )
@@ -396,7 +396,7 @@ def tool_get_todays_meetings(db: Session) -> dict:
                 "time_slot": b.time_slot,
                 "status": b.status,
                 "meeting_url": b.meeting_url,
-                "meeting_type": b.meeting_type,
+                "booking_type": b.booking_type,
             }
         )
 
