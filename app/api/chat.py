@@ -1,18 +1,23 @@
 # app/api/chat.py
 """
-RYZE.ai Chat — Phase 3
+RYZE.ai Chat — Phase 3 (Streaming)
 
-Conversational AI interface backed by Claude with tool_use.
-Claude decides which tools to call based on the recruiter's question,
-retrieves live data from the database, and synthesizes a natural language answer.
+Agentic loop runs tool calls synchronously (fast DB queries),
+then streams the final Claude text response token-by-token.
+A trailing JSON chunk carries structured data (candidate/meeting cards).
+
+Stream protocol (newline-delimited):
+  - Text chunks:  plain text fragments streamed as they arrive
+  - Final chunk:  "\n__DATA__\n" + JSON with candidates/employers/meetings/job_orders
 """
 import json
 import logging
 from datetime import date, datetime, timedelta
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -33,8 +38,9 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
+
 # ---------------------------------------------------------------------------
-# Request / response schemas
+# Request schemas
 # ---------------------------------------------------------------------------
 
 
@@ -48,16 +54,8 @@ class ChatRequest(BaseModel):
     history: Optional[List[ChatMessage]] = []
 
 
-class ChatResponse(BaseModel):
-    response: str
-    candidates: Optional[list] = None
-    employers: Optional[list] = None
-    meetings: Optional[list] = None
-    job_orders: Optional[list] = None
-
-
 # ---------------------------------------------------------------------------
-# Tool definitions — what Claude can call
+# Tool definitions — unchanged from original
 # ---------------------------------------------------------------------------
 
 TOOLS = [
@@ -222,7 +220,7 @@ TOOLS = [
 
 
 # ---------------------------------------------------------------------------
-# Tool execution functions
+# Tool execution functions — preserved exactly from original
 # ---------------------------------------------------------------------------
 
 
@@ -476,7 +474,7 @@ def tool_match_candidates_to_job(db: Session, job_title: str, limit: int = 5) ->
 
 
 # ---------------------------------------------------------------------------
-# Tool dispatch
+# Tool dispatch — unchanged from original
 # ---------------------------------------------------------------------------
 
 TOOL_DISPATCH = {
@@ -504,94 +502,67 @@ TOOL_DISPATCH = {
 
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System prompt — tightened for concise, prose-first responses
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston. You have direct access to the recruiter's live database of candidates, employer profiles, job orders, and meeting history.
+SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston. You have direct access to the recruiter's live database.
 
 Today's date is {date.today().strftime("%B %d, %Y")}.
 
-Your role:
-- Answer recruiting questions using real data from the database
-- Help the recruiter find the right candidates for open roles
-- Surface insights about employers, meetings, and pipeline
-- Be concise, specific, and actionable — you're talking to a busy recruiter
-
-When presenting candidates:
-- Lead with the most relevant match
-- Mention name, title, certifications, years of experience, and what makes them a fit
-- Be specific — reference actual details from their profile, not generic summaries
-
-When presenting meetings:
-- Include the contact name, company, time, and status
-- Mention the Zoom link if confirmed
-
-When you don't have data:
-- Say so clearly — don't invent candidates or companies
-- Suggest what additional data would help
-
-Keep responses focused and professional. Use bullet points for lists of candidates or meetings. Avoid unnecessary preamble."""
+RESPONSE STYLE — follow these rules strictly:
+- Be concise. Most answers should be 2–5 sentences or a short list. Never pad.
+- No markdown headers. No bold labels. Plain prose or simple lists only.
+- Lead with the answer immediately. No preamble like "Great question" or "Based on your database..."
+- For candidate lists: name, title, one key detail per line. That's it.
+- For meetings: name, company, time. One line each.
+- If you don't have data, say so in one sentence and stop.
+- Never repeat information already stated in the same response."""
 
 
 # ---------------------------------------------------------------------------
-# Chat endpoint
+# Streaming generator
 # ---------------------------------------------------------------------------
 
 
-@router.post("", response_model=ChatResponse)
-def chat(
-    payload: ChatRequest,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
+def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     """
-    RYZE Intelligence chat endpoint.
-    Accepts a message and conversation history, returns AI response with optional structured data.
+    1. Run agentic tool-call loop synchronously (fast DB queries).
+    2. Stream the final Claude text response token by token.
+    3. Emit a trailing __DATA__ chunk with structured card data.
     """
-    if not payload.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty.")
-
-    # Build conversation history for Claude
     messages = []
     for msg in payload.history or []:
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": payload.message})
 
-    # Accumulated structured results across all tool calls
-    all_candidates = []
-    all_employers = []
-    all_meetings = []
-    all_job_orders = []
+    all_candidates: list = []
+    all_employers: list = []
+    all_meetings: list = []
+    all_job_orders: list = []
 
-    # Agentic loop — Claude may call multiple tools
+    # ── Agentic tool-call loop (non-streaming) ─────────────────────────────
     max_iterations = 5
     for _ in range(max_iterations):
         response = client.messages.create(
             model="claude-opus-4-20250514",
-            max_tokens=2048,
+            max_tokens=1024,
             system=SYSTEM_PROMPT,
             tools=TOOLS,
             messages=messages,
         )
 
-        # If Claude is done (no more tool calls), extract final text response
         if response.stop_reason == "end_turn":
-            final_text = ""
-            for block in response.content:
-                if hasattr(block, "text"):
-                    final_text += block.text
+            # Tool calls complete — now stream the final answer
             break
 
-        # Process tool calls
         if response.stop_reason == "tool_use":
-            # Add assistant's response (with tool_use blocks) to history
             messages.append(
                 {
                     "role": "assistant",
                     "content": [block.model_dump() for block in response.content],
                 }
             )
-            # Execute each tool call and collect results
+
             tool_results = []
             for block in response.content:
                 if block.type != "tool_use":
@@ -612,7 +583,6 @@ def chat(
                         logger.error(f"Tool {tool_name} failed: {e}")
                         result = {"error": str(e)}
 
-                # Accumulate structured results for frontend cards
                 if "candidates" in result:
                     all_candidates.extend(result["candidates"])
                 if "employers" in result:
@@ -630,51 +600,65 @@ def chat(
                     }
                 )
 
-            # Add tool results to conversation
             messages.append({"role": "user", "content": tool_results})
 
         else:
-            # Unexpected stop reason
-            final_text = "I encountered an unexpected issue. Please try again."
-            break
+            yield "I encountered an unexpected issue. Please try again."
+            return
+
     else:
-        final_text = (
-            "I reached the maximum number of steps. Please try a simpler question."
-        )
+        yield "I reached the maximum number of steps. Please ask a simpler question."
+        return
 
-    # Deduplicate results by ID
-    seen_candidates = set()
-    unique_candidates = []
-    for c in all_candidates:
-        if c["id"] not in seen_candidates:
-            seen_candidates.add(c["id"])
-            unique_candidates.append(c)
+    # ── Stream the final answer token by token ─────────────────────────────
+    with client.messages.stream(
+        model="claude-opus-4-20250514",
+        max_tokens=1024,
+        system=SYSTEM_PROMPT,
+        messages=messages,
+    ) as stream:
+        for text_chunk in stream.text_stream:
+            yield text_chunk
 
-    seen_employers = set()
-    unique_employers = []
-    for e in all_employers:
-        if e["id"] not in seen_employers:
-            seen_employers.add(e["id"])
-            unique_employers.append(e)
+    # ── Deduplicate structured results ─────────────────────────────────────
+    def dedup(items):
+        seen, out = set(), []
+        for item in items:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                out.append(item)
+        return out
 
-    seen_meetings = set()
-    unique_meetings = []
-    for m in all_meetings:
-        if m["id"] not in seen_meetings:
-            seen_meetings.add(m["id"])
-            unique_meetings.append(m)
+    structured = {
+        "candidates": dedup(all_candidates) or None,
+        "employers": dedup(all_employers) or None,
+        "meetings": dedup(all_meetings) or None,
+        "job_orders": dedup(all_job_orders) or None,
+    }
 
-    seen_jobs = set()
-    unique_jobs = []
-    for j in all_job_orders:
-        if j["id"] not in seen_jobs:
-            seen_jobs.add(j["id"])
-            unique_jobs.append(j)
+    # ── Trailing data chunk ────────────────────────────────────────────────
+    yield "\n__DATA__\n" + json.dumps(structured)
 
-    return ChatResponse(
-        response=final_text,
-        candidates=unique_candidates if unique_candidates else None,
-        employers=unique_employers if unique_employers else None,
-        meetings=unique_meetings if unique_meetings else None,
-        job_orders=unique_jobs if unique_jobs else None,
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.post("")
+async def chat(
+    payload: ChatRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    return StreamingResponse(
+        stream_chat_response(payload, db),
+        media_type="text/plain",
+        headers={
+            "X-Accel-Buffering": "no",  # tell nginx not to buffer the stream
+            "Cache-Control": "no-cache",
+        },
     )
