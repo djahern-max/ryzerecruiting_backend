@@ -24,8 +24,6 @@ from app.api import chat_sessions
 
 app = FastAPI(title="RYZE.ai API")
 
-Base.metadata.create_all(bind=engine)
-
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.SECRET_KEY,
