@@ -324,7 +324,14 @@ def embed_job_order_background(job_order_id: int) -> None:
 
 def build_booking_text(booking) -> Optional[str]:
     """
-    Compose embeddable text from a booking's meeting summary and context.
+    Compose embeddable text from all available meeting intelligence fields.
+
+    Concatenates summary, next steps, keywords, and transcript so the
+    RAG search has maximum signal — exact dialogue becomes searchable,
+    not just the AI summary paragraph.
+
+    Transcript is truncated to ~6000 chars to stay within embedding
+    token limits (text-embedding-3-small supports ~8191 tokens).
     """
     parts = []
 
@@ -341,9 +348,23 @@ def build_booking_text(booking) -> Optional[str]:
         parts.append(f"Call notes: {booking.call_notes}")
 
     if booking.meeting_summary:
-        parts.append(booking.meeting_summary)
+        parts.append(f"Meeting summary:\n{booking.meeting_summary}")
 
-    text = "\n".join(parts).strip()
+    if booking.meeting_next_steps:
+        parts.append(f"Next steps:\n{booking.meeting_next_steps}")
+
+    if booking.meeting_keywords:
+        parts.append(f"Keywords: {booking.meeting_keywords}")
+
+    # Transcript last — it's the longest and most detailed.
+    # Truncate to stay within embedding token limits.
+    if booking.meeting_transcript:
+        transcript_excerpt = booking.meeting_transcript[:6000]
+        if len(booking.meeting_transcript) > 6000:
+            transcript_excerpt += "\n[transcript truncated]"
+        parts.append(f"Meeting transcript:\n{transcript_excerpt}")
+
+    text = "\n\n".join(parts).strip()
     return text if len(text) > 20 else None
 
 

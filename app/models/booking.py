@@ -53,7 +53,10 @@ class Booking(Base):
     reminded_at = Column(DateTime(timezone=True), nullable=True)
 
     # ── Zoom AI notes ─────────────────────────────────────────────────────
-    meeting_summary = Column(Text, nullable=True)
+    meeting_summary = Column(Text, nullable=True)  # overview paragraph (existing)
+    meeting_next_steps = Column(Text, nullable=True)  # action items Zoom extracted
+    meeting_keywords = Column(Text, nullable=True)  # comma-separated key topics
+    meeting_transcript = Column(Text, nullable=True)  # full word-for-word dialogue
 
     # ── Embedding (for meeting notes semantic search) ─────────────────────
     embedding = Column(Vector(1536), nullable=True)

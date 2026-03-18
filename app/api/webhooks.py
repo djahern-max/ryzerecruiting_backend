@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.booking import Booking
-from app.services.zoom import get_meeting_summary
+from app.services.zoom import get_meeting_data, get_meeting_transcript
 from app.services.embedding_service import embed_booking_background
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ async def zoom_webhook(
         logger.warning("Zoom webhook signature verification failed")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # ── meeting.ended — fetch summary using UUID ─────────────────────────
+    # ── meeting.ended — fetch rich summary + transcript ──────────────────
     if event == "meeting.ended":
         object_data = payload.get("payload", {}).get("object", {})
         meeting_id = str(object_data.get("id", ""))
@@ -83,7 +83,6 @@ async def zoom_webhook(
             logger.warning("No UUID in meeting.ended payload")
             return {"status": "ok", "reason": "no uuid"}
 
-        # Match booking by numeric meeting_id in the join URL
         booking = (
             db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
         )
@@ -92,22 +91,46 @@ async def zoom_webhook(
             logger.warning(f"No booking found for meeting_id: {meeting_id}")
             return {"status": "ok", "reason": "no matching booking"}
 
-        # Fetch summary using UUID
-        summary_text = get_meeting_summary(meeting_uuid)
-
-        if summary_text:
-            booking.meeting_summary = summary_text
-            db.commit()
-            background_tasks.add_task(embed_booking_background, booking.id)
-            logger.info(f"Meeting summary saved for booking {booking.id}")
+        # ── Fetch rich AI Companion summary data ─────────────────────────
+        meeting_data = get_meeting_data(meeting_uuid)
+        if meeting_data:
+            if meeting_data.get("summary"):
+                booking.meeting_summary = meeting_data["summary"]
+                logger.info(f"Summary saved for booking {booking.id}")
+            if meeting_data.get("next_steps"):
+                booking.meeting_next_steps = meeting_data["next_steps"]
+                logger.info(f"Next steps saved for booking {booking.id}")
+            if meeting_data.get("keywords"):
+                booking.meeting_keywords = meeting_data["keywords"]
+                logger.info(f"Keywords saved for booking {booking.id}")
         else:
             logger.info(
-                f"No summary available for meeting {meeting_id} — AI Companion may not have been active"
+                f"No AI Companion summary available for meeting {meeting_id} — "
+                "AI Companion may not have been active"
             )
 
+        # ── Fetch transcript ─────────────────────────────────────────────
+        # Note: Zoom transcripts take 1-5 minutes to process after meeting ends.
+        # We attempt fetch immediately — if None is returned that is expected
+        # for the very first webhook fire. The summary_updated event below
+        # provides a second opportunity to capture it.
+        transcript = get_meeting_transcript(meeting_id)
+        if transcript:
+            booking.meeting_transcript = transcript
+            logger.info(
+                f"Transcript saved for booking {booking.id}: {len(transcript)} chars"
+            )
+        else:
+            logger.info(
+                f"Transcript not yet available for meeting {meeting_id} — "
+                "will retry on summary_updated event"
+            )
+
+        db.commit()
+        background_tasks.add_task(embed_booking_background, booking.id)
         return {"status": "ok"}
 
-    # ── meeting.summary_updated (fallback) ───────────────────────────────
+    # ── meeting.summary_updated — fallback / transcript retry ────────────
     if event == "meeting.summary_updated":
         object_data = payload.get("payload", {}).get("object", {})
         meeting_id = str(object_data.get("id", ""))
@@ -126,12 +149,34 @@ async def zoom_webhook(
         )
 
         if booking:
+            # Update summary
             booking.meeting_summary = summary_text
+
+            # Try to extract next_steps / keywords if summary is a dict
+            if isinstance(summary, dict):
+                raw_next_steps = summary.get("next_steps", [])
+                if isinstance(raw_next_steps, list) and raw_next_steps:
+                    booking.meeting_next_steps = "\n".join(
+                        f"• {s}" for s in raw_next_steps if s
+                    )
+                raw_keywords = summary.get("keywords", [])
+                if isinstance(raw_keywords, list) and raw_keywords:
+                    booking.meeting_keywords = ", ".join(str(k) for k in raw_keywords)
+
+            # Retry transcript fetch — may now be ready since summary_updated
+            # fires a few minutes after meeting.ended
+            if not booking.meeting_transcript:
+                transcript = get_meeting_transcript(meeting_id)
+                if transcript:
+                    booking.meeting_transcript = transcript
+                    logger.info(
+                        f"Transcript saved on summary_updated for booking {booking.id}: "
+                        f"{len(transcript)} chars"
+                    )
+
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
-            logger.info(
-                f"Summary saved via summary_updated event for booking {booking.id}"
-            )
+            logger.info(f"Booking {booking.id} updated on summary_updated event")
 
         return {"status": "ok"}
 
