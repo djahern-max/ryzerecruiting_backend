@@ -369,32 +369,62 @@ def build_booking_text(booking) -> Optional[str]:
 
 
 def embed_booking_background(booking_id: int) -> None:
-    """
-    Generate and store an embedding for a single booking's meeting notes.
-    Designed to run as a FastAPI BackgroundTask.
-    """
-    from app.models.booking import Booking
-
     db: Session = SessionLocal()
     try:
-        booking = db.query(Booking).filter(Booking.id == booking_id).first()
-        if not booking:
+        # Use raw SQL to avoid relationship resolution issues
+        from sqlalchemy import text
+
+        result = db.execute(
+            text(
+                """
+                SELECT id, company_name, employer_name, date, call_notes,
+                       meeting_summary, meeting_next_steps, meeting_keywords,
+                       meeting_transcript
+                FROM bookings WHERE id = :id
+            """
+            ),
+            {"id": booking_id},
+        ).fetchone()
+
+        if not result:
             logger.warning(f"embed_booking_background: booking #{booking_id} not found")
             return
 
-        text = build_booking_text(booking)
-        if not text:
+        # Build text manually from raw result
+        parts = []
+        if result.employer_name:
+            parts.append(f"Contact: {result.employer_name}")
+        if result.date:
+            parts.append(f"Meeting date: {result.date}")
+        if result.call_notes:
+            parts.append(f"Call notes: {result.call_notes}")
+        if result.meeting_summary:
+            parts.append(f"Meeting summary:\n{result.meeting_summary}")
+        if result.meeting_next_steps:
+            parts.append(f"Next steps:\n{result.meeting_next_steps}")
+        if result.meeting_keywords:
+            parts.append(f"Keywords: {result.meeting_keywords}")
+        if result.meeting_transcript:
+            excerpt = result.meeting_transcript[:6000]
+            parts.append(f"Meeting transcript:\n{excerpt}")
+
+        text_block = "\n\n".join(parts).strip()
+        if len(text_block) < 20:
             logger.warning(
                 f"embed_booking_background: no embeddable text for booking #{booking_id}"
             )
             return
 
-        vector = generate_embedding(text)
+        vector = generate_embedding(text_block)
         if vector:
-            booking.embedding = vector
-            booking.embedded_at = datetime.utcnow()
+            db.execute(
+                text(
+                    "UPDATE bookings SET embedding = :vec, embedded_at = NOW() WHERE id = :id"
+                ),
+                {"vec": str(vector), "id": booking_id},
+            )
             db.commit()
-            logger.info(f"Embedded booking #{booking_id} ({booking.company_name})")
+            logger.info(f"Embedded booking #{booking_id}")
         else:
             logger.error(
                 f"embed_booking_background: embedding failed for booking #{booking_id}"
@@ -409,31 +439,62 @@ def embed_booking_background(booking_id: int) -> None:
 def backfill_bookings() -> dict:
     """
     One-time backfill: embed all bookings that have meeting_summary but no embedding.
-    Run after seeding demo data.
+    Uses raw SQL to avoid SQLAlchemy relationship resolution issues.
     """
-    from app.models.booking import Booking
+    from sqlalchemy import text
 
     db: Session = SessionLocal()
     count, errors = 0, 0
     try:
-        bookings = (
-            db.query(Booking)
-            .filter(Booking.meeting_summary.isnot(None))
-            .filter(Booking.embedding.is_(None))
-            .all()
-        )
-        for booking in bookings:
-            text = build_booking_text(booking)
-            if not text:
+        rows = db.execute(
+            text(
+                """
+                SELECT id, company_name, employer_name, date, call_notes,
+                       meeting_summary, meeting_next_steps, meeting_keywords,
+                       meeting_transcript
+                FROM bookings
+                WHERE meeting_summary IS NOT NULL
+                AND embedding IS NULL
+            """
+            )
+        ).fetchall()
+
+        for result in rows:
+            parts = []
+            if result.employer_name:
+                parts.append(f"Contact: {result.employer_name}")
+            if result.date:
+                parts.append(f"Meeting date: {result.date}")
+            if result.call_notes:
+                parts.append(f"Call notes: {result.call_notes}")
+            if result.meeting_summary:
+                parts.append(f"Meeting summary:\n{result.meeting_summary}")
+            if result.meeting_next_steps:
+                parts.append(f"Next steps:\n{result.meeting_next_steps}")
+            if result.meeting_keywords:
+                parts.append(f"Keywords: {result.meeting_keywords}")
+            if result.meeting_transcript:
+                excerpt = result.meeting_transcript[:6000]
+                parts.append(f"Meeting transcript:\n{excerpt}")
+
+            text_block = "\n\n".join(parts).strip()
+            if len(text_block) < 20:
                 continue
-            vector = generate_embedding(text)
+
+            vector = generate_embedding(text_block)
             if vector:
-                booking.embedding = vector
-                booking.embedded_at = datetime.utcnow()
+                db.execute(
+                    text(
+                        "UPDATE bookings SET embedding = :vec, embedded_at = NOW() WHERE id = :id"
+                    ),
+                    {"vec": str(vector), "id": result.id},
+                )
+                db.commit()
                 count += 1
+                logger.info(f"Backfill embedded booking #{result.id}")
             else:
                 errors += 1
-        db.commit()
+
         logger.info(f"Booking backfill complete: {count} embedded, {errors} errors")
     except Exception as e:
         db.rollback()
