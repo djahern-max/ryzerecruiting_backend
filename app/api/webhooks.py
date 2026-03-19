@@ -5,14 +5,17 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, Request, Depends
-from sqlalchemy.orm import Session
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Depends
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.booking import Booking
-from app.services.zoom import get_meeting_data, get_meeting_transcript
+from app.services.zoom import (
+    get_meeting_data,
+    get_meeting_transcript,
+    download_recording_file,
+)
 from app.services.embedding_service import embed_booking_background
 
 logger = logging.getLogger(__name__)
@@ -71,7 +74,10 @@ async def zoom_webhook(
         logger.warning("Zoom webhook signature verification failed")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # ── meeting.ended — fetch rich summary + transcript ──────────────────
+    # ── meeting.ended — fetch AI summary only ────────────────────────────
+    # Transcript is NOT attempted here. Cloud recording takes 5–15 minutes
+    # to process after the meeting ends. recording.completed fires when
+    # the files are actually ready — that's where we capture the transcript.
     if event == "meeting.ended":
         object_data = payload.get("payload", {}).get("object", {})
         meeting_id = str(object_data.get("id", ""))
@@ -86,12 +92,10 @@ async def zoom_webhook(
         booking = (
             db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
         )
-
         if not booking:
             logger.warning(f"No booking found for meeting_id: {meeting_id}")
             return {"status": "ok", "reason": "no matching booking"}
 
-        # ── Fetch rich AI Companion summary data ─────────────────────────
         meeting_data = get_meeting_data(meeting_uuid)
         if meeting_data:
             if meeting_data.get("summary"):
@@ -99,38 +103,95 @@ async def zoom_webhook(
                 logger.info(f"Summary saved for booking {booking.id}")
             if meeting_data.get("next_steps"):
                 booking.meeting_next_steps = meeting_data["next_steps"]
-                logger.info(f"Next steps saved for booking {booking.id}")
             if meeting_data.get("keywords"):
                 booking.meeting_keywords = meeting_data["keywords"]
-                logger.info(f"Keywords saved for booking {booking.id}")
         else:
             logger.info(
-                f"No AI Companion summary available for meeting {meeting_id} — "
-                "AI Companion may not have been active"
+                f"No AI Companion summary yet for meeting {meeting_id} — "
+                "will update on meeting.summary_updated"
             )
 
-        # ── Fetch transcript ─────────────────────────────────────────────
-        # Note: Zoom transcripts take 1-5 minutes to process after meeting ends.
-        # We attempt fetch immediately — if None is returned that is expected
-        # for the very first webhook fire. The summary_updated event below
-        # provides a second opportunity to capture it.
-        transcript = get_meeting_transcript(meeting_id)
+        db.commit()
+        return {"status": "ok"}
+
+    # ── recording.completed — transcript is now ready ────────────────────
+    # This fires 5–15 minutes after the meeting ends once Zoom finishes
+    # processing the cloud recording. The payload contains download URLs
+    # for every file type (MP4, M4A, TRANSCRIPT, CHAT) plus a download_token
+    # valid for 24 hours. We use that token directly instead of fetching a
+    # fresh OAuth token — it's already scoped to these specific files.
+    if event == "recording.completed":
+        object_data = payload.get("payload", {}).get("object", {})
+        meeting_id = str(object_data.get("id", ""))
+        download_token = object_data.get("download_token", "")
+        recording_files = object_data.get("recording_files", [])
+
+        logger.info(
+            f"recording.completed — id: {meeting_id}, "
+            f"files: {[f.get('file_type') for f in recording_files]}"
+        )
+
+        if not meeting_id:
+            return {"status": "ok", "reason": "no meeting id"}
+
+        booking = (
+            db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
+        )
+        if not booking:
+            logger.warning(f"No booking found for meeting_id: {meeting_id}")
+            return {"status": "ok", "reason": "no matching booking"}
+
+        # Find the TRANSCRIPT file in the recording list
+        transcript_url = None
+        for f in recording_files:
+            file_type = f.get("file_type", "").upper()
+            recording_type = f.get("recording_type", "")
+            file_status = f.get("status", "")
+
+            if file_type == "TRANSCRIPT" or recording_type == "audio_transcript":
+                # Only download if file is fully processed
+                if file_status in ("completed", ""):
+                    transcript_url = f.get("download_url")
+                    break
+                else:
+                    logger.info(
+                        f"Transcript file found but status is '{file_status}' "
+                        f"for meeting {meeting_id} — skipping"
+                    )
+
+        if not transcript_url:
+            logger.info(
+                f"No TRANSCRIPT file in recording.completed for meeting {meeting_id}"
+            )
+            return {"status": "ok", "reason": "no transcript file"}
+
+        if not download_token:
+            logger.warning(
+                f"recording.completed has no download_token for meeting {meeting_id} "
+                "— falling back to OAuth token fetch"
+            )
+            # Fallback: poll the recordings API (slower but works)
+            transcript = get_meeting_transcript(meeting_id)
+        else:
+            transcript = download_recording_file(transcript_url, download_token)
+
         if transcript:
             booking.meeting_transcript = transcript
+            db.commit()
+            background_tasks.add_task(embed_booking_background, booking.id)
             logger.info(
                 f"Transcript saved for booking {booking.id}: {len(transcript)} chars"
             )
         else:
-            logger.info(
-                f"Transcript not yet available for meeting {meeting_id} — "
-                "will retry on summary_updated event"
+            logger.warning(
+                f"Transcript download returned empty for meeting {meeting_id}"
             )
 
-        db.commit()
-        background_tasks.add_task(embed_booking_background, booking.id)
         return {"status": "ok"}
 
-    # ── meeting.summary_updated — fallback / transcript retry ────────────
+    # ── meeting.summary_updated — summary refresh + transcript fallback ──
+    # Fires a few minutes after meeting.ended. Good safety net if the
+    # meeting.ended summary was empty (AI Companion sometimes takes longer).
     if event == "meeting.summary_updated":
         object_data = payload.get("payload", {}).get("object", {})
         meeting_id = str(object_data.get("id", ""))
@@ -147,12 +208,9 @@ async def zoom_webhook(
         booking = (
             db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
         )
-
         if booking:
-            # Update summary
             booking.meeting_summary = summary_text
 
-            # Try to extract next_steps / keywords if summary is a dict
             if isinstance(summary, dict):
                 raw_next_steps = summary.get("next_steps", [])
                 if isinstance(raw_next_steps, list) and raw_next_steps:
@@ -163,20 +221,9 @@ async def zoom_webhook(
                 if isinstance(raw_keywords, list) and raw_keywords:
                     booking.meeting_keywords = ", ".join(str(k) for k in raw_keywords)
 
-            # Retry transcript fetch — may now be ready since summary_updated
-            # fires a few minutes after meeting.ended
-            if not booking.meeting_transcript:
-                transcript = get_meeting_transcript(meeting_id)
-                if transcript:
-                    booking.meeting_transcript = transcript
-                    logger.info(
-                        f"Transcript saved on summary_updated for booking {booking.id}: "
-                        f"{len(transcript)} chars"
-                    )
-
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
-            logger.info(f"Booking {booking.id} updated on summary_updated event")
+            logger.info(f"Booking {booking.id} summary refreshed on summary_updated")
 
         return {"status": "ok"}
 

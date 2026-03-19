@@ -43,7 +43,7 @@ def create_meeting(topic: str, date: str, time_slot: str) -> dict:
             "waiting_room": False,
             "join_before_host": True,
             "mute_upon_entry": False,
-            "auto_recording": "cloud",  # enables cloud recording for transcript
+            "auto_recording": "cloud",  # enables cloud recording + transcript
         },
     }
 
@@ -65,12 +65,10 @@ def get_meeting_data(meeting_uuid: str) -> dict:
     """
     Fetch the full AI Companion summary data for a completed meeting.
     Returns a dict with keys: summary, next_steps, keywords.
-    All values are strings; missing fields return None.
+    All values are strings or None.
     """
     try:
         token = get_access_token()
-
-        # Double-encode UUIDs that contain '/' or '//'
         encoded_uuid = quote(quote(meeting_uuid, safe=""), safe="")
 
         response = httpx.get(
@@ -123,7 +121,6 @@ def get_meeting_data(meeting_uuid: str) -> dict:
                 summary = summary + "\n\n" + "\n".join(detail_parts)
 
         # ── Next steps ────────────────────────────────────────────────────
-        # Zoom returns next_steps as a list of dicts or strings
         raw_next_steps = data.get("next_steps", [])
         if isinstance(raw_next_steps, list):
             next_steps_parts = []
@@ -160,14 +157,64 @@ def get_meeting_data(meeting_uuid: str) -> dict:
         return {}
 
 
+def download_recording_file(download_url: str, download_token: str) -> str | None:
+    """
+    Download a Zoom recording file using the download_token from the
+    recording.completed webhook payload.
+
+    This is the correct way to fetch a transcript when handling
+    recording.completed — the download_token is scoped to these exact files
+    and valid for 24 hours, so we don't need to exchange credentials.
+
+    For TRANSCRIPT files, the content is VTT format — parsed to plain text
+    before returning.
+    """
+    try:
+        response = httpx.get(
+            f"{download_url}?access_token={download_token}",
+            follow_redirects=True,
+            timeout=30.0,
+        )
+
+        logger.info(
+            f"Recording file download status {response.status_code} "
+            f"for URL {download_url[:60]}…"
+        )
+
+        if response.status_code != 200:
+            logger.warning(
+                f"Failed to download recording file: HTTP {response.status_code}"
+            )
+            return None
+
+        content = response.text
+        if not content or not content.strip():
+            logger.warning("Recording file download returned empty content")
+            return None
+
+        # Detect VTT format and parse to plain text
+        if content.strip().startswith("WEBVTT"):
+            parsed = _parse_vtt_transcript(content)
+            logger.info(f"VTT transcript parsed: {len(parsed)} chars")
+            return parsed or None
+
+        # Non-VTT content (e.g. chat file) — return as-is
+        return content.strip() or None
+
+    except Exception as e:
+        logger.error(f"Failed to download recording file: {e}")
+        return None
+
+
 def get_meeting_transcript(meeting_id: str) -> str | None:
     """
-    Fetch the cloud recording transcript for a completed meeting.
-    Returns the full transcript as plain text, or None if unavailable.
+    Fallback: poll the recordings API to fetch a transcript.
 
-    Requires cloud recording + audio transcript enabled in Zoom settings.
-    Zoom transcripts take 1-5 minutes to process after the meeting ends —
-    if None is returned immediately after meeting.ended, that is expected.
+    Prefer download_recording_file() when handling recording.completed —
+    it uses the download_token from the webhook payload directly.
+
+    This function is kept as a fallback for cases where the download_token
+    is unavailable or the recording.completed webhook was missed.
     """
     try:
         token = get_access_token()
@@ -188,7 +235,6 @@ def get_meeting_transcript(meeting_id: str) -> str | None:
         data = response.json()
         recording_files = data.get("recording_files", [])
 
-        # Find the transcript file (TRANSCRIPT type or audio_transcript recording type)
         transcript_url = None
         for file in recording_files:
             file_type = file.get("file_type", "").upper()
@@ -198,12 +244,9 @@ def get_meeting_transcript(meeting_id: str) -> str | None:
                 break
 
         if not transcript_url:
-            logger.info(
-                f"No transcript file found in recordings for meeting {meeting_id}"
-            )
+            logger.info(f"No transcript file in recordings for meeting {meeting_id}")
             return None
 
-        # Download the VTT transcript (requires access token as query param)
         transcript_response = httpx.get(
             f"{transcript_url}?access_token={token}",
             follow_redirects=True,
@@ -243,20 +286,16 @@ def _parse_vtt_transcript(vtt_text: str) -> str:
 
     for line in lines:
         line = line.strip()
-        # Skip header, blank lines, numeric cue identifiers
         if not line or line == "WEBVTT" or re.match(r"^\d+$", line):
             continue
-        # Skip timestamp lines (00:00:00.000 --> 00:00:00.000)
         if re.match(r"^\d{2}:\d{2}[:\.]", line):
             continue
-        # Convert <v Speaker> VTT tags to "Speaker: "
         line = re.sub(r"<v\s+([^>]+)>", r"\1: ", line)
-        # Strip any remaining VTT/HTML tags
         line = re.sub(r"<[^>]+>", "", line)
         if line:
             result.append(line)
 
-    # Deduplicate consecutive identical lines (VTT sometimes repeats lines)
+    # Deduplicate consecutive identical lines
     deduped = []
     prev = None
     for line in result:
@@ -275,11 +314,7 @@ def convert_time(time_slot: str) -> str:
     return t.strftime("%H:%M:%S")
 
 
-# ---------------------------------------------------------------------------
-# Legacy alias — keeps any existing callers working
-# ---------------------------------------------------------------------------
-
-
+# ── Legacy alias ─────────────────────────────────────────────────────────────
 def get_meeting_summary(meeting_uuid: str) -> str | None:
     """Legacy alias for get_meeting_data(). Use get_meeting_data() for new code."""
     data = get_meeting_data(meeting_uuid)
