@@ -38,16 +38,21 @@ TABLE_COLS: dict[str, list[str]] = {
     "employer_profiles": [
         "id",
         "company_name",
-        "industry",
-        "website",
-        "contact_name",
-        "contact_email",
-        "contact_phone",
+        "website_url",
+        "primary_contact_email",
+        "phone",
+        "ai_industry",
+        "ai_company_size",
+        "ai_company_overview",
         "ai_hiring_needs",
-        "ai_culture_notes",
         "ai_talking_points",
+        "ai_red_flags",
+        "recruiter_notes",
+        "relationship_status",
         "embedding_status",
+        "tenant_id",
         "created_at",
+        "updated_at",
     ],
     "users": [
         "id",
@@ -76,9 +81,12 @@ SEARCHABLE_COLS: dict[str, list[str]] = {
         "booking_type",
         "call_outcome",
     ],
-    "employer_profiles": ["company_name", "contact_name", "contact_email", "industry"],
-    "users": ["email", "full_name", "user_type"],
-    "waitlist": ["email", "intent"],
+    "employer_profiles": [
+        "company_name",
+        "primary_contact_email",
+        "ai_industry",
+        "relationship_status",
+    ],
 }
 
 
