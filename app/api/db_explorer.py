@@ -315,7 +315,7 @@ async def browse_table(
     params: dict = {"limit": limit, "offset": offset}
 
     if search and search.strip() and searchable:
-        sc = " OR ".join(f'"{c}" ILIKE :search' for c in searchable)
+        sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
         conditions.append(f"({sc})")
         params["search"] = f"%{search.strip()}%"
 
@@ -443,7 +443,7 @@ async def export_table_csv(
     params: dict = {}
 
     if search and search.strip() and searchable:
-        sc = " OR ".join(f'"{c}" ILIKE :search' for c in searchable)
+        sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
         conditions.append(f"({sc})")
         params["search"] = f"%{search.strip()}%"
 
