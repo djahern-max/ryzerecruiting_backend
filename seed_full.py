@@ -42,7 +42,7 @@ candidates = [
         ai_experience="PwC (2019–2022) — audit associate, healthcare clients. MedBridge Health (2022–present) — senior accountant, owns the monthly close, manages 2 staff accountants.",
         ai_education="BS Accounting, Boston University, 2019",
         ai_skills=["NetSuite", "Healthcare", "GAAP", "SOX", "Close Management", "Big 4"],
-        ai_years_experience=5, notes="Great first call. Interested in Controller track. Target $95–110K. Hybrid preferred.",
+        notes="Great first call. Interested in Controller track. Target $95–110K. Hybrid preferred.",
     ),
     Candidate(
         name="Michael Torres", email="mtorres@gmail.com", phone="617-555-0102",
