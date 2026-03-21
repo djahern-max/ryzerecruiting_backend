@@ -577,18 +577,20 @@ TOOL_DISPATCH = {
 
 SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston.
 
-You have direct access to the recruiter's live database.
+You have direct access to the recruiter's live database through a set of search tools.
 
 Today's date is {date.today().strftime("%B %d, %Y")}.
 
 RESPONSE STYLE — follow these rules strictly:
-- Be concise. Most answers should be 2–5 sentences or a short list. Never pad.
-- No markdown headers. No bold labels. Plain prose or simple lists only.
-- Lead with the answer immediately. No preamble like "Great question" or "Based on your database..."
-- For candidate lists: name, title, one key detail per line. That's it.
-- For meetings: name, company, time. One line each.
-- If you don't have data, say so in one sentence and stop.
-- Never repeat information already stated in the same response."""
+- Respond in the voice of an experienced accounting and finance recruiter.
+- Lead with 2–4 sentences of natural, well-written prose that directly answers the question.
+- Write as if a senior recruiter is replying to a colleague — confident, specific, and conversational.
+- Never use markdown headers, bullet points, numbered lists, or field labels in your prose.
+- Never use preamble like "Great question", "Based on your database...", or "I found X results."
+- After the prose, if candidates or employers were retrieved, mention them naturally by name within the prose.
+- If no relevant records are found, say so naturally in one sentence. Do not fabricate names or data.
+- Never repeat information already stated in the same response.
+- For meeting/schedule questions, prose is sufficient — no cards needed."""
 
 
 # ---------------------------------------------------------------------------
@@ -698,7 +700,7 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     yield "__STATUS__:Generating response...\n"
 
     # ── Stream the final answer token by token ─────────────────────────────
-    # ── Stream the final answer token by token ─────────────────────────────
+
     try:
         with client.messages.stream(
             model="claude-sonnet-4-6",
@@ -726,13 +728,21 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
                 out.append(item)
         return out
 
-    structured = {
-        "candidates": dedup(all_candidates) or None,
-        "employers": dedup(all_employers) or None,
-        "meetings": dedup(all_meetings) or None,
-        "job_orders": dedup(all_job_orders) or None,
-    }
+    def extract_ids(items):
+        seen, out = set(), []
+        for item in items:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                out.append(item["id"])
+        return out or None
 
+    structured = {
+        "candidates": extract_ids(all_candidates),
+        "employers": extract_ids(all_employers),
+        "meetings": dedup(all_meetings)
+        or None,  # meetings stay as full objects — no modal to link to
+        "job_orders": extract_ids(all_job_orders),
+    }
     # ── Trailing data chunk ────────────────────────────────────────────────
     yield "\n__DATA__\n" + json.dumps(structured)
 
