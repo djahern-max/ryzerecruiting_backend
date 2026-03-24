@@ -155,6 +155,16 @@ TABLE_COLS: dict[str, list[str]] = {
         "email",
         "message",
     ],
+    "webhook_logs": [
+        "id",
+        "event",
+        "meeting_id",
+        "meeting_uuid",
+        "booking_found",
+        "result",
+        "raw_payload",
+        "received_at",
+    ],
 }
 
 SEARCHABLE_COLS: dict[str, list[str]] = {
@@ -192,6 +202,7 @@ SEARCHABLE_COLS: dict[str, list[str]] = {
     "users": ["email", "full_name", "user_type", "oauth_provider", "tenant_id"],
     "waitlist": ["email", "intent", "source"],
     "contacts": ["name", "email"],
+    "webhook_logs": ["event", "meeting_id", "result", "booking_found"],
 }
 
 # Fields editable via PATCH — never includes id, timestamps, embedding, hashed_password
@@ -255,6 +266,7 @@ EDITABLE_COLS: dict[str, list[str]] = {
     "chat_sessions": [],
     "chat_messages": [],
     "contacts": [],
+    "webhook_logs": [],
 }
 
 TABLES_WITH_UPDATED_AT = {
