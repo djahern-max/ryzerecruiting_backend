@@ -197,14 +197,13 @@ async def zoom_webhook(
         )
         return {"status": "ok"}
 
-    # ── recording.completed — transcript is now ready ────────────────────
-    # This fires 5–15 minutes after the meeting ends once Zoom finishes
-    # processing the cloud recording. The payload contains download URLs
-    # for every file type (MP4, M4A, TRANSCRIPT, CHAT) plus a download_token
-    # valid for 24 hours. We use that token directly instead of fetching a
-    # fresh OAuth token — it's already scoped to these specific files.
+    # ── recording.completed — recording files are ready ──────────────────
+    # Fires 5–15 minutes after the meeting ends. The transcript file may or
+    # may not be present here — if it's missing, recording.transcript_completed
+    # will fire separately when it's ready. We handle both.
+    # NOTE: download_token lives at the ROOT of the payload, not inside object.
     if event == "recording.completed":
-        download_token = object_data.get("download_token", "")
+        download_token = payload.get("download_token", "")  # root level
         recording_files = object_data.get("recording_files", [])
 
         # Log every file type we received — critical for debugging
@@ -268,11 +267,10 @@ async def zoom_webhook(
                     )
 
         if not transcript_url:
-            logger.warning(
-                f"[recording.completed] No TRANSCRIPT file in payload for meeting {meeting_id}. "
-                f"File types received: {[f.get('file_type') for f in recording_files]}. "
-                "Check: (1) Is Audio Transcript enabled in Zoom account settings? "
-                "(2) Was there enough speech in the call?"
+            logger.info(
+                f"[recording.completed] No TRANSCRIPT file yet for meeting {meeting_id} "
+                f"— file types present: {[f.get('file_type') for f in recording_files]}. "
+                "Will capture transcript on recording.transcript_completed."
             )
             _log_webhook(
                 db,
@@ -313,8 +311,7 @@ async def zoom_webhook(
             )
         else:
             logger.warning(
-                f"[recording.completed] Transcript download returned empty for meeting {meeting_id}. "
-                "Check the download_token and URL validity."
+                f"[recording.completed] Transcript download returned empty for meeting {meeting_id}."
             )
             _log_webhook(
                 db,
@@ -324,6 +321,112 @@ async def zoom_webhook(
                 meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result="transcript download returned empty",
+            )
+
+        return {"status": "ok"}
+
+    # ── recording.transcript_completed — transcript file is ready ────────
+    # Fires separately from recording.completed — specifically when the
+    # audio transcript (.vtt) has finished processing. This is the most
+    # reliable event for capturing the transcript.
+    # NOTE: download_token lives at the ROOT of the payload, not inside object.
+    if event == "recording.transcript_completed":
+        download_token = payload.get("download_token", "")  # root level
+        recording_files = object_data.get("recording_files", [])
+
+        logger.info(
+            f"[recording.transcript_completed] id={meeting_id} | "
+            f"download_token={'YES' if download_token else 'MISSING'} | "
+            f"files={[f.get('file_type') for f in recording_files]}"
+        )
+
+        if not meeting_id:
+            _log_webhook(db, event, payload, result="no meeting id")
+            return {"status": "ok"}
+
+        booking = (
+            db.query(Booking).filter(Booking.meeting_url.contains(meeting_id)).first()
+        )
+
+        if not booking:
+            logger.warning(
+                f"[recording.transcript_completed] No booking found for meeting_id={meeting_id}"
+            )
+            _log_webhook(
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="no",
+                result="no matching booking",
+            )
+            return {"status": "ok"}
+
+        # Find the transcript file
+        transcript_url = None
+        for f in recording_files:
+            if (
+                f.get("file_type", "").upper() == "TRANSCRIPT"
+                or f.get("recording_type", "") == "audio_transcript"
+            ):
+                transcript_url = f.get("download_url")
+                logger.info(
+                    f"[recording.transcript_completed] Transcript URL found: "
+                    f"{transcript_url[:60] if transcript_url else 'None'}…"
+                )
+                break
+
+        if not transcript_url:
+            _log_webhook(
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="yes",
+                result=f"no transcript url — files: {[f.get('file_type') for f in recording_files]}",
+            )
+            return {"status": "ok"}
+
+        if download_token:
+            transcript = download_recording_file(transcript_url, download_token)
+        else:
+            logger.warning(
+                f"[recording.transcript_completed] No download_token — falling back to OAuth fetch"
+            )
+            transcript = get_meeting_transcript(meeting_id)
+
+        if transcript:
+            booking.meeting_transcript = transcript
+            db.commit()
+            background_tasks.add_task(embed_booking_background, booking.id)
+            logger.info(
+                f"[recording.transcript_completed] Transcript saved for booking "
+                f"{booking.id}: {len(transcript)} chars"
+            )
+            _log_webhook(
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="yes",
+                result=f"transcript saved: {len(transcript)} chars",
+            )
+        else:
+            logger.warning(
+                f"[recording.transcript_completed] Transcript download empty for meeting "
+                f"{meeting_id} — call may have been too short to generate speech"
+            )
+            _log_webhook(
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="yes",
+                result="transcript download returned empty — call too short?",
             )
 
         return {"status": "ok"}
