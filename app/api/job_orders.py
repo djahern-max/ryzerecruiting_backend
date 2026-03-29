@@ -24,13 +24,27 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/job-orders", tags=["job-orders"])
 
 
+@router.get("/open", response_model=List[JobOrderResponse])
+def list_open_job_orders(db: Session = Depends(get_db)):
+    """
+    Public endpoint — returns all open job orders.
+    No authentication required. Used by candidate and employer dashboards.
+    """
+    return (
+        db.query(JobOrder)
+        .filter(JobOrder.status == "open")
+        .order_by(JobOrder.created_at.desc())
+        .all()
+    )
+
+
 @router.get("", response_model=List[JobOrderResponse])
 def list_job_orders(
     status: Optional[str] = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    query = db.query(JobOrder).filter(JobOrder.tenant_id == 1)
+    query = db.query(JobOrder)
     if status:
         query = query.filter(JobOrder.status == status)
     return query.order_by(JobOrder.created_at.desc()).all()
@@ -44,7 +58,7 @@ def get_job_order(
 ):
     job_order = (
         db.query(JobOrder)
-        .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == 1)
+        .filter(JobOrder.id == job_order_id)
         .first()
     )
     if not job_order:
@@ -59,18 +73,12 @@ def create_job_order(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    job_order = JobOrder(
-        tenant_id=1,
-        **payload.model_dump(),
-    )
+    job_order = JobOrder(**payload.model_dump())
     db.add(job_order)
     db.commit()
     db.refresh(job_order)
     logger.info(f"Job order created: {job_order.title} (#{job_order.id})")
-
-    # Auto-embed in background — non-blocking
     background_tasks.add_task(embed_job_order_background, job_order.id)
-
     return job_order
 
 
@@ -82,33 +90,25 @@ def update_job_order(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    job_order = (
-        db.query(JobOrder)
-        .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == 1)
-        .first()
-    )
+    job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
     if not job_order:
         raise HTTPException(status_code=404, detail="Job order not found.")
 
     update_data = payload.model_dump(exclude_unset=True)
 
-    # Auto-set filled_at when status changes to filled
     if update_data.get("status") == "filled" and job_order.status != "filled":
         update_data["filled_at"] = datetime.utcnow()
 
     for field, value in update_data.items():
         setattr(job_order, field, value)
 
-    # Clear old embedding so the record shows as pending until new one lands
     job_order.embedding = None
     job_order.embedded_at = None
     job_order.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(job_order)
 
-    # Re-embed with updated content
     background_tasks.add_task(embed_job_order_background, job_order.id)
-
     return job_order
 
 
@@ -118,11 +118,7 @@ def delete_job_order(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    job_order = (
-        db.query(JobOrder)
-        .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == 1)
-        .first()
-    )
+    job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
     if not job_order:
         raise HTTPException(status_code=404, detail="Job order not found.")
     db.delete(job_order)
@@ -135,8 +131,7 @@ def parse_job_order(
     _: User = Depends(require_admin),
 ):
     """
-    Parse a job description or job posting text.
-    Returns structured fields for review — does NOT save to database.
+    Parse a job description into structured fields. Does NOT save.
     """
     if not payload.text or len(payload.text.strip()) < 50:
         raise HTTPException(
@@ -145,11 +140,9 @@ def parse_job_order(
         )
 
     result = parse_job_description(payload.text)
-
     if not result:
         raise HTTPException(
             status_code=422,
             detail="Could not parse the provided text. Please try again.",
         )
-
     return result
