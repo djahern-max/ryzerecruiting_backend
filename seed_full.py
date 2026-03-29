@@ -98,6 +98,37 @@ db.commit()
 db.refresh(test_employer_profile)
 print(f"  ✓ Employer profile linked (id={test_employer_profile.id})")
 
+# ── Test Candidate Profile (linked to test candidate user by email) ─────────
+# The /api/candidates/me endpoint matches on email.
+# This profile will appear on the Candidate Dashboard (open jobs + calls).
+test_candidate_profile = Candidate(
+    name="Test Candidate",
+    email=test_candidate_email,
+    phone="617-555-0099",
+    current_title="Senior Accountant",
+    current_company="Demo Corp",
+    location="Boston, MA",
+    ai_career_level="mid",
+    ai_years_experience=5,
+    ai_certifications="CPA",
+    ai_summary=(
+        "Senior Accountant with 5 years of experience in public accounting and industry. "
+        "CPA certified. Strong NetSuite and Excel skills. Looking for a Controller opportunity "
+        "in the Boston area."
+    ),
+    ai_experience="Demo Corp (2021–present) — Senior Accountant. Grant Thornton (2019–2021) — Staff Accountant.",
+    ai_education="BS Accounting, Northeastern, 2019",
+    ai_skills=["NetSuite", "Excel", "GAAP", "Month-end Close", "Financial Reporting"],
+    notes="Test candidate account — linked to test_candidate@ryze.ai login.",
+)
+db.add(test_candidate_profile)
+db.commit()
+db.refresh(test_candidate_profile)
+print(
+    f"  ✓ test candidate profile (id={test_candidate_profile.id}, email={test_candidate_email})"
+)
+
+
 # ── Test Job Orders (linked to test employer profile) ──────────────────────
 test_job_orders = [
     JobOrder(
