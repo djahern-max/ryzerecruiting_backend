@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 RYZE.ai Seed Cleanup Script
-Removes all seeded demo data while preserving real records (users, waitlist).
+Removes all seeded demo data while preserving real records (admin user, waitlist).
 
 Run BEFORE re-seeding:
     python seed_cleanup.py
@@ -9,12 +9,19 @@ Run BEFORE re-seeding:
 Safe to run multiple times.
 """
 import sys, os
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlalchemy import text
 from app.core.database import SessionLocal
 
 db = SessionLocal()
+
+# Test user emails added by seed_full.py — only these are deleted
+TEST_USER_EMAILS = (
+    "test_employer@ryze.ai",
+    "test_candidate@ryze.ai",
+)
 
 print("🧹 Cleaning up seed data...\n")
 
@@ -44,11 +51,26 @@ try:
     db.commit()
     print(f"  ✓ Deleted {result.rowcount} employer profiles")
 
+    # Delete only the test users seeded by seed_full.py
+    # Admin and real registered users are preserved
+    placeholders = ", ".join(f"'{e}'" for e in TEST_USER_EMAILS)
+    result = db.execute(text(f"DELETE FROM users WHERE email IN ({placeholders})"))
+    db.commit()
+    print(f"  ✓ Deleted {result.rowcount} test users ({', '.join(TEST_USER_EMAILS)})")
+
     # Reset sequences so IDs start at 1 on next seed
-    for table in ["chat_messages", "chat_sessions", "job_orders", "bookings", "candidates", "employer_profiles"]:
+    for table in [
+        "chat_messages",
+        "chat_sessions",
+        "job_orders",
+        "bookings",
+        "candidates",
+        "employer_profiles",
+    ]:
         db.execute(text(f"ALTER SEQUENCE {table}_id_seq RESTART WITH 1"))
     db.commit()
     print("\n  ✓ ID sequences reset to 1")
+    print("  ℹ  users sequence NOT reset — preserves admin and real user IDs")
 
     print("\n✅ Cleanup complete. Ready to re-seed:")
     print("   python seed_full.py")

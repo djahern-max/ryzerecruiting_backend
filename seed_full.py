@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
 RYZE.ai Full Demo Seed Script
-Adds comprehensive demo data: 22 candidates, 12 employers, 18 job orders,
-30 bookings with meeting summaries, 5 chat sessions, 10 waitlist entries.
+Adds comprehensive demo data: 2 test users, 22 candidates, 12 employers,
+18 job orders, 30 bookings with meeting summaries, 5 chat sessions,
+10 waitlist entries.
 
 Run from the project root:
     python seed_full.py
 
 Safe to run on existing data — adds records, does not delete anything.
+Test user credentials:
+    Employer : test_employer@ryze.ai  / TestPassword123
+    Candidate: test_candidate@ryze.ai / TestPassword123
 """
 import sys, os
 
@@ -15,9 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from datetime import date, datetime, timedelta
 from app.core.database import SessionLocal
-from app.models.user import (
-    User,
-)  # required for FK resolution on employer_profiles.user_id
+from app.core.security import get_password_hash
+from app.models.user import User, UserType
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
@@ -38,6 +41,126 @@ def dt(days_ago, hour=10):
         days=days_ago
     )
 
+
+# ── Test Users ─────────────────────────────────────────────────────────────
+# These are the only users created by this script.
+# seed_cleanup.py will delete them by email — admin and real users are untouched.
+print("Seeding test users...")
+
+test_employer_email = "test_employer@ryze.ai"
+test_candidate_email = "test_candidate@ryze.ai"
+
+test_employer_user = User(
+    email=test_employer_email,
+    full_name="Test Employer",
+    hashed_password=get_password_hash("TestPassword123"),
+    user_type=UserType.EMPLOYER,
+    is_active=True,
+    is_superuser=False,
+    tenant_id="ryze",
+)
+db.add(test_employer_user)
+
+test_candidate_user = User(
+    email=test_candidate_email,
+    full_name="Test Candidate",
+    hashed_password=get_password_hash("TestPassword123"),
+    user_type=UserType.CANDIDATE,
+    is_active=True,
+    is_superuser=False,
+    tenant_id="ryze",
+)
+db.add(test_candidate_user)
+db.commit()
+db.refresh(test_employer_user)
+db.refresh(test_candidate_user)
+print(f"  ✓ test_employer@ryze.ai  (id={test_employer_user.id})")
+print(f"  ✓ test_candidate@ryze.ai (id={test_candidate_user.id})")
+
+# ── Test Employer Profile (linked to test employer user by email) ───────────
+# The /api/employer-profiles/me endpoint matches on primary_contact_email.
+# This profile will appear on the Employer Dashboard.
+test_employer_profile = EmployerProfile(
+    company_name="Acme Financial Services",
+    website_url="https://acmefinancial.com",
+    primary_contact_email=test_employer_email,
+    phone="617-555-0001",
+    ai_industry="Financial Services",
+    ai_company_size="75 employees, $25M revenue",
+    ai_company_overview="Boston-based financial services firm specializing in middle-market lending and asset management. PE-backed since 2022. Profitable, growing 30% YoY. Finance team of 4 — expanding ahead of a planned 2027 Series B.",
+    ai_hiring_needs='["Controller — CPA required, financial services background", "Senior FP&A Analyst — SaaS metrics a plus"]',
+    ai_talking_points='["PE-backed with runway to grow", "Equity available for Controller role", "Lean team — high ownership, direct CFO access", "Hybrid 3 days Boston office"]',
+    ai_red_flags=None,
+    relationship_status="Active",
+)
+db.add(test_employer_profile)
+db.commit()
+db.refresh(test_employer_profile)
+print(f"  ✓ Employer profile linked (id={test_employer_profile.id})")
+
+# ── Test Job Orders (linked to test employer profile) ──────────────────────
+test_job_orders = [
+    JobOrder(
+        employer_profile_id=test_employer_profile.id,
+        title="Controller",
+        location="Boston, MA",
+        salary_min=130000,
+        salary_max=155000,
+        status="open",
+        requirements="CPA required. 7+ years experience including financial services or asset management. Will own the monthly close, manage 2 staff accountants, and lead audit. NetSuite experience strongly preferred.",
+    ),
+    JobOrder(
+        employer_profile_id=test_employer_profile.id,
+        title="Senior FP&A Analyst",
+        location="Boston, MA",
+        salary_min=90000,
+        salary_max=110000,
+        status="open",
+        requirements="3–6 years FP&A experience. Strong Excel and financial modeling. Will support CFO on board materials, annual budget, and investor KPI reporting. Financial services or PE-backed company background preferred.",
+    ),
+]
+for j in test_job_orders:
+    db.add(j)
+db.commit()
+print(f"  ✓ {len(test_job_orders)} test job orders linked to employer profile")
+
+# ── Test Bookings (linked to test users) ───────────────────────────────────
+test_bookings = [
+    # Confirmed upcoming booking for the employer user
+    Booking(
+        booking_type="inbound",
+        employer_id=test_employer_user.id,
+        employer_name="Test Employer",
+        employer_email=test_employer_email,
+        company_name="Acme Financial Services",
+        website_url="https://acmefinancial.com",
+        date=today + timedelta(days=3),
+        time_slot="10:00 AM",
+        status="confirmed",
+        meeting_url="https://zoom.us/j/999000111",
+        notes="Discovery call to discuss Controller search. Budget approved.",
+    ),
+    # Confirmed upcoming booking for the candidate user
+    Booking(
+        booking_type="inbound_candidate",
+        employer_id=test_candidate_user.id,
+        employer_name="Test Candidate",
+        employer_email=test_candidate_email,
+        date=today + timedelta(days=5),
+        time_slot="2:00 PM",
+        status="confirmed",
+        meeting_url="https://zoom.us/j/999000222",
+        notes="Intro call. Controller background, 10 years experience.",
+    ),
+]
+for b in test_bookings:
+    db.add(b)
+db.commit()
+print(f"  ✓ {len(test_bookings)} test bookings (1 employer, 1 candidate)")
+print()
+
+# ── THE REST OF THE ORIGINAL SEED FILE GOES BELOW THIS LINE ───────────────
+# (Candidates, Employers, Job Orders, Bookings, etc.)
 
 # ── Candidates (22) ────────────────────────────────────────────────────────
 print("Seeding candidates...")
