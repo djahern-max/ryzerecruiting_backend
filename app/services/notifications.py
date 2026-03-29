@@ -143,7 +143,7 @@ def notify_booking_cancelled(
         to_phone=phone,
         body=(
             f"Your RYZE.ai call scheduled for {date} at {time_slot} "
-            f"has been cancelled. Visit ryzerecruiting.com to rebook. Reply STOP to opt out."
+            f"has been cancelled. Visit ryze.ai to rebook. Reply STOP to opt out."
         ),
     )
 
