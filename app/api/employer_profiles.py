@@ -142,6 +142,15 @@ def get_employer_profile(
         )
         .first()
     )
+    tenant_id = current_user.tenant_id or "ryze"
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id,
+            EmployerProfile.tenant_id == tenant_id,
+        )
+        .first()
+    )
     """
     Fetch a single employer intelligence profile by ID.
     Admin only.
