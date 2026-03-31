@@ -7,7 +7,15 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -28,7 +36,7 @@ from app.services.embedding_service import (
     embed_candidate_background,
     generate_embedding,
 )
-from app.services.candidate_parser import parse_candidate_profile
+from app.services.ai_parser import parse_candidate_profile
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +50,7 @@ require_admin = get_current_admin_user
 # Helper — resolve tenant from current user
 # ---------------------------------------------------------------------------
 
+
 def _tenant(user: User) -> str:
     """Return the user's tenant_id, falling back to 'ryze' for legacy NULLs."""
     return user.tenant_id or RYZE_TENANT
@@ -50,6 +59,7 @@ def _tenant(user: User) -> str:
 # ---------------------------------------------------------------------------
 # Job matching — candidate → ranked open roles (candidate-facing)
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{candidate_id}/job-matches", response_model=List[JobMatchResult])
 def get_job_matches(
@@ -142,13 +152,14 @@ def get_job_matches(
 # List / get (admin only)
 # ---------------------------------------------------------------------------
 
+
 @router.get("", response_model=List[CandidateResponse])
 def list_candidates(
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     if search:
@@ -168,13 +179,13 @@ def check_duplicate(
     name: str,
     location: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
     """
     Check for existing candidates with a similar name within this tenant.
     Returns a list of potential matches — empty list means no duplicates found.
     """
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     if not name or len(name.strip()) < 2:
         return []
@@ -191,9 +202,9 @@ def check_duplicate(
 def get_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     candidate = (
         db.query(Candidate)
@@ -209,20 +220,23 @@ def get_candidate(
 # Create / update / delete (admin only)
 # ---------------------------------------------------------------------------
 
+
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
 def create_candidate(
     payload: CandidateCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     candidate = Candidate(tenant_id=tenant_id, **payload.model_dump())
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
-    logger.info(f"Candidate created: {candidate.name} (#{candidate.id}) tenant={tenant_id}")
+    logger.info(
+        f"Candidate created: {candidate.name} (#{candidate.id}) tenant={tenant_id}"
+    )
     background_tasks.add_task(embed_candidate_background, candidate.id)
     return candidate
 
@@ -233,9 +247,9 @@ def update_candidate(
     payload: CandidateUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     candidate = (
         db.query(Candidate)
@@ -262,9 +276,9 @@ def update_candidate(
 def delete_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),       # EP16: was `_`
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
-    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
 
     candidate = (
         db.query(Candidate)
@@ -280,6 +294,7 @@ def delete_candidate(
 # ---------------------------------------------------------------------------
 # Parse — text paste (admin only)
 # ---------------------------------------------------------------------------
+
 
 @router.post("/parse", response_model=CandidateParseResponse)
 def parse_candidate(
@@ -303,6 +318,7 @@ def parse_candidate(
 # ---------------------------------------------------------------------------
 # Parse — file upload PDF or DOCX (admin only)
 # ---------------------------------------------------------------------------
+
 
 @router.post("/parse-file", response_model=CandidateParseResponse)
 async def parse_candidate_file(
