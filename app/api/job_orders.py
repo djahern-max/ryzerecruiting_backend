@@ -38,6 +38,7 @@ class CandidateMatchResult(BaseModel):
     Employer-safe candidate view — no contact info exposed.
     Name is anonymized as "First L." format.
     """
+
     display_name: str
     current_title: Optional[str] = None
     ai_career_level: Optional[str] = None
@@ -55,14 +56,14 @@ class CandidateMatchResult(BaseModel):
 
 
 @router.get("/open", response_model=List[JobOrderResponse])
-def list_open_job_orders(db: Session = Depends(get_db)):
-    """
-    Public endpoint — returns all open job orders.
-    No authentication required. Used by candidate and employer dashboards.
-    """
+def list_open_job_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id or "ryze"
     return (
         db.query(JobOrder)
-        .filter(JobOrder.status == "open")
+        .filter(JobOrder.status == "open", JobOrder.tenant_id == tenant_id)
         .order_by(JobOrder.created_at.desc())
         .all()
     )
@@ -74,7 +75,9 @@ def list_open_job_orders(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{job_order_id}/candidate-matches", response_model=List[CandidateMatchResult])
+@router.get(
+    "/{job_order_id}/candidate-matches", response_model=List[CandidateMatchResult]
+)
 def get_candidate_matches_for_job(
     job_order_id: int,
     limit: int = Query(5, ge=1, le=20),
@@ -102,7 +105,16 @@ def get_candidate_matches_for_job(
             detail="Employer or admin access required.",
         )
 
-    job = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
+    tenant_id = current_user.tenant_id or "ryze"  # EP16
+
+    job = (
+        db.query(JobOrder)
+        .filter(
+            JobOrder.id == job_order_id,
+            JobOrder.tenant_id == tenant_id,  # EP16
+        )
+        .first()
+    )
     if not job:
         raise HTTPException(status_code=404, detail="Job order not found.")
 
@@ -121,11 +133,14 @@ def get_candidate_matches_for_job(
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM candidates
             WHERE embedding IS NOT NULL
+              AND tenant_id = :tenant_id
             ORDER BY distance
             LIMIT :limit
             """
         )
-        rows = db.execute(sql, {"limit": limit}).fetchall()
+        rows = db.execute(
+            sql, {"tenant_id": tenant_id, "limit": limit}
+        ).fetchall()  # EP16
     except Exception as e:
         logger.error(f"Cosine search failed for job order #{job_order_id}: {e}")
         return []
@@ -136,10 +151,17 @@ def get_candidate_matches_for_job(
     ids = [r[0] for r in rows]
     distances = {r[0]: float(r[1]) for r in rows}
 
-    candidates = db.query(Candidate).filter(Candidate.id.in_(ids)).all()
+    candidates = (
+        db.query(Candidate)
+        .filter(
+            Candidate.id.in_(ids),
+            Candidate.tenant_id == tenant_id,  # EP16
+        )
+        .all()
+    )
     candidate_map = {c.id: c for c in candidates}
 
-    results = []
+    results = [] @ router.get("", response_model=List[JobOrderResponse])
     for cid in ids:
         if cid not in candidate_map:
             continue
@@ -178,14 +200,16 @@ def get_candidate_matches_for_job(
 
 @router.get("", response_model=List[JobOrderResponse])
 def list_job_orders(
-    status: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
-    query = db.query(JobOrder)
-    if status:
-        query = query.filter(JobOrder.status == status)
-    return query.order_by(JobOrder.created_at.desc()).all()
+    tenant_id = current_user.tenant_id or "ryze"
+    return (
+        db.query(JobOrder)
+        .filter(JobOrder.tenant_id == tenant_id)
+        .order_by(JobOrder.created_at.desc())
+        .all()
+    )
 
 
 @router.get("/{job_order_id}", response_model=JobOrderResponse)
@@ -194,11 +218,7 @@ def get_job_order(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    job_order = (
-        db.query(JobOrder)
-        .filter(JobOrder.id == job_order_id)
-        .first()
-    )
+    job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
     if not job_order:
         raise HTTPException(status_code=404, detail="Job order not found.")
     return job_order

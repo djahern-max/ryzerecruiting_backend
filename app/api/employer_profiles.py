@@ -146,13 +146,12 @@ def get_employer_profile(
 @router.get("", response_model=List[EmployerProfileResponse])
 def list_employer_profiles(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
-    """
-    List all employer intelligence profiles. Sorted newest first. Admin only.
-    """
+    tenant_id = current_user.tenant_id or "ryze"
     profiles = (
         db.query(EmployerProfile)
+        .filter(EmployerProfile.tenant_id == tenant_id)
         .order_by(EmployerProfile.created_at.desc())
         .all()
     )

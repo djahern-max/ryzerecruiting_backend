@@ -126,6 +126,7 @@ def create_booking(
 ):
     booking = Booking(
         booking_type="inbound",
+        tenant_id=current_user.tenant_id or "ryze",
         employer_id=current_user.id,
         employer_name=current_user.full_name or current_user.email,
         employer_email=current_user.email,
@@ -171,12 +172,13 @@ def create_booking(
 def send_recruiter_invite(
     payload: RecruiterInviteCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     token = secrets.token_urlsafe(32)
 
     booking = Booking(
         booking_type=payload.invite_type,
+        tenant_id=current_user.tenant_id or "ryze",
         employer_id=None,
         employer_name=payload.contact_name,
         employer_email=payload.contact_email,
@@ -371,9 +373,17 @@ def update_booking_status(
     payload: BookingStatusUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    tenant_id = current_user.tenant_id or "ryze"
+    booking = (
+        db.query(Booking)
+        .filter(
+            Booking.id == booking_id,
+            Booking.tenant_id == tenant_id,
+        )
+        .first()
+    )
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
 
@@ -463,6 +473,7 @@ def update_booking_status(
                 logger.error(f"Failed to send employer confirmed notifications: {e}")
 
     # ── Cancelling ──────────────────────────────────────────────────────
+    # ── Cancelling ──────────────────────────────────────────────────────
     if payload.status == "cancelled" and booking.status != "cancelled":
         if booking.calendar_event_id:
             try:
@@ -489,19 +500,6 @@ def update_booking_status(
     return booking
 
 
-@router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_booking(
-    booking_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found.")
-    db.delete(booking)
-    db.commit()
-
-
 # ---------------------------------------------------------------------------
 # Candidate endpoint — self-book a call (inbound_candidate)
 # ---------------------------------------------------------------------------
@@ -519,6 +517,7 @@ def create_candidate_booking(
 ):
     booking = Booking(
         booking_type="inbound_candidate",
+        tenant_id=current_user.tenant_id or "ryze",  # ← add this
         employer_id=current_user.id,
         employer_name=payload.name,
         employer_email=current_user.email,
@@ -598,8 +597,16 @@ def get_my_bookings(
 
 
 @router.get("", response_model=List[BookingResponse])
-def list_bookings(db: Session = Depends(get_db), _: User = Depends(require_admin)):
-    return db.query(Booking).order_by(Booking.date.asc()).all()
+def list_bookings(
+    db: Session = Depends(get_db), current_user: User = Depends(require_admin)
+):
+    tenant_id = current_user.tenant_id or "ryze"
+    return (
+        db.query(Booking)
+        .filter(Booking.tenant_id == tenant_id)
+        .order_by(Booking.date.asc())
+        .all()
+    )
 
 
 @router.get("/{booking_id}", response_model=BookingResponse)
