@@ -1,16 +1,4 @@
 # app/api/chat.py
-"""
-RYZE.ai Chat — Phase 3 (Streaming + Progress Signals)
-
-Agentic loop runs tool calls synchronously (fast DB queries),
-then streams the final Claude text response token-by-token.
-A trailing JSON chunk carries structured data (candidate/meeting cards).
-
-Stream protocol (newline-delimited):
-  - Status chunks:  "__STATUS__:Message\n" — emitted during tool-call phase
-  - Text chunks:    plain text fragments streamed as they arrive
-  - Final chunk:    "\n__DATA__\n" + JSON with candidates/employers/meetings/job_orders
-"""
 import json
 import logging
 from datetime import date, datetime, timedelta
@@ -22,6 +10,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from app.core.deps import RYZE_TENANT
 
 from app.api.bookings import require_admin
 from app.core.config import settings
@@ -265,8 +255,19 @@ TOOLS = [
 # ---------------------------------------------------------------------------
 
 
-def _vector_search(db: Session, table_name: str, query: str, limit: int) -> list:
-    """Run cosine similarity search using raw SQL."""
+def _vector_search(
+    db,
+    table_name: str,
+    query: str,
+    limit: int,
+    tenant_id: str = RYZE_TENANT,  # EP16: added tenant_id param
+) -> list:
+    """
+    Run cosine similarity search using raw SQL.
+    EP16: scoped to a single tenant via WHERE tenant_id = :tenant_id.
+    """
+    from app.services.embedding_service import generate_embedding
+
     embedding = generate_embedding(query)
     if not embedding:
         return []
@@ -277,22 +278,31 @@ def _vector_search(db: Session, table_name: str, query: str, limit: int) -> list
         SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
         FROM {table_name}
         WHERE embedding IS NOT NULL
+          AND tenant_id = :tenant_id
         ORDER BY distance
         LIMIT :limit
         """
     )
-    rows = db.execute(sql, {"limit": limit}).fetchall()
+    rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
     return rows
 
 
-def tool_search_candidates(db: Session, query: str, limit: int = 5) -> dict:
-    rows = _vector_search(db, "candidates", query, limit)
+def tool_search_candidates(
+    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    from app.models.candidate import Candidate
+
+    rows = _vector_search(db, "candidates", query, limit, tenant_id)  # EP16
     if not rows:
         return {"candidates": [], "count": 0}
 
     ids = [r[0] for r in rows]
     distances = {r[0]: r[1] for r in rows}
-    candidates = db.query(Candidate).filter(Candidate.id.in_(ids)).all()
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.id.in_(ids), Candidate.tenant_id == tenant_id)  # EP16
+        .all()
+    )
     candidate_map = {c.id: c for c in candidates}
 
     results = []
@@ -318,14 +328,24 @@ def tool_search_candidates(db: Session, query: str, limit: int = 5) -> dict:
     return {"candidates": results, "count": len(results)}
 
 
-def tool_search_employers(db: Session, query: str, limit: int = 5) -> dict:
-    rows = _vector_search(db, "employer_profiles", query, limit)
+def tool_search_employers(
+    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    from app.models.employer_profile import EmployerProfile
+
+    rows = _vector_search(db, "employer_profiles", query, limit, tenant_id)  # EP16
     if not rows:
         return {"employers": [], "count": 0}
 
     ids = [r[0] for r in rows]
     distances = {r[0]: r[1] for r in rows}
-    employers = db.query(EmployerProfile).filter(EmployerProfile.id.in_(ids)).all()
+    employers = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id.in_(ids), EmployerProfile.tenant_id == tenant_id
+        )  # EP16
+        .all()
+    )
     employer_map = {e.id: e for e in employers}
 
     results = []
@@ -339,6 +359,8 @@ def tool_search_employers(db: Session, query: str, limit: int = 5) -> dict:
                 "company_name": e.company_name,
                 "ai_industry": e.ai_industry,
                 "ai_company_overview": e.ai_company_overview,
+                "ai_hiring_needs": e.ai_hiring_needs,
+                "ai_talking_points": e.ai_talking_points,
                 "relationship_status": e.relationship_status,
                 "score": round(max(0.0, 1.0 - float(distances[eid])), 4),
             }
@@ -347,14 +369,22 @@ def tool_search_employers(db: Session, query: str, limit: int = 5) -> dict:
     return {"employers": results, "count": len(results)}
 
 
-def tool_search_job_orders(db: Session, query: str, limit: int = 5) -> dict:
-    rows = _vector_search(db, "job_orders", query, limit)
+def tool_search_job_orders(
+    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    from app.models.job_order import JobOrder
+
+    rows = _vector_search(db, "job_orders", query, limit, tenant_id)  # EP16
     if not rows:
         return {"job_orders": [], "count": 0}
 
     ids = [r[0] for r in rows]
     distances = {r[0]: r[1] for r in rows}
-    jobs = db.query(JobOrder).filter(JobOrder.id.in_(ids)).all()
+    jobs = (
+        db.query(JobOrder)
+        .filter(JobOrder.id.in_(ids), JobOrder.tenant_id == tenant_id)  # EP16
+        .all()
+    )
     job_map = {j.id: j for j in jobs}
 
     results = []
@@ -369,6 +399,8 @@ def tool_search_job_orders(db: Session, query: str, limit: int = 5) -> dict:
                 "location": j.location,
                 "salary_min": j.salary_min,
                 "salary_max": j.salary_max,
+                "requirements": j.requirements,
+                "status": j.status,
                 "score": round(max(0.0, 1.0 - float(distances[jid])), 4),
             }
         )
