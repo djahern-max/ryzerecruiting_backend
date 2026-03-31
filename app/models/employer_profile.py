@@ -21,7 +21,7 @@ class EmployerProfile(Base):
     ai_industry = Column(String(255), nullable=True)
     ai_company_size = Column(Text, nullable=True)
     ai_company_overview = Column(Text, nullable=True)
-    ai_hiring_needs = Column(Text, nullable=True)    # JSON array stored as string
+    ai_hiring_needs = Column(Text, nullable=True)  # JSON array stored as string
     ai_talking_points = Column(Text, nullable=True)  # JSON array stored as string
     ai_red_flags = Column(Text, nullable=True)
     ai_brief_raw = Column(Text, nullable=True)
@@ -35,7 +35,7 @@ class EmployerProfile(Base):
     raw_text = Column(Text, nullable=True)
 
     # Multi-tenancy scaffold (NULL = RYZE.ai)
-    tenant_id = Column(String(100), nullable=True, index=True)
+    tenant_id = Column(String(100), nullable=True, default="ryze", index=True)
 
     # RAG / PGVector
     embedding = Column(Vector(1536), nullable=True)

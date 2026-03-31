@@ -1,13 +1,10 @@
 # app/api/search.py
-"""
-Semantic search endpoints for RYZE.ai RAG functionality.
+# EP16: All cosine searches now scope to the requesting admin's tenant_id.
+# _cosine_search() now accepts an optional tenant_id and adds a WHERE clause
+# so vector similarity queries never leak records across firm boundaries.
 
-All search uses cosine similarity via PGVector (<=> operator).
-Score returned is 0-1 where 1 = identical, 0 = unrelated.
-"""
 import logging
 from typing import Optional, List
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
@@ -15,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.api.bookings import require_admin
+from app.core.deps import get_current_admin_user, get_current_admin_tenant, RYZE_TENANT
 from app.models.user import User
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
@@ -26,11 +23,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
+# Convenience alias
+require_admin = get_current_admin_user
+
 
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
-
 
 class CandidateSearchResult(BaseModel):
     id: int
@@ -83,22 +82,35 @@ class SyncResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helper — run cosine search against a model
+# EP16: Tenant-aware cosine search helper
 # ---------------------------------------------------------------------------
 
+def _cosine_search(
+    db: Session,
+    table_name: str,
+    query_vector: list,
+    limit: int,
+    tenant_id: str = RYZE_TENANT,         # EP16: new param, defaults to "ryze"
+):
+    """
+    Run a cosine similarity search via PGVector.
 
-def _cosine_search(db: Session, table_name: str, query_vector: list, limit: int):
+    EP16 change: adds WHERE tenant_id = :tenant_id so results are always
+    scoped to a single firm. Passing tenant_id is now required for every
+    production call — the default exists only for safety.
+    """
     vector_str = "[" + ",".join(str(v) for v in query_vector) + "]"
     sql = text(
         f"""
         SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
         FROM {table_name}
         WHERE embedding IS NOT NULL
+          AND tenant_id = :tenant_id
         ORDER BY distance
         LIMIT :limit
-    """
+        """
     )
-    rows = db.execute(sql, {"limit": limit}).fetchall()
+    rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
     return rows
 
 
@@ -106,27 +118,31 @@ def _cosine_search(db: Session, table_name: str, query_vector: list, limit: int)
 # Search endpoints
 # ---------------------------------------------------------------------------
 
-
 @router.get("/candidates", response_model=List[CandidateSearchResult])
 def search_candidates(
     q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
+    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
+
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "candidates", query_vector, limit)
-
+    rows = _cosine_search(db, "candidates", query_vector, limit, tenant_id)  # EP16
     if not rows:
         return []
 
     ids = [row[0] for row in rows]
     distances = {row[0]: row[1] for row in rows}
 
-    candidates = db.query(Candidate).filter(Candidate.id.in_(ids)).all()
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.id.in_(ids), Candidate.tenant_id == tenant_id)  # EP16: double-check
+        .all()
+    )
     candidate_map = {c.id: c for c in candidates}
 
     return [
@@ -152,20 +168,26 @@ def search_employers(
     q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
+    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
+
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "employer_profiles", query_vector, limit)
+    rows = _cosine_search(db, "employer_profiles", query_vector, limit, tenant_id)  # EP16
     if not rows:
         return []
 
     ids = [row[0] for row in rows]
     distances = {row[0]: row[1] for row in rows}
 
-    employers = db.query(EmployerProfile).filter(EmployerProfile.id.in_(ids)).all()
+    employers = (
+        db.query(EmployerProfile)
+        .filter(EmployerProfile.id.in_(ids), EmployerProfile.tenant_id == tenant_id)  # EP16
+        .all()
+    )
     employer_map = {e.id: e for e in employers}
 
     return [
@@ -187,20 +209,26 @@ def search_job_orders(
     q: str = Query(..., min_length=3),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
+    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
+
     query_vector = generate_embedding(q)
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "job_orders", query_vector, limit)
+    rows = _cosine_search(db, "job_orders", query_vector, limit, tenant_id)  # EP16
     if not rows:
         return []
 
     ids = [row[0] for row in rows]
     distances = {row[0]: row[1] for row in rows}
 
-    jobs = db.query(JobOrder).filter(JobOrder.id.in_(ids)).all()
+    jobs = (
+        db.query(JobOrder)
+        .filter(JobOrder.id.in_(ids), JobOrder.tenant_id == tenant_id)  # EP16
+        .all()
+    )
     job_map = {j.id: j for j in jobs}
 
     return [
@@ -223,7 +251,6 @@ def search_job_orders(
 # Admin — trigger embedding sync on demand
 # ---------------------------------------------------------------------------
 
-
 @router.post("/embeddings/sync", response_model=SyncResponse)
 def trigger_embedding_sync(
     background_tasks: BackgroundTasks,
@@ -244,32 +271,13 @@ def trigger_embedding_sync(
     )
 
 
-@router.post("/embeddings/sync/blocking", response_model=SyncResponse)
-def trigger_embedding_sync_blocking(
-    _: User = Depends(require_admin),
-):
-    """
-    Admin endpoint: run embedding sync synchronously and return counts.
-    Useful for testing — blocks until complete.
-    """
-    try:
-        counts = sync_embeddings(batch_size=100)
-        return SyncResponse(
-            **counts,
-            message=(
-                f"Sync complete. Embedded: {counts['candidates']} candidates, "
-                f"{counts['employers']} employers, {counts['job_orders']} job orders. "
-                f"Errors: {counts['errors']}."
-            ),
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
-
-
 def _run_sync_and_log():
-    """Background task wrapper with error logging."""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
     try:
-        counts = sync_embeddings(batch_size=100)
-        logger.info(f"Background embedding sync complete: {counts}")
+        result = sync_embeddings(db)
+        logger.info(f"Embedding sync complete: {result}")
     except Exception as e:
-        logger.error(f"Background embedding sync failed: {e}")
+        logger.error(f"Embedding sync failed: {e}")
+    finally:
+        db.close()

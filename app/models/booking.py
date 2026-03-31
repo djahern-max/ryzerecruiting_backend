@@ -58,6 +58,8 @@ class Booking(Base):
     meeting_keywords = Column(Text, nullable=True)  # comma-separated key topics
     meeting_transcript = Column(Text, nullable=True)  # full word-for-word dialogue
 
+    tenant_id = Column(String(100), nullable=True, default="ryze", index=True)
+
     # ── Embedding (for meeting notes semantic search) ─────────────────────
     embedding = Column(Vector(1536), nullable=True)
     embedded_at = Column(DateTime, nullable=True)

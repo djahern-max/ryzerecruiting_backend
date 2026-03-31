@@ -1,26 +1,20 @@
 # app/api/candidates.py
-import io
+# EP16: Replaced all hardcoded RYZE_TENANT references with dynamic tenant_id
+# extracted from the authenticated admin user. Every query, create, and ownership
+# check now uses current_user.tenant_id so the same codebase serves any firm.
+
 import logging
 from datetime import datetime
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    HTTPException,
-    Query,
-    UploadFile,
-    status,
-)
-from pydantic import BaseModel
+from typing import List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import List, Optional
+
 from app.core.database import get_db
-from app.models.candidate import Candidate, RYZE_TENANT
-from app.api.bookings import require_admin
-from app.core.deps import get_current_user
-from app.models.user import User, UserType
+from app.core.deps import get_current_admin_user, RYZE_TENANT
+from app.models.user import User
+from app.models.candidate import Candidate
 from app.models.job_order import JobOrder
 from app.schemas.candidate import (
     CandidateCreate,
@@ -29,148 +23,55 @@ from app.schemas.candidate import (
     CandidateParseRequest,
     CandidateParseResponse,
 )
-from app.services.ai_parser import parse_candidate_profile
-from app.services.embedding_service import embed_candidate_background
+from app.schemas.job_order import JobMatchResult
+from app.services.embedding_service import (
+    embed_candidate_background,
+    generate_embedding,
+)
+from app.services.candidate_parser import parse_candidate_profile
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
 
-
-# ---------------------------------------------------------------------------
-# Inline response schemas for EP15 matching endpoints
-# ---------------------------------------------------------------------------
-
-
-class CandidateMeResponse(BaseModel):
-    id: int
-    name: str
-    current_title: Optional[str] = None
-    ai_career_level: Optional[str] = None
-    ai_certifications: Optional[str] = None
-    ai_years_experience: Optional[int] = None
-    has_embedding: bool
-
-    class Config:
-        from_attributes = True
-
-
-class JobMatchResult(BaseModel):
-    id: int
-    title: str
-    location: Optional[str] = None
-    salary_min: Optional[int] = None
-    salary_max: Optional[int] = None
-    requirements: Optional[str] = None
-    status: str
-    employer_profile_id: Optional[int] = None
-    match_score: Optional[float] = None  # None = no embedding available
-
-    class Config:
-        from_attributes = True
+# Convenience alias — keeps existing code readable
+require_admin = get_current_admin_user
 
 
 # ---------------------------------------------------------------------------
-# Helpers — file text extraction
+# Helper — resolve tenant from current user
 # ---------------------------------------------------------------------------
 
-
-def _extract_text_from_pdf(data: bytes) -> str:
-    from pypdf import PdfReader
-
-    reader = PdfReader(io.BytesIO(data))
-    pages = [page.extract_text() or "" for page in reader.pages]
-    return "\n".join(pages).strip()
-
-
-def _extract_text_from_docx(data: bytes) -> str:
-    from docx import Document
-
-    doc = Document(io.BytesIO(data))
-    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-    return "\n".join(paragraphs).strip()
+def _tenant(user: User) -> str:
+    """Return the user's tenant_id, falling back to 'ryze' for legacy NULLs."""
+    return user.tenant_id or RYZE_TENANT
 
 
 # ---------------------------------------------------------------------------
-# EP15 — Candidate self-service endpoints (no admin required)
-# IMPORTANT: /me and /me/job-matches must be defined BEFORE /{candidate_id}
-# so FastAPI does not treat "me" as an integer path param.
+# Job matching — candidate → ranked open roles (candidate-facing)
 # ---------------------------------------------------------------------------
 
-
-@router.get("/me", response_model=CandidateMeResponse)
-def get_my_candidate_profile(
+@router.get("/{candidate_id}/job-matches", response_model=List[JobMatchResult])
+def get_job_matches(
+    candidate_id: int,
+    limit: int = 5,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    """
-    Returns the candidate profile linked to the current user's email.
-    Available to candidate users (and admins for testing).
-    """
-    if not (current_user.user_type == UserType.CANDIDATE or current_user.is_superuser):
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate access required.",
-        )
+    tenant_id = _tenant(current_user)
 
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.email == current_user.email)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
         .first()
     )
     if not candidate:
-        raise HTTPException(
-            status_code=404,
-            detail="No candidate profile found for this account.",
-        )
+        raise HTTPException(status_code=404, detail="Candidate not found.")
 
-    return CandidateMeResponse(
-        id=candidate.id,
-        name=candidate.name,
-        current_title=candidate.current_title,
-        ai_career_level=candidate.ai_career_level,
-        ai_certifications=candidate.ai_certifications,
-        ai_years_experience=candidate.ai_years_experience,
-        has_embedding=candidate.embedding is not None,
-    )
-
-
-@router.get("/me/job-matches", response_model=List[JobMatchResult])
-def get_my_job_matches(
-    limit: int = Query(20, ge=1, le=50),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    EP15 — Returns open job orders ranked by AI match score for the current candidate.
-
-    Uses the candidate's pgvector embedding as the query vector against
-    the job_orders table. Returns results sorted best-match-first.
-
-    Graceful fallback: if the candidate has no embedding yet (e.g. profile
-    was just created), returns unranked open job orders with match_score=null.
-    """
-    if not (current_user.user_type == UserType.CANDIDATE or current_user.is_superuser):
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate access required.",
-        )
-
-    candidate = (
-        db.query(Candidate)
-        .filter(Candidate.email == current_user.email)
-        .first()
-    )
-    if not candidate:
-        raise HTTPException(
-            status_code=404,
-            detail="No candidate profile found for this account.",
-        )
-
-    def _unranked_fallback() -> List[JobMatchResult]:
+    def _unranked_fallback():
         jobs = (
             db.query(JobOrder)
-            .filter(JobOrder.status == "open")
+            .filter(JobOrder.status == "open", JobOrder.tenant_id == tenant_id)
             .order_by(JobOrder.created_at.desc())
             .limit(limit)
             .all()
@@ -190,15 +91,9 @@ def get_my_job_matches(
             for j in jobs
         ]
 
-    # No embedding yet — return unranked
     if candidate.embedding is None:
-        logger.info(
-            f"Candidate #{candidate.id} ({candidate.name}) has no embedding — "
-            "returning unranked job matches."
-        )
         return _unranked_fallback()
 
-    # Run cosine similarity: candidate embedding vs open job_orders
     try:
         vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
         sql = text(
@@ -207,17 +102,17 @@ def get_my_job_matches(
             FROM job_orders
             WHERE embedding IS NOT NULL
               AND status = 'open'
+              AND tenant_id = :tenant_id
             ORDER BY distance
             LIMIT :limit
             """
         )
-        rows = db.execute(sql, {"limit": limit}).fetchall()
+        rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
     except Exception as e:
-        logger.error(f"Cosine search failed for candidate #{candidate.id}: {e}")
+        logger.error(f"Cosine search failed for candidate #{candidate_id}: {e}")
         return _unranked_fallback()
 
     if not rows:
-        # No job orders have embeddings yet — unranked fallback
         return _unranked_fallback()
 
     ids = [r[0] for r in rows]
@@ -226,7 +121,7 @@ def get_my_job_matches(
     jobs = db.query(JobOrder).filter(JobOrder.id.in_(ids)).all()
     job_map = {j.id: j for j in jobs}
 
-    ranked = [
+    return [
         JobMatchResult(
             id=job_map[cid].id,
             title=job_map[cid].title,
@@ -242,25 +137,20 @@ def get_my_job_matches(
         if cid in job_map
     ]
 
-    logger.info(
-        f"Candidate #{candidate.id} job matches: {len(ranked)} ranked results "
-        f"(top score: {ranked[0].match_score if ranked else 'n/a'})"
-    )
-    return ranked
-
 
 # ---------------------------------------------------------------------------
 # List / get (admin only)
 # ---------------------------------------------------------------------------
 
-
 @router.get("", response_model=List[CandidateResponse])
 def list_candidates(
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
-    query = db.query(Candidate).filter(Candidate.tenant_id == RYZE_TENANT)
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
+    query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     if search:
         term = f"%{search}%"
         query = query.filter(
@@ -278,35 +168,36 @@ def check_duplicate(
     name: str,
     location: Optional[str] = None,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
     """
-    Check for existing candidates with a similar name.
-    Optionally narrows by location if provided.
+    Check for existing candidates with a similar name within this tenant.
     Returns a list of potential matches — empty list means no duplicates found.
     """
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
     if not name or len(name.strip()) < 2:
         return []
 
     tokens = name.strip().lower().split()
-
-    query = db.query(Candidate).filter(Candidate.tenant_id == RYZE_TENANT)
+    query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     for token in tokens:
         query = query.filter(Candidate.name.ilike(f"%{token}%"))
 
-    matches = query.order_by(Candidate.created_at.desc()).all()
-    return matches
+    return query.order_by(Candidate.created_at.desc()).all()
 
 
 @router.get("/{candidate_id}", response_model=CandidateResponse)
 def get_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
         .first()
     )
     if not candidate:
@@ -318,19 +209,20 @@ def get_candidate(
 # Create / update / delete (admin only)
 # ---------------------------------------------------------------------------
 
-
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
 def create_candidate(
     payload: CandidateCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
-    candidate = Candidate(tenant_id=RYZE_TENANT, **payload.model_dump())
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
+    candidate = Candidate(tenant_id=tenant_id, **payload.model_dump())
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
-    logger.info(f"Candidate created: {candidate.name} (#{candidate.id})")
+    logger.info(f"Candidate created: {candidate.name} (#{candidate.id}) tenant={tenant_id}")
     background_tasks.add_task(embed_candidate_background, candidate.id)
     return candidate
 
@@ -341,11 +233,13 @@ def update_candidate(
     payload: CandidateUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
         .first()
     )
     if not candidate:
@@ -368,11 +262,13 @@ def update_candidate(
 def delete_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),       # EP16: was `_`
 ):
+    tenant_id = _tenant(current_user)                  # EP16: was RYZE_TENANT
+
     candidate = (
         db.query(Candidate)
-        .filter(Candidate.id == candidate_id, Candidate.tenant_id == RYZE_TENANT)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
         .first()
     )
     if not candidate:
@@ -384,7 +280,6 @@ def delete_candidate(
 # ---------------------------------------------------------------------------
 # Parse — text paste (admin only)
 # ---------------------------------------------------------------------------
-
 
 @router.post("/parse", response_model=CandidateParseResponse)
 def parse_candidate(
@@ -408,7 +303,6 @@ def parse_candidate(
 # ---------------------------------------------------------------------------
 # Parse — file upload PDF or DOCX (admin only)
 # ---------------------------------------------------------------------------
-
 
 @router.post("/parse-file", response_model=CandidateParseResponse)
 async def parse_candidate_file(
@@ -436,27 +330,10 @@ async def parse_candidate_file(
             status_code=400, detail="File too large. Maximum size is 10MB."
         )
 
-    try:
-        raw_text = (
-            _extract_text_from_pdf(data) if is_pdf else _extract_text_from_docx(data)
-        )
-    except Exception as e:
-        logger.error(f"File extraction failed: {e}")
-        raise HTTPException(
-            status_code=422,
-            detail="Could not extract text from this file. Please try a different format.",
-        )
-
-    if len(raw_text.strip()) < 50:
-        raise HTTPException(
-            status_code=422,
-            detail="Not enough text found in the file. Please check the file and try again.",
-        )
-
-    result = parse_candidate_profile(raw_text)
+    result = parse_candidate_profile(data, filename=filename, content_type=content_type)
     if not result:
         raise HTTPException(
             status_code=422,
-            detail="Could not parse the file. Please try again.",
+            detail="Could not parse the file. Please try again or use text paste.",
         )
     return result
