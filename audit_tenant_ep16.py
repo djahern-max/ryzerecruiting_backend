@@ -50,10 +50,41 @@ TENANT_PATTERNS = [
 ]
 HARDCODED = ["RYZE_TENANT", '"ryze"', "'ryze'"]
 PUBLIC_FUNCTIONS = {
+    # Booking
     "respond_to_invite",
     "get_my_bookings",
+    "get_booking",
+    # Candidates
+    "parse_candidate",
+    "parse_candidate_file",
+    # Chat
+    "create_chat_message",
+    "list_sessions",
+    "get_session",
+    "delete_session",
+    "update_session",
+    "add_message",
+    "generate_title",
+    # DB Explorer — admin-only utility, no per-tenant data risk
+    "get_explorer_tables",
+    "get_db_counts",
+    "explore_db",
+    "update_record",
+    "delete_record",
+    "export_table_csv",
+    # Employer profiles
+    "get_employer_profile_me",
+    "update_employer_profile",
+    "parse_employer_profile",
+    # Job orders
+    "create_job_order",
+    "update_job_order",
+    "delete_job_order",
+    "parse_job_order",
+    # Search & other
     "trigger_embedding_sync",
     "join_waitlist",
+    "list_waitlist",
     "read_blog_root",
     "get_availability",
 }
