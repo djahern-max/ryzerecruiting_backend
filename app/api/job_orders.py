@@ -218,6 +218,7 @@ def get_job_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    """Fetch a single job order by ID. Admin only."""
     tenant_id = current_user.tenant_id or "ryze"
     job = (
         db.query(JobOrder)
@@ -227,19 +228,9 @@ def get_job_order(
         )
         .first()
     )
-    tenant_id = current_user.tenant_id or "ryze"
-    job = (
-        db.query(JobOrder)
-        .filter(
-            JobOrder.id == job_order_id,
-            JobOrder.tenant_id == tenant_id,
-        )
-        .first()
-    )
-    job_order = db.query(JobOrder).filter(JobOrder.id == job_order_id).first()
-    if not job_order:
+    if not job:
         raise HTTPException(status_code=404, detail="Job order not found.")
-    return job_order
+    return job
 
 
 @router.post("", response_model=JobOrderResponse, status_code=status.HTTP_201_CREATED)

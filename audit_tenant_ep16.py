@@ -89,6 +89,10 @@ PUBLIC_FUNCTIONS = {
     "list_waitlist",  # admin-only view
     "read_blog_root",  # placeholder
     "get_availability",  # intentionally public
+    "get_tables",
+    "get_counts",
+    "get_data",
+    "get_employer_profile_me",
 }
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
