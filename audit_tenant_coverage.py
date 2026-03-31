@@ -48,6 +48,9 @@ PUBLIC_PATTERNS = {
     "verify",
     "join_waitlist",
     "read_blog_root",
+    "respond_to_invite",
+    "get_my_bookings",
+    "trigger_embedding_sync",
 }
 
 # Auth dependency names that mean "this endpoint requires a logged-in user"
