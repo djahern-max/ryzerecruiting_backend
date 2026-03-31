@@ -30,18 +30,18 @@ import sys
 import requests
 
 # ── Config — edit or override with env vars ───────────────────────────────
-BASE_URL   = os.getenv("BASE_URL",      "http://localhost:8000")
-RYZE_EMAIL = os.getenv("RYZE_EMAIL",    "dane@ryze.ai")        # ← your admin email
-RYZE_PASS  = os.getenv("RYZE_PASSWORD", "YourPasswordHere")    # ← your admin password
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+RYZE_EMAIL = os.getenv("RYZE_EMAIL", "dane@ryze.ai")  # ← your admin email
+RYZE_PASS = os.getenv("RYZE_PASSWORD", "YourPasswordHere")  # ← your admin password
 FIRM_B_EMAIL = "admin@firmb.com"
-FIRM_B_PASS  = "FirmBAdmin123!"
+FIRM_B_PASS = os.getenv("FIRM_B_PASSWORD", "")
 # ─────────────────────────────────────────────────────────────────────────
 
-GREEN  = "\033[92m"
-RED    = "\033[91m"
+GREEN = "\033[92m"
+RED = "\033[91m"
 YELLOW = "\033[93m"
-BOLD   = "\033[1m"
-RESET  = "\033[0m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 passed = 0
 failed = 0
@@ -68,6 +68,7 @@ def section(title):
 
 # ── Auth helpers ──────────────────────────────────────────────────────────
 
+
 def login(email: str, password: str) -> str:
     """Returns a bearer token or raises."""
     res = requests.post(
@@ -84,6 +85,7 @@ def headers(token: str) -> dict:
 
 
 # ── Main test runner ──────────────────────────────────────────────────────
+
 
 def main():
     print(f"\n{BOLD}═══════════════════════════════════════════════════════{RESET}")
@@ -122,8 +124,16 @@ def main():
         headers=headers(firm_b_token),
     ).json()
 
-    ryze_ids  = {c["id"] for c in ryze_candidates}  if isinstance(ryze_candidates, list)  else set()
-    firm_b_ids = {c["id"] for c in firm_b_candidates} if isinstance(firm_b_candidates, list) else set()
+    ryze_ids = (
+        {c["id"] for c in ryze_candidates}
+        if isinstance(ryze_candidates, list)
+        else set()
+    )
+    firm_b_ids = (
+        {c["id"] for c in firm_b_candidates}
+        if isinstance(firm_b_candidates, list)
+        else set()
+    )
 
     overlap = ryze_ids & firm_b_ids
 
@@ -136,7 +146,11 @@ def main():
     ok(f"Firm B sees {len(firm_b_ids)} candidate(s)")
 
     # Verify Firm B only sees their own candidates
-    firm_b_names = {c.get("name") for c in firm_b_candidates} if isinstance(firm_b_candidates, list) else set()
+    firm_b_names = (
+        {c.get("name") for c in firm_b_candidates}
+        if isinstance(firm_b_candidates, list)
+        else set()
+    )
     expected_firm_b = {"Rachel Torres", "Marcus Webb", "Priya Nair", "Derek Owens"}
     if expected_firm_b.issubset(firm_b_names):
         ok("Firm B candidates contain expected seeded records")
@@ -147,11 +161,21 @@ def main():
     # ── Test 2: Employer list isolation ──────────────────────
     section("Test 2 — Employer Profile List Isolation")
 
-    ryze_employers  = requests.get(f"{BASE_URL}/api/employer-profiles", headers=headers(ryze_token)).json()
-    firm_b_employers = requests.get(f"{BASE_URL}/api/employer-profiles", headers=headers(firm_b_token)).json()
+    ryze_employers = requests.get(
+        f"{BASE_URL}/api/employer-profiles", headers=headers(ryze_token)
+    ).json()
+    firm_b_employers = requests.get(
+        f"{BASE_URL}/api/employer-profiles", headers=headers(firm_b_token)
+    ).json()
 
-    re_ids  = {e["id"] for e in ryze_employers}  if isinstance(ryze_employers, list)  else set()
-    fbe_ids = {e["id"] for e in firm_b_employers} if isinstance(firm_b_employers, list) else set()
+    re_ids = (
+        {e["id"] for e in ryze_employers} if isinstance(ryze_employers, list) else set()
+    )
+    fbe_ids = (
+        {e["id"] for e in firm_b_employers}
+        if isinstance(firm_b_employers, list)
+        else set()
+    )
 
     overlap_e = re_ids & fbe_ids
     if overlap_e:
@@ -165,10 +189,14 @@ def main():
     # ── Test 3: Job order list isolation ─────────────────────
     section("Test 3 — Job Order List Isolation")
 
-    ryze_jobs  = requests.get(f"{BASE_URL}/api/job-orders", headers=headers(ryze_token)).json()
-    firm_b_jobs = requests.get(f"{BASE_URL}/api/job-orders", headers=headers(firm_b_token)).json()
+    ryze_jobs = requests.get(
+        f"{BASE_URL}/api/job-orders", headers=headers(ryze_token)
+    ).json()
+    firm_b_jobs = requests.get(
+        f"{BASE_URL}/api/job-orders", headers=headers(firm_b_token)
+    ).json()
 
-    rj_ids  = {j["id"] for j in ryze_jobs}  if isinstance(ryze_jobs, list)  else set()
+    rj_ids = {j["id"] for j in ryze_jobs} if isinstance(ryze_jobs, list) else set()
     fbj_ids = {j["id"] for j in firm_b_jobs} if isinstance(firm_b_jobs, list) else set()
 
     overlap_j = rj_ids & fbj_ids
@@ -230,7 +258,9 @@ def main():
         if res.status_code == 404:
             ok(f"RYZE cannot update Firm B candidate #{stolen_id}  → 404 ✓")
         elif res.status_code == 200:
-            fail(f"RYZE updated Firm B candidate #{stolen_id}  → 200 (ISOLATION BREACH)")
+            fail(
+                f"RYZE updated Firm B candidate #{stolen_id}  → 200 (ISOLATION BREACH)"
+            )
         else:
             ok(f"RYZE blocked from updating Firm B candidate  → {res.status_code} ✓")
 
@@ -248,7 +278,7 @@ def main():
     )
 
     if ryze_search.ok and firm_b_search.ok:
-        ryze_search_ids  = {r["id"] for r in ryze_search.json()}
+        ryze_search_ids = {r["id"] for r in ryze_search.json()}
         firm_b_search_ids = {r["id"] for r in firm_b_search.json()}
 
         search_overlap = ryze_search_ids & firm_b_search_ids
@@ -264,23 +294,38 @@ def main():
         if firm_b_search_ids and firm_b_search_ids.issubset(firm_b_ids):
             ok("Firm B semantic search only returns Firm B candidates")
         elif not firm_b_search_ids:
-            print(f"  {YELLOW}⚠ WARN{RESET}  Firm B search returned 0 results — embeddings may not be generated yet")
-            print(f"         Run: python run_backfill.py   (or wait for background embedding)")
+            print(
+                f"  {YELLOW}⚠ WARN{RESET}  Firm B search returned 0 results — embeddings may not be generated yet"
+            )
+            print(
+                f"         Run: python run_backfill.py   (or wait for background embedding)"
+            )
         else:
             leak = firm_b_search_ids - firm_b_ids
             if leak:
-                fail("Firm B search results contain non-Firm B candidates", f"Leaked IDs: {leak}")
+                fail(
+                    "Firm B search results contain non-Firm B candidates",
+                    f"Leaked IDs: {leak}",
+                )
     else:
-        print(f"  {YELLOW}⚠ WARN{RESET}  Semantic search endpoints returned non-200 — skipping search isolation check")
-        print(f"         RYZE: {ryze_search.status_code}  Firm B: {firm_b_search.status_code}")
+        print(
+            f"  {YELLOW}⚠ WARN{RESET}  Semantic search endpoints returned non-200 — skipping search isolation check"
+        )
+        print(
+            f"         RYZE: {ryze_search.status_code}  Firm B: {firm_b_search.status_code}"
+        )
 
     # ── Summary ───────────────────────────────────────────────
     total = passed + failed
     print(f"\n{BOLD}═══════════════════════════════════════════════════════{RESET}")
     if failed == 0:
-        print(f"{BOLD}{GREEN}  ✅ ALL {total} CHECKS PASSED — Tenant isolation is holding{RESET}")
+        print(
+            f"{BOLD}{GREEN}  ✅ ALL {total} CHECKS PASSED — Tenant isolation is holding{RESET}"
+        )
     else:
-        print(f"{BOLD}{RED}  ❌ {failed} of {total} checks FAILED — review above{RESET}")
+        print(
+            f"{BOLD}{RED}  ❌ {failed} of {total} checks FAILED — review above{RESET}"
+        )
     print(f"{BOLD}═══════════════════════════════════════════════════════{RESET}\n")
 
     sys.exit(0 if failed == 0 else 1)

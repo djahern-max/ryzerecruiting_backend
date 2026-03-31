@@ -30,7 +30,7 @@ from app.models.job_order import JobOrder
 
 FIRM_B = "firm_b"
 ADMIN_EMAIL = "admin@firmb.com"
-ADMIN_PASSWORD = "FirmBAdmin123!"
+ADMIN_PASSWORD = os.getenv("FIRM_B_PASSWORD", "")
 
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
@@ -127,7 +127,9 @@ def main():
         for c_data in candidates:
             existing = (
                 db.query(Candidate)
-                .filter(Candidate.email == c_data["email"], Candidate.tenant_id == FIRM_B)
+                .filter(
+                    Candidate.email == c_data["email"], Candidate.tenant_id == FIRM_B
+                )
                 .first()
             )
             if existing:

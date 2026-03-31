@@ -29,7 +29,7 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 RYZE_EMAIL = os.getenv("RYZE_EMAIL", "dane@ryze.ai")
 RYZE_PASS = os.getenv("RYZE_PASSWORD", "")
 FIRM_B_EMAIL = "admin@firmb.com"
-FIRM_B_PASS = "FirmBAdmin123!"
+FIRM_B_PASS = os.getenv("FIRM_B_PASSWORD", "")
 API_DIR = Path(__file__).parent / "app" / "api"
 REPORT_PATH = Path(__file__).parent / "ep16_tenant_report.html"
 
@@ -594,18 +594,17 @@ def generate_html():
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
-  body {{
+body {{
     font-family: 'DM Sans', system-ui, sans-serif;
-    background: #020c18;
-    color: #c8d8e8;
+    background: #f6f9fc;
+    color: #1a2e44;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
   }}
 
-  /* ── Header ── */
   .header {{
-    background: #010810;
-    border-bottom: 1px solid #0d2035;
+    background: rgba(255,255,255,0.94);
+    border-bottom: 1px solid #e4edf5;
     padding: 20px 48px;
     display: flex;
     align-items: center;
@@ -615,21 +614,18 @@ def generate_html():
     z-index: 100;
     backdrop-filter: blur(10px);
   }}
-  .brand {{ display: flex; align-items: center; gap: 10px; }}
-  .brand-logo {{ font-weight: 800; font-size: 1.1rem; color: #57a0d3; letter-spacing: -0.3px; }}
-  .brand-sep {{ color: #0d2035; }}
-  .brand-sub {{ font-size: 0.8rem; color: #3d6080; font-weight: 500; }}
-  .header-ts {{ font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #2a4a6a; }}
+  .brand-logo {{ font-weight: 800; font-size: 1.1rem; color: #004182; letter-spacing: -0.3px; }}
+  .brand-sep {{ color: #c8d8e8; }}
+  .brand-sub {{ font-size: 0.8rem; color: #7a98b5; font-weight: 500; }}
+  .header-ts {{ font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #a0b8cc; }}
 
-  /* ── Layout ── */
   .page {{ max-width: 1200px; margin: 0 auto; padding: 48px 32px; }}
 
-  /* ── Hero ── */
   .hero {{ margin-bottom: 56px; }}
   .ep-tag {{
     display: inline-flex; align-items: center; gap: 8px;
-    background: rgba(87,160,211,0.08); border: 1px solid rgba(87,160,211,0.2);
-    color: #57a0d3; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.8px;
+    background: rgba(0,65,130,0.06); border: 1px solid rgba(0,65,130,0.15);
+    color: #004182; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.8px;
     text-transform: uppercase; padding: 4px 12px; border-radius: 100px;
     margin-bottom: 20px;
   }}
@@ -641,142 +637,132 @@ def generate_html():
   .hero h1 {{
     font-family: 'DM Serif Display', Georgia, serif;
     font-size: clamp(2rem, 4vw, 3rem);
-    font-weight: 400; color: #e8f0f8; line-height: 1.2;
+    font-weight: 400; color: #1a2e44; line-height: 1.2;
     margin-bottom: 12px;
   }}
-  .hero h1 em {{ font-style: italic; color: #57a0d3; }}
-  .hero-sub {{ font-size: 1rem; color: #4a6a85; line-height: 1.7; max-width: 600px; }}
+  .hero h1 em {{ font-style: italic; color: #0a66c2; }}
+  .hero-sub {{ font-size: 1rem; color: #5a7a95; line-height: 1.7; max-width: 600px; }}
 
-  /* ── Verdict banner ── */
   .verdict-pass, .verdict-fail {{
     border-radius: 14px; padding: 28px 32px;
     display: flex; align-items: center; gap: 20px;
-    margin-bottom: 48px;
-    border: 1px solid;
+    margin-bottom: 48px; border: 1px solid;
   }}
-  .verdict-pass {{
-    background: rgba(22,101,52,0.12); border-color: rgba(22,101,52,0.35);
-  }}
-  .verdict-fail {{
-    background: rgba(153,27,27,0.12); border-color: rgba(153,27,27,0.35);
-  }}
+  .verdict-pass {{ background: #f0fdf4; border-color: #bbf7d0; }}
+  .verdict-fail {{ background: #fef2f2; border-color: #fecaca; }}
   .verdict-icon {{ font-size: 2.2rem; flex-shrink: 0; }}
   .verdict-text h2 {{
     font-family: 'DM Serif Display', serif;
     font-size: 1.5rem; font-weight: 400; margin-bottom: 4px;
   }}
-  .verdict-pass .verdict-text h2 {{ color: #4ade80; }}
-  .verdict-fail .verdict-text h2 {{ color: #f87171; }}
-  .verdict-text p {{ font-size: 0.92rem; color: #5a8090; }}
+  .verdict-pass .verdict-text h2 {{ color: #166534; }}
+  .verdict-fail .verdict-text h2 {{ color: #991b1b; }}
+  .verdict-text p {{ font-size: 0.92rem; color: #5a7a95; }}
 
-  /* ── Score cards ── */
   .scores {{
     display: grid; grid-template-columns: repeat(4, 1fr);
     gap: 16px; margin-bottom: 56px;
   }}
   .score-card {{
-    background: #050f1c; border: 1px solid #0d2035;
+    background: #ffffff; border: 1px solid #dce8f4;
     border-radius: 12px; padding: 24px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }}
   .score-label {{ font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.8px; color: #2a4a6a; margin-bottom: 10px; }}
+    letter-spacing: 0.8px; color: #7a98b5; margin-bottom: 10px; }}
   .score-num {{ font-family: 'DM Serif Display', serif; font-size: 2.8rem;
     font-weight: 400; line-height: 1; }}
-  .score-sub {{ font-size: 0.78rem; color: #2a4a6a; margin-top: 6px; }}
-  .green {{ color: #4ade80; }} .blue {{ color: #57a0d3; }}
-  .yellow {{ color: #fbbf24; }} .red {{ color: #f87171; }}
+  .score-sub {{ font-size: 0.78rem; color: #a0b8cc; margin-top: 6px; }}
+  .green {{ color: #166534; }} .blue {{ color: #004182; }}
+  .yellow {{ color: #92400e; }} .red {{ color: #991b1b; }}
 
-  /* ── Sections ── */
   .section {{ margin-bottom: 56px; }}
   .section-hdr {{
     display: flex; align-items: center; gap: 12px;
     margin-bottom: 20px; padding-bottom: 14px;
-    border-bottom: 1px solid #0d2035;
+    border-bottom: 1px solid #e4edf5;
   }}
   .act-num {{
     width: 28px; height: 28px; border-radius: 50%;
-    background: rgba(87,160,211,0.12); border: 1px solid rgba(87,160,211,0.25);
+    background: #f0f5fb; border: 1px solid #dce8f4;
     display: flex; align-items: center; justify-content: center;
-    font-size: 0.72rem; font-weight: 700; color: #57a0d3;
+    font-size: 0.72rem; font-weight: 700; color: #004182;
     flex-shrink: 0;
   }}
   .section-hdr h2 {{
     font-family: 'DM Serif Display', serif;
-    font-size: 1.3rem; font-weight: 400; color: #c8d8e8;
+    font-size: 1.3rem; font-weight: 400; color: #1a2e44;
   }}
-  .section-desc {{ font-size: 0.88rem; color: #2a4a6a; margin-top: 2px; }}
+  .section-desc {{ font-size: 0.88rem; color: #7a98b5; margin-top: 2px; }}
 
-  /* ── Endpoint table ── */
   .ep-table {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; }}
   .ep-table th {{
     text-align: left; padding: 10px 14px;
     font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.7px; color: #2a4a6a;
-    border-bottom: 1px solid #0d2035; background: #030b14;
+    letter-spacing: 0.7px; color: #7a98b5;
+    border-bottom: 1px solid #e4edf5; background: #f6f9fc;
   }}
-  .ep-table td {{ padding: 9px 14px; border-bottom: 1px solid #060f1a; vertical-align: middle; }}
-  .ep-row:hover td {{ background: #060f1a; }}
-  .ep-row.safe {{ }} .ep-row.review td {{ background: rgba(153,27,27,0.06); }}
-  .ep-row.warn td {{ background: rgba(120,80,10,0.08); }}
+  .ep-table td {{ padding: 9px 14px; border-bottom: 1px solid #f0f5fb; vertical-align: middle; }}
+  .ep-row:hover td {{ background: #f6f9fc; }}
+  .ep-row.review td {{ background: #fef9f9; }}
+  .ep-row.warn td {{ background: #fffbeb; }}
   .ep-row.pub td {{ opacity: 0.45; }}
-  .file {{ font-family: 'JetBrains Mono', monospace; color: #3d6080; font-size: 0.75rem; }}
-  .path {{ font-family: 'JetBrains Mono', monospace; color: #7a98b5; font-size: 0.78rem; }}
-  .detail {{ font-size: 0.75rem; color: #2a4a6a; }}
+  .file {{ font-family: 'JetBrains Mono', monospace; color: #7a98b5; font-size: 0.75rem; }}
+  .path {{ font-family: 'JetBrains Mono', monospace; color: #2e4a65; font-size: 0.78rem; }}
+  .detail {{ font-size: 0.75rem; color: #a0b8cc; }}
   .method {{ font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 0.72rem; }}
-  .method.get {{ color: #57a0d3; }} .method.post {{ color: #4ade80; }}
-  .method.patch {{ color: #fbbf24; }} .method.delete {{ color: #f87171; }}
-  .method.put {{ color: #fbbf24; }}
+  .method.get {{ color: #0a66c2; }} .method.post {{ color: #166534; }}
+  .method.patch {{ color: #92400e; }} .method.delete {{ color: #991b1b; }}
+  .method.put {{ color: #92400e; }}
   .badge {{
     display: inline-block; padding: 2px 8px; border-radius: 4px;
     font-size: 0.68rem; font-weight: 700; letter-spacing: 0.4px;
     font-family: 'JetBrains Mono', monospace;
   }}
-  .badge.safe {{ background: rgba(22,101,52,0.2); color: #4ade80; border: 1px solid rgba(74,222,128,0.2); }}
-  .badge.review {{ background: rgba(153,27,27,0.2); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }}
-  .badge.warn {{ background: rgba(120,80,10,0.2); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }}
-  .badge.pub {{ background: rgba(30,50,70,0.4); color: #3d6080; border: 1px solid #0d2035; }}
+  .badge.safe {{ background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }}
+  .badge.review {{ background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }}
+  .badge.warn {{ background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }}
+  .badge.pub {{ background: #f0f5fb; color: #7a98b5; border: 1px solid #dce8f4; }}
 
-  /* ── DB table ── */
   .db-table {{ width: 100%; border-collapse: collapse; font-size: 0.88rem; }}
   .db-table th {{
     padding: 10px 16px; text-align: right;
     font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.7px; color: #2a4a6a; border-bottom: 1px solid #0d2035;
+    letter-spacing: 0.7px; color: #7a98b5; border-bottom: 1px solid #e4edf5;
+    background: #f6f9fc;
   }}
   .db-table th:first-child {{ text-align: left; }}
-  .db-table td {{ padding: 12px 16px; border-bottom: 1px solid #060f1a; }}
-  .db-table .tbl {{ color: #7a98b5; font-weight: 600; }}
+  .db-table td {{ padding: 12px 16px; border-bottom: 1px solid #f0f5fb; }}
+  .db-table .tbl {{ color: #2e4a65; font-weight: 600; }}
   .db-table .num {{ text-align: right; font-family: 'JetBrains Mono', monospace;
-    font-size: 1.1rem; font-weight: 600; color: #4ade80; }}
+    font-size: 1.1rem; font-weight: 600; color: #166534; }}
 
-  /* ── Attack / Search tables ── */
   .attack-table, .search-table {{
     width: 100%; border-collapse: collapse; font-size: 0.85rem;
   }}
   .attack-table th, .search-table th {{
     padding: 10px 14px; text-align: left;
     font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.7px; color: #2a4a6a; border-bottom: 1px solid #0d2035;
-    background: #030b14;
+    letter-spacing: 0.7px; color: #7a98b5; border-bottom: 1px solid #e4edf5;
+    background: #f6f9fc;
   }}
   .attack-table td, .search-table td {{
-    padding: 10px 14px; border-bottom: 1px solid #060f1a;
+    padding: 10px 14px; border-bottom: 1px solid #f0f5fb;
   }}
-  .query {{ font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #7a98b5; }}
-  .num {{ font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #4ade80; }}
-  .dim {{ color: #2a4a6a; font-size: 0.88rem; padding: 20px 0; }}
+  .query {{ font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: #2e4a65; }}
+  .num {{ font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #166534; }}
+  .dim {{ color: #a0b8cc; font-size: 0.88rem; padding: 20px 0; }}
 
-  /* ── Table card wrapper ── */
   .table-card {{
-    background: #030b14; border: 1px solid #0d2035;
+    background: #ffffff; border: 1px solid #dce8f4;
     border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
   }}
 
-  /* ── Footer ── */
   .footer {{
     text-align: center; padding: 32px;
-    font-size: 0.75rem; color: #1a3050;
-    border-top: 1px solid #0d2035; margin-top: 48px;
+    font-size: 0.75rem; color: #a0b8cc;
+    border-top: 1px solid #e4edf5; margin-top: 48px;
   }}
 
   @media (max-width: 768px) {{
