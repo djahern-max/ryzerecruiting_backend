@@ -131,8 +131,17 @@ def get_my_employer_profile(
 def get_employer_profile(
     profile_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
+    tenant_id = current_user.tenant_id or "ryze"
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id,
+            EmployerProfile.tenant_id == tenant_id,
+        )
+        .first()
+    )
     """
     Fetch a single employer intelligence profile by ID.
     Admin only.
