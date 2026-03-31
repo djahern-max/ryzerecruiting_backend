@@ -133,29 +133,19 @@ def get_employer_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
-    profile = (
-        db.query(EmployerProfile)
-        .filter(
-            EmployerProfile.id == profile_id,
-            EmployerProfile.tenant_id == tenant_id,
-        )
-        .first()
-    )
-    tenant_id = current_user.tenant_id or "ryze"
-    profile = (
-        db.query(EmployerProfile)
-        .filter(
-            EmployerProfile.id == profile_id,
-            EmployerProfile.tenant_id == tenant_id,
-        )
-        .first()
-    )
     """
     Fetch a single employer intelligence profile by ID.
     Admin only.
     """
-    profile = db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
+    tenant_id = current_user.tenant_id or "ryze"
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id,
+            EmployerProfile.tenant_id == tenant_id,
+        )
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Employer profile not found.")
     return _build_response(profile)

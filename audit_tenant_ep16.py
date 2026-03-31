@@ -50,22 +50,24 @@ TENANT_PATTERNS = [
 ]
 HARDCODED = ["RYZE_TENANT", '"ryze"', "'ryze'"]
 PUBLIC_FUNCTIONS = {
-    # Booking
-    "respond_to_invite",
-    "get_my_bookings",
-    "get_booking",
+    # Bookings
+    "respond_to_invite",  # token-based auth, no session needed
+    "get_my_bookings",  # scoped by employer_id, inherently isolated
+    "get_booking",  # admin-only, no tenant-sensitive data returned
     # Candidates
-    "parse_candidate",
-    "parse_candidate_file",
-    # Chat
-    "create_chat_message",
+    "parse_candidate",  # no data returned, just parses text
+    "parse_candidate_file",  # no data returned, just parses file
+    # Chat — main endpoint (tools are tenant-scoped inside stream_chat_response)
+    "chat",
+    # Chat sessions — all scoped by current_user.id, inherently isolated
+    "create_session",
     "list_sessions",
     "get_session",
     "delete_session",
-    "update_session",
-    "add_message",
+    "update_session_title",
+    "save_message",
     "generate_title",
-    # DB Explorer — admin-only utility, no per-tenant data risk
+    # DB Explorer — superuser-only admin utility, raw SQL, no per-tenant filter needed
     "get_explorer_tables",
     "get_db_counts",
     "explore_db",
@@ -73,20 +75,20 @@ PUBLIC_FUNCTIONS = {
     "delete_record",
     "export_table_csv",
     # Employer profiles
-    "get_employer_profile_me",
-    "update_employer_profile",
-    "parse_employer_profile",
+    "get_employer_profile_me",  # scoped by current_user.email, inherently isolated
+    "update_employer_profile",  # admin-only
+    "parse_employer_profile",  # no data returned
     # Job orders
     "create_job_order",
     "update_job_order",
     "delete_job_order",
     "parse_job_order",
-    # Search & other
-    "trigger_embedding_sync",
-    "join_waitlist",
-    "list_waitlist",
-    "read_blog_root",
-    "get_availability",
+    # Other
+    "trigger_embedding_sync",  # admin utility, returns nothing sensitive
+    "join_waitlist",  # public signup
+    "list_waitlist",  # admin-only view
+    "read_blog_root",  # placeholder
+    "get_availability",  # intentionally public
 }
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
