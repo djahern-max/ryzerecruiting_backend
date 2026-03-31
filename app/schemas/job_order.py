@@ -58,3 +58,18 @@ class JobOrderParseResponse(BaseModel):
     requirements: Optional[str] = None
     company_name: Optional[str] = None
     notes: Optional[str] = None
+
+
+class JobMatchResult(BaseModel):
+    id: int
+    title: str
+    location: Optional[str] = None
+    salary_min: Optional[int] = None
+    salary_max: Optional[int] = None
+    requirements: Optional[str] = None
+    status: str
+    employer_profile_id: Optional[int] = None
+    match_score: Optional[float] = None
+
+    class Config:
+        from_attributes = True
