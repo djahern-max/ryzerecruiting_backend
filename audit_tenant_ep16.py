@@ -57,7 +57,7 @@ PUBLIC_FUNCTIONS = {
     # Candidates
     "parse_candidate",  # no data returned, just parses text
     "parse_candidate_file",  # no data returned, just parses file
-    # Chat — main endpoint (tools are tenant-scoped inside stream_chat_response)
+    # Chat — tools are tenant-scoped inside stream_chat_response
     "chat",
     # Chat sessions — all scoped by current_user.id, inherently isolated
     "create_session",
@@ -67,15 +67,15 @@ PUBLIC_FUNCTIONS = {
     "update_session_title",
     "save_message",
     "generate_title",
-    # DB Explorer — superuser-only admin utility, raw SQL, no per-tenant filter needed
-    "get_explorer_tables",
-    "get_db_counts",
-    "explore_db",
+    # DB Explorer — superuser-only admin utility
+    "list_tables",
+    "get_all_counts",
+    "browse_table",
     "update_record",
     "delete_record",
     "export_table_csv",
     # Employer profiles
-    "get_employer_profile_me",  # scoped by current_user.email, inherently isolated
+    "get_my_employer_profile",  # scoped by current_user.email, inherently isolated
     "update_employer_profile",  # admin-only
     "parse_employer_profile",  # no data returned
     # Job orders
@@ -89,10 +89,6 @@ PUBLIC_FUNCTIONS = {
     "list_waitlist",  # admin-only view
     "read_blog_root",  # placeholder
     "get_availability",  # intentionally public
-    "get_tables",
-    "get_counts",
-    "get_data",
-    "get_employer_profile_me",
 }
 HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
 
