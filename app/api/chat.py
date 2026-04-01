@@ -408,11 +408,11 @@ def tool_search_job_orders(
     return {"job_orders": results, "count": len(results)}
 
 
-def tool_get_todays_meetings(db: Session) -> dict:
+def tool_get_todays_meetings(db: Session, tenant_id: str = RYZE_TENANT) -> dict:
     today = date.today()
     bookings = (
         db.query(Booking)
-        .filter(Booking.date == today.isoformat())
+        .filter(Booking.date == today.isoformat(), Booking.tenant_id == tenant_id)
         .order_by(Booking.time_slot)
         .all()
     )
@@ -436,12 +436,19 @@ def tool_get_todays_meetings(db: Session) -> dict:
 
 
 def tool_get_meetings_by_date(
-    db: Session, start_date: str, end_date: Optional[str] = None
+    db: Session,
+    start_date: str,
+    end_date: Optional[str] = None,
+    tenant_id: str = RYZE_TENANT,
 ) -> dict:
     end = end_date or start_date
     bookings = (
         db.query(Booking)
-        .filter(Booking.date >= start_date, Booking.date <= end)
+        .filter(
+            Booking.date >= start_date,
+            Booking.date <= end,
+            Booking.tenant_id == tenant_id,
+        )
         .order_by(Booking.date, Booking.time_slot)
         .all()
     )
@@ -464,9 +471,14 @@ def tool_get_meetings_by_date(
     return {"meetings": results, "count": len(results)}
 
 
-def tool_get_candidate_by_name(db: Session, name: str) -> dict:
+def tool_get_candidate_by_name(
+    db: Session, name: str, tenant_id: str = RYZE_TENANT
+) -> dict:
     candidates = (
-        db.query(Candidate).filter(Candidate.name.ilike(f"%{name}%")).limit(5).all()
+        db.query(Candidate)
+        .filter(Candidate.name.ilike(f"%{name}%"), Candidate.tenant_id == tenant_id)
+        .limit(5)
+        .all()
     )
 
     if not candidates:
@@ -492,10 +504,15 @@ def tool_get_candidate_by_name(db: Session, name: str) -> dict:
     return {"candidates": results, "count": len(results)}
 
 
-def tool_get_employer_by_name(db: Session, name: str) -> dict:
+def tool_get_employer_by_name(
+    db: Session, name: str, tenant_id: str = RYZE_TENANT
+) -> dict:
     employers = (
         db.query(EmployerProfile)
-        .filter(EmployerProfile.company_name.ilike(f"%{name}%"))
+        .filter(
+            EmployerProfile.company_name.ilike(f"%{name}%"),
+            EmployerProfile.tenant_id == tenant_id,
+        )
         .limit(5)
         .all()
     )
@@ -538,19 +555,23 @@ def tool_get_employer_by_name(db: Session, name: str) -> dict:
     return {"employers": results, "count": len(results)}
 
 
-def tool_match_candidates_to_job(db: Session, job_title: str, limit: int = 5) -> dict:
-    return tool_search_candidates(db, job_title, limit)
+def tool_match_candidates_to_job(
+    db: Session, job_title: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    return tool_search_candidates(db, job_title, limit, tenant_id)
 
 
-def tool_search_meeting_notes(db: Session, query: str, limit: int = 5) -> dict:
-    rows = _vector_search(db, "bookings", query, limit)
+def tool_search_meeting_notes(
+    db: Session, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    rows = _vector_search(db, "bookings", query, limit, tenant_id)
     if not rows:
         return {"meetings": [], "count": 0}
 
     ids = [r[0] for r in rows]
     bookings = (
         db.query(Booking)
-        .filter(Booking.id.in_(ids))
+        .filter(Booking.id.in_(ids), Booking.tenant_id == tenant_id)
         .filter(Booking.meeting_summary.isnot(None))
         .all()
     )
@@ -573,34 +594,38 @@ def tool_search_meeting_notes(db: Session, query: str, limit: int = 5) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool dispatch
+# Tool dispatch — EP16: tenant_id threaded through every tool call
 # ---------------------------------------------------------------------------
 
-TOOL_DISPATCH = {
-    "search_candidates": lambda db, inp: tool_search_candidates(
-        db, inp["query"], inp.get("limit", 5)
-    ),
-    "search_employers": lambda db, inp: tool_search_employers(
-        db, inp["query"], inp.get("limit", 5)
-    ),
-    "search_job_orders": lambda db, inp: tool_search_job_orders(
-        db, inp["query"], inp.get("limit", 5)
-    ),
-    "get_todays_meetings": lambda db, inp: tool_get_todays_meetings(db),
-    "get_meetings_by_date": lambda db, inp: tool_get_meetings_by_date(
-        db, inp["start_date"], inp.get("end_date")
-    ),
-    "get_candidate_by_name": lambda db, inp: tool_get_candidate_by_name(
-        db, inp["name"]
-    ),
-    "get_employer_by_name": lambda db, inp: tool_get_employer_by_name(db, inp["name"]),
-    "match_candidates_to_job": lambda db, inp: tool_match_candidates_to_job(
-        db, inp["job_title"], inp.get("limit", 5)
-    ),
-    "search_meeting_notes": lambda db, inp: tool_search_meeting_notes(
-        db, inp["query"], inp.get("limit", 5)
-    ),
-}
+
+def make_tool_dispatch(tenant_id: str) -> dict:
+    return {
+        "search_candidates": lambda db, inp: tool_search_candidates(
+            db, inp["query"], inp.get("limit", 5), tenant_id
+        ),
+        "search_employers": lambda db, inp: tool_search_employers(
+            db, inp["query"], inp.get("limit", 5), tenant_id
+        ),
+        "search_job_orders": lambda db, inp: tool_search_job_orders(
+            db, inp["query"], inp.get("limit", 5), tenant_id
+        ),
+        "get_todays_meetings": lambda db, inp: tool_get_todays_meetings(db, tenant_id),
+        "get_meetings_by_date": lambda db, inp: tool_get_meetings_by_date(
+            db, inp["start_date"], inp.get("end_date"), tenant_id
+        ),
+        "get_candidate_by_name": lambda db, inp: tool_get_candidate_by_name(
+            db, inp["name"], tenant_id
+        ),
+        "get_employer_by_name": lambda db, inp: tool_get_employer_by_name(
+            db, inp["name"], tenant_id
+        ),
+        "match_candidates_to_job": lambda db, inp: tool_match_candidates_to_job(
+            db, inp["job_title"], inp.get("limit", 5), tenant_id
+        ),
+        "search_meeting_notes": lambda db, inp: tool_search_meeting_notes(
+            db, inp["query"], inp.get("limit", 5), tenant_id
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +655,9 @@ RESPONSE STYLE — follow these rules strictly:
 # ---------------------------------------------------------------------------
 
 
-def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
+def stream_chat_response(
+    payload: ChatRequest, db: Session, tenant_id: str
+) -> Iterator[str]:
     """
     1. Yield __STATUS__ progress signals during the tool-call loop.
     2. Run agentic tool-call loop synchronously (fast DB queries).
@@ -651,6 +678,9 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
     all_employers: list = []
     all_meetings: list = []
     all_job_orders: list = []
+
+    # EP16: build tenant-scoped dispatch table for this request
+    tool_dispatch = make_tool_dispatch(tenant_id)
 
     # Emit immediately so the client gets feedback before any Claude call
     yield "__STATUS__:Thinking...\n"
@@ -690,13 +720,15 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
                 status_msg = TOOL_STATUS_MESSAGES.get(tool_name, "Searching...")
                 yield f"__STATUS__:{status_msg}\n"
 
-                logger.info(f"Chat tool call: {tool_name}({tool_input})")
+                logger.info(
+                    f"Chat tool call: {tool_name}({tool_input}) tenant={tenant_id}"
+                )
 
-                if tool_name not in TOOL_DISPATCH:
+                if tool_name not in tool_dispatch:
                     result = {"error": f"Unknown tool: {tool_name}"}
                 else:
                     try:
-                        result = TOOL_DISPATCH[tool_name](db, tool_input)
+                        result = tool_dispatch[tool_name](db, tool_input)
                     except Exception as e:
                         logger.error(f"Tool {tool_name} failed: {e}")
                         result = {"error": str(e)}
@@ -788,13 +820,15 @@ def stream_chat_response(payload: ChatRequest, db: Session) -> Iterator[str]:
 async def chat(
     payload: ChatRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),  # EP16: was `_`
 ):
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
+    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
+
     return StreamingResponse(
-        stream_chat_response(payload, db),
+        stream_chat_response(payload, db, tenant_id),
         media_type="text/plain",
         headers={
             "X-Accel-Buffering": "no",  # tell nginx not to buffer the stream
