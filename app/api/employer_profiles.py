@@ -172,13 +172,20 @@ def update_employer_profile(
     payload: UpdateRecruiterNotes,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    current_user: User = Depends(require_admin),
 ):
     """
     Update recruiter notes and/or relationship status on an employer profile.
     Admin only. Triggers a background re-embed after save.
     """
-    profile = db.query(EmployerProfile).filter(EmployerProfile.id == profile_id).first()
+    tenant_id = current_user.tenant_id or "ryze"
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id, EmployerProfile.tenant_id == tenant_id
+        )
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Employer profile not found.")
 

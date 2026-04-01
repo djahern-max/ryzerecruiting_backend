@@ -611,9 +611,16 @@ def list_bookings(
 
 @router.get("/{booking_id}", response_model=BookingResponse)
 def get_booking(
-    booking_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
-    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    tenant_id = current_user.tenant_id or "ryze"
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+        .first()
+    )
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found.")
     return booking

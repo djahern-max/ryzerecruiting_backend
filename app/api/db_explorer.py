@@ -14,6 +14,21 @@ from app.core.deps import get_current_admin_user
 router = APIRouter(prefix="/admin", tags=["db-explorer"])
 
 # ---------------------------------------------------------------------------
+# Tables that have a tenant_id column — all queries on these tables are
+# scoped to the authenticated admin's tenant. Tables NOT in this set are
+# either global (waitlist, contacts, webhook_logs) or scoped by a different
+# key (chat_sessions → user_id).
+# ---------------------------------------------------------------------------
+
+TENANT_SCOPED_TABLES = {
+    "candidates",
+    "employer_profiles",
+    "job_orders",
+    "bookings",
+    "users",
+}
+
+# ---------------------------------------------------------------------------
 # TABLE_COLS — every visible column per table in logical display order.
 # Excluded: embedding (Vector — unreadable), hashed_password (security)
 # ---------------------------------------------------------------------------
@@ -279,6 +294,20 @@ TABLES_WITH_UPDATED_AT = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Helper — resolve tenant from current user
+# ---------------------------------------------------------------------------
+
+
+def _tenant(user) -> str:
+    return user.tenant_id or "ryze"
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+
 @router.get("/db/explorer/tables")
 async def list_tables(current_user=Depends(get_current_admin_user)):
     return {"tables": list(TABLE_COLS.keys())}
@@ -289,13 +318,23 @@ async def get_all_counts(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """Row count for every table — drives sidebar badges."""
+    """Row count for every table — scoped to tenant where applicable."""
+    tenant_id = _tenant(current_user)
     counts = {}
     for table in TABLE_COLS:
         try:
-            counts[table] = (
-                db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar() or 0
-            )
+            if table in TENANT_SCOPED_TABLES:
+                counts[table] = (
+                    db.execute(
+                        text(f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'),
+                        {"tid": tenant_id},
+                    ).scalar()
+                    or 0
+                )
+            else:
+                counts[table] = (
+                    db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar() or 0
+                )
         except Exception:
             counts[table] = 0
     return counts
@@ -319,12 +358,18 @@ async def browse_table(
             status_code=400, detail=f"Table '{table}' is not available."
         )
 
+    tenant_id = _tenant(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)
 
     conditions = []
     params: dict = {"limit": limit, "offset": offset}
+
+    # Tenant filter — applied first so it anchors every query on scoped tables
+    if table in TENANT_SCOPED_TABLES:
+        conditions.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
@@ -383,7 +428,9 @@ async def update_record(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """Patch editable fields on a record. Only EDITABLE_COLS are accepted."""
+    """Patch editable fields on a record. Only EDITABLE_COLS are accepted.
+    On tenant-scoped tables the WHERE clause includes tenant_id so cross-tenant
+    writes silently 404 — same pattern as the REST endpoints."""
     if table not in EDITABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' is not editable.")
 
@@ -399,10 +446,22 @@ async def update_record(
     if table in TABLES_WITH_UPDATED_AT:
         set_parts.append("updated_at = NOW()")
 
-    result = db.execute(
-        text(f'UPDATE "{table}" SET {", ".join(set_parts)} WHERE id = :record_id'),
-        {**updates, "record_id": record_id},
-    )
+    # Tenant-scoped tables require a matching tenant_id in the WHERE clause
+    if table in TENANT_SCOPED_TABLES:
+        tenant_id = _tenant(current_user)
+        result = db.execute(
+            text(
+                f'UPDATE "{table}" SET {", ".join(set_parts)} '
+                f"WHERE id = :record_id AND tenant_id = :tenant_id"
+            ),
+            {**updates, "record_id": record_id, "tenant_id": tenant_id},
+        )
+    else:
+        result = db.execute(
+            text(f'UPDATE "{table}" SET {", ".join(set_parts)} WHERE id = :record_id'),
+            {**updates, "record_id": record_id},
+        )
+
     db.commit()
 
     if result.rowcount == 0:
@@ -418,14 +477,23 @@ async def delete_record(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """Hard delete a record by ID. Irreversible."""
+    """Hard delete a record by ID. On tenant-scoped tables the WHERE clause
+    includes tenant_id — cross-tenant deletes return 404."""
     if table not in TABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' not found.")
 
-    result = db.execute(
-        text(f'DELETE FROM "{table}" WHERE id = :id'),
-        {"id": record_id},
-    )
+    if table in TENANT_SCOPED_TABLES:
+        tenant_id = _tenant(current_user)
+        result = db.execute(
+            text(f'DELETE FROM "{table}" WHERE id = :id AND tenant_id = :tenant_id'),
+            {"id": record_id, "tenant_id": tenant_id},
+        )
+    else:
+        result = db.execute(
+            text(f'DELETE FROM "{table}" WHERE id = :id'),
+            {"id": record_id},
+        )
+
     db.commit()
 
     if result.rowcount == 0:
@@ -443,16 +511,22 @@ async def export_table_csv(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_admin_user),
 ):
-    """Export the current filtered view as a CSV file download."""
+    """Export the current filtered view as a CSV file download.
+    Tenant-scoped tables are filtered to the requesting admin's tenant."""
     if table not in TABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' not available.")
 
+    tenant_id = _tenant(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)
 
     conditions = []
     params: dict = {}
+
+    if table in TENANT_SCOPED_TABLES:
+        conditions.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)

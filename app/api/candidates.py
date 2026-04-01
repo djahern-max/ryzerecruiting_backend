@@ -128,7 +128,11 @@ def get_job_matches(
     ids = [r[0] for r in rows]
     distances = {r[0]: float(r[1]) for r in rows}
 
-    jobs = db.query(JobOrder).filter(JobOrder.id.in_(ids)).all()
+    jobs = (
+        db.query(JobOrder)
+        .filter(JobOrder.id.in_(ids), JobOrder.tenant_id == tenant_id)
+        .all()
+    )
     job_map = {j.id: j for j in jobs}
 
     return [
