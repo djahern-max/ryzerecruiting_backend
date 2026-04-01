@@ -55,5 +55,10 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
 
+    # Stripe
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_ID: str = ""
+
 
 settings = Settings()

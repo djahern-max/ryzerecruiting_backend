@@ -1313,3 +1313,86 @@ def send_candidate_confirmed_email(
         }
     )
     logger.info(f"Candidate confirmed email sent to {candidate_email}")
+
+
+# ── Paste this function into app/services/email.py ──────────────────────────
+
+
+def send_welcome_invite_email(
+    full_name: str,
+    email: str,
+    temp_password: str,
+    company_name: str,
+    trial_ends_at,  # datetime
+) -> None:
+    """
+    Send a branded welcome email to a newly invited recruiting firm.
+    Fired immediately after the tenant and user records are created.
+    """
+    trial_end_str = trial_ends_at.strftime("%B %d, %Y")
+
+    resend.Emails.send(
+        {
+            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "to": [email],
+            "subject": "You're invited to RYZE.ai — your 30-day trial starts today",
+            "html": f"""
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
+            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;" />
+
+            <h2 style="color:#111827;margin-bottom:4px;">Welcome to RYZE.ai, {full_name}! 🎉</h2>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">
+                Your 30-day free trial for <strong>{company_name}</strong> starts now.
+            </p>
+
+            <p style="color:#334155;font-size:15px;">
+                Your account is ready. Use the credentials below to log in and get started.
+            </p>
+
+            <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Login URL</td>
+                        <td style="padding:8px 0;font-size:14px;">
+                            <a href="https://ryze.ai/auth" style="color:#0a66c2;font-weight:600;">https://ryze.ai/auth</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Email</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{email}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Temporary Password</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;font-family:monospace;">{temp_password}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Trial Ends</td>
+                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{trial_end_str}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <div style="text-align:center;margin:32px 0;">
+                <a href="https://ryze.ai/auth"
+                   style="background:#0a66c2;color:#ffffff;padding:14px 32px;border-radius:6px;
+                          text-decoration:none;font-size:15px;font-weight:600;display:inline-block;">
+                    Log In to RYZE.ai →
+                </a>
+            </div>
+
+            <p style="color:#64748b;font-size:13px;">
+                We recommend changing your password after your first login.
+                Your trial gives you full access to all platform features through {trial_end_str}.
+            </p>
+
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;" />
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">
+                © 2026 RYZE GROUP, Inc. · Manchester, NH<br />
+                You received this email because you were invited to RYZE.ai.
+            </p>
+        </div>
+        """,
+        }
+    )
+    logger.info(f"Welcome email sent to {email} ({company_name})")
