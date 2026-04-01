@@ -20,6 +20,7 @@ from app.models.waitlist import Waitlist
 from app.models.job_order import JobOrder
 from app.models.candidate import Candidate
 from app.models.webhook_log import WebhookLog
+from app.models.tenant import Tenant
 
 # this is the Alembic Config object
 config = context.config

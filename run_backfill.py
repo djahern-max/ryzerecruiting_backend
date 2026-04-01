@@ -10,6 +10,7 @@ from app.models.job_order import JobOrder
 from app.models.booking import Booking
 from app.models.chat_session import ChatSession
 from app.models.chat_message import ChatMessage
+from app.models.tenant import Tenant
 
 from app.services.embedding_service import sync_embeddings, backfill_bookings
 
