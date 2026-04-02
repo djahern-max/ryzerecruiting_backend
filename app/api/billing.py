@@ -232,4 +232,4 @@ async def stripe_webhook(
     else:
         logger.info(f"[billing] Unhandled event type: {event_type}")
 
-    return {"status": "ok"}  # app/api/billing.py
+    return {"status": "ok"}
