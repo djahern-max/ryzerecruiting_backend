@@ -13,6 +13,7 @@ from app.services.ai_brief import generate_pre_call_brief
 from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
+from app.core.deps import get_current_admin_tenant
 from app.api.auth import get_current_user
 from app.models.booking import Booking
 from app.models.employer_profile import EmployerProfile
@@ -598,9 +599,8 @@ def get_my_bookings(
 
 @router.get("", response_model=List[BookingResponse])
 def list_bookings(
-    db: Session = Depends(get_db), current_user: User = Depends(require_admin)
+    db: Session = Depends(get_db), tenant_id: str = Depends(get_current_admin_tenant)
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     return (
         db.query(Booking)
         .filter(Booking.tenant_id == tenant_id)
