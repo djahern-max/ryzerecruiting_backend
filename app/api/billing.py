@@ -174,9 +174,10 @@ async def stripe_webhook(
 
     # ── checkout.session.completed ───────────────────────────────────────
     if event_type == "checkout.session.completed":
-        tenant_slug = data.get("metadata", {}).get("tenant_slug")
-        stripe_customer_id = data.get("customer")
-        stripe_subscription_id = data.get("subscription")
+        metadata = dict(data.metadata) if data.metadata else {}
+        tenant_slug = metadata.get("tenant_slug")
+        stripe_customer_id = data.customer
+        stripe_subscription_id = data.subscription
 
         if not tenant_slug:
             logger.warning(
@@ -201,7 +202,7 @@ async def stripe_webhook(
 
     # ── customer.subscription.deleted ───────────────────────────────────
     elif event_type == "customer.subscription.deleted":
-        stripe_subscription_id = data.get("id")
+        stripe_subscription_id = data.id
 
         tenant = (
             db.query(Tenant)
@@ -222,7 +223,7 @@ async def stripe_webhook(
 
     # ── invoice.payment_failed ───────────────────────────────────────────
     elif event_type == "invoice.payment_failed":
-        stripe_subscription_id = data.get("subscription")
+        stripe_subscription_id = data.subscription
         logger.warning(
             f"[billing] Payment failed for sub={stripe_subscription_id} — "
             "Stripe will retry. No status change yet."
