@@ -174,8 +174,7 @@ async def stripe_webhook(
 
     # ── checkout.session.completed ───────────────────────────────────────
     if event_type == "checkout.session.completed":
-        metadata = dict(data.metadata) if data.metadata else {}
-        tenant_slug = metadata.get("tenant_slug")
+        tenant_slug = data.metadata["tenant_slug"] if data.metadata else None
         stripe_customer_id = data.customer
         stripe_subscription_id = data.subscription
 
