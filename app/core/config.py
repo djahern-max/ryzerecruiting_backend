@@ -51,14 +51,14 @@ class Settings(BaseSettings):
     # AI — OpenAI (embeddings)
     OPENAI_API_KEY: str = ""
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
     # Stripe
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID: str = ""
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
 
 
 settings = Settings()

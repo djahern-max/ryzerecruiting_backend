@@ -93,6 +93,10 @@ def invite_firm(
       5. Fire branded welcome email via Resend
     """
 
+    # Restrict to RYZE superadmin only
+    if current_user.tenant_id != "ryze":
+        raise HTTPException(status_code=403, detail="Not authorized.")
+
     # 1. Check for duplicate email
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
