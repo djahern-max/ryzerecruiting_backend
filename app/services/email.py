@@ -1355,7 +1355,7 @@ def send_welcome_invite_email(
                     <tr>
                         <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Login URL</td>
                         <td style="padding:8px 0;font-size:14px;">
-                            <a href="https://ryze.ai/auth" style="color:#0a66c2;font-weight:600;">https://ryze.ai/auth</a>
+                            <a href="https://ryze.ai/admin/login" style="color:#0a66c2;font-weight:600;">https://ryze.ai/auth</a>
                         </td>
                     </tr>
                     <tr>
