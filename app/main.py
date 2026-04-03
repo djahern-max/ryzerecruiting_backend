@@ -24,6 +24,7 @@ from app.api import chat_sessions
 from app.api.db_explorer import router as db_explorer_router
 from app.api.admin_invite import router as admin_invite_router
 from app.api.billing import router as billing_router
+from app.api.settings import router as settings_router
 
 app = FastAPI(title="RYZE.ai API")
 
@@ -66,6 +67,7 @@ app.include_router(chat_sessions.router)
 app.include_router(db_explorer_router)
 app.include_router(admin_invite_router)
 app.include_router(billing_router)
+app.include_router(settings_router)
 
 
 @app.get("/")
