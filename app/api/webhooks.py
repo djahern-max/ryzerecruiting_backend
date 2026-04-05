@@ -11,13 +11,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.booking import Booking
+from app.models.candidate import Candidate
 from app.models.webhook_log import WebhookLog
 from app.services.zoom import (
     get_meeting_data,
     get_meeting_transcript,
     download_recording_file,
 )
-from app.services.embedding_service import embed_booking_background
+from app.services.embedding_service import embed_booking_background, embed_candidate_background
 
 logger = logging.getLogger(__name__)
 
@@ -51,11 +52,6 @@ def _log_webhook(
     booking_found: str = "n/a",
     result: str = "ok",
 ) -> None:
-    """
-    Persist a webhook event to the webhook_logs table.
-    Called for every Zoom event — before processing so failures
-    during processing don't prevent the log entry from being saved.
-    """
     try:
         log = WebhookLog(
             event=event,
@@ -68,8 +64,50 @@ def _log_webhook(
         db.add(log)
         db.commit()
     except Exception as e:
-        # Never let logging failures break the webhook response
         logger.error(f"Failed to write webhook log: {e}")
+
+
+def _copy_transcript_to_candidate(
+    db: Session,
+    booking: Booking,
+    transcript: str,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """
+    EP17 — When a transcript arrives, if the booking has a linked candidate,
+    copy the transcript to that candidate record and queue a re-embed so
+    RYZE Intelligence can find them by what was said on the call.
+    """
+    if not booking.candidate_id:
+        return
+
+    try:
+        candidate = (
+            db.query(Candidate)
+            .filter(Candidate.id == booking.candidate_id)
+            .first()
+        )
+        if not candidate:
+            logger.warning(
+                f"[EP17] booking #{booking.id} has candidate_id={booking.candidate_id} "
+                f"but no matching candidate row found"
+            )
+            return
+
+        candidate.meeting_transcript = transcript
+        db.commit()
+
+        # Re-embed candidate so Intelligence can search by call content
+        background_tasks.add_task(embed_candidate_background, candidate.id)
+
+        logger.info(
+            f"[EP17] Transcript copied to candidate #{candidate.id} ({candidate.name}) "
+            f"from booking #{booking.id} — {len(transcript)} chars — re-embed queued"
+        )
+    except Exception as e:
+        logger.error(
+            f"[EP17] Failed to copy transcript to candidate for booking #{booking.id}: {e}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -90,9 +128,6 @@ async def zoom_webhook(
 
     event = payload.get("event", "unknown")
 
-    # ── Log every raw payload immediately ───────────────────────────────
-    # This runs before any processing so we always have a record of
-    # what Zoom sent, even if the handler below crashes or silently skips.
     logger.info(
         f"[ZOOM WEBHOOK] event={event} | "
         f"payload_keys={list(payload.get('payload', {}).get('object', {}).keys())}"
@@ -107,7 +142,6 @@ async def zoom_webhook(
             hashlib.sha256,
         ).hexdigest()
         logger.info("Zoom URL validation challenge answered.")
-        # Don't log validation challenges to DB — they're noise
         return {"plainToken": plain_token, "encryptedToken": encrypted}
 
     # ── Signature verification ───────────────────────────────────────────
@@ -127,15 +161,12 @@ async def zoom_webhook(
         _log_webhook(db, event, payload, result="rejected: signature mismatch")
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    # ── Extract common identifiers for logging ───────────────────────────
+    # ── Extract common identifiers ───────────────────────────────────────
     object_data = payload.get("payload", {}).get("object", {})
     meeting_id = str(object_data.get("id", ""))
     meeting_uuid = object_data.get("uuid", "")
 
-    # ── meeting.ended — fetch AI summary only ────────────────────────────
-    # Transcript is NOT attempted here. Cloud recording takes 5–15 minutes
-    # to process after the meeting ends. recording.completed fires when
-    # the files are actually ready — that's where we capture the transcript.
+    # ── meeting.ended ────────────────────────────────────────────────────
     if event == "meeting.ended":
         logger.info(f"[meeting.ended] id={meeting_id} uuid={meeting_uuid}")
 
@@ -154,13 +185,9 @@ async def zoom_webhook(
                 f"[meeting.ended] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
-                booking_found="no",
-                result="no matching booking",
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                booking_found="no", result="no matching booking",
             )
             return {"status": "ok", "reason": "no matching booking"}
 
@@ -187,26 +214,18 @@ async def zoom_webhook(
 
         db.commit()
         _log_webhook(
-            db,
-            event,
-            payload,
-            meeting_id=meeting_id,
-            meeting_uuid=meeting_uuid,
+            db, event, payload,
+            meeting_id=meeting_id, meeting_uuid=meeting_uuid,
             booking_found=booking_found,
             result=", ".join(result_notes) or "ok",
         )
         return {"status": "ok"}
 
-    # ── recording.completed — recording files are ready ──────────────────
-    # Fires 5–15 minutes after the meeting ends. The transcript file may or
-    # may not be present here — if it's missing, recording.transcript_completed
-    # will fire separately when it's ready. We handle both.
-    # NOTE: download_token lives at the ROOT of the payload, not inside object.
+    # ── recording.completed ──────────────────────────────────────────────
     if event == "recording.completed":
-        download_token = payload.get("download_token", "")  # root level
+        download_token = payload.get("download_token", "")
         recording_files = object_data.get("recording_files", [])
 
-        # Log every file type we received — critical for debugging
         file_summary = [
             {
                 "file_type": f.get("file_type"),
@@ -235,17 +254,12 @@ async def zoom_webhook(
                 f"[recording.completed] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
-                booking_found="no",
-                result="no matching booking",
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                booking_found="no", result="no matching booking",
             )
             return {"status": "ok", "reason": "no matching booking"}
 
-        # Find the TRANSCRIPT file in the recording list
         transcript_url = None
         for f in recording_files:
             file_type = f.get("file_type", "").upper()
@@ -273,11 +287,8 @@ async def zoom_webhook(
                 "Will capture transcript on recording.transcript_completed."
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"no transcript file — files present: {[f.get('file_type') for f in recording_files]}",
             )
@@ -296,16 +307,17 @@ async def zoom_webhook(
             booking.meeting_transcript = transcript
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
+
+            # EP17 — copy transcript to linked candidate and re-embed
+            _copy_transcript_to_candidate(db, booking, transcript, background_tasks)
+
             logger.info(
                 f"[recording.completed] Transcript saved for booking {booking.id}: "
                 f"{len(transcript)} chars"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"transcript saved: {len(transcript)} chars",
             )
@@ -314,24 +326,17 @@ async def zoom_webhook(
                 f"[recording.completed] Transcript download returned empty for meeting {meeting_id}."
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result="transcript download returned empty",
             )
 
         return {"status": "ok"}
 
-    # ── recording.transcript_completed — transcript file is ready ────────
-    # Fires separately from recording.completed — specifically when the
-    # audio transcript (.vtt) has finished processing. This is the most
-    # reliable event for capturing the transcript.
-    # NOTE: download_token lives at the ROOT of the payload, not inside object.
+    # ── recording.transcript_completed ───────────────────────────────────
     if event == "recording.transcript_completed":
-        download_token = payload.get("download_token", "")  # root level
+        download_token = payload.get("download_token", "")
         recording_files = object_data.get("recording_files", [])
 
         logger.info(
@@ -353,17 +358,12 @@ async def zoom_webhook(
                 f"[recording.transcript_completed] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
-                booking_found="no",
-                result="no matching booking",
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                booking_found="no", result="no matching booking",
             )
             return {"status": "ok"}
 
-        # Find the transcript file
         transcript_url = None
         for f in recording_files:
             if (
@@ -379,11 +379,8 @@ async def zoom_webhook(
 
         if not transcript_url:
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"no transcript url — files: {[f.get('file_type') for f in recording_files]}",
             )
@@ -401,16 +398,17 @@ async def zoom_webhook(
             booking.meeting_transcript = transcript
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
+
+            # EP17 — copy transcript to linked candidate and re-embed
+            _copy_transcript_to_candidate(db, booking, transcript, background_tasks)
+
             logger.info(
                 f"[recording.transcript_completed] Transcript saved for booking "
                 f"{booking.id}: {len(transcript)} chars"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"transcript saved: {len(transcript)} chars",
             )
@@ -420,19 +418,15 @@ async def zoom_webhook(
                 f"{meeting_id} — call may have been too short to generate speech"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result="transcript download returned empty — call too short?",
             )
 
         return {"status": "ok"}
 
-    # ── meeting.summary_updated — summary refresh ────────────────────────
-    # Good safety net if the meeting.ended summary was empty.
+    # ── meeting.summary_updated ──────────────────────────────────────────
     if event == "meeting.summary_updated":
         summary = object_data.get("summary", {})
 
@@ -443,9 +437,7 @@ async def zoom_webhook(
 
         if not meeting_id or not summary_text:
             _log_webhook(
-                db,
-                event,
-                payload,
+                db, event, payload,
                 meeting_id=meeting_id,
                 result="ignored: missing data",
             )
@@ -474,38 +466,27 @@ async def zoom_webhook(
                 f"[meeting.summary_updated] Booking {booking.id} summary refreshed"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
-                booking_found="yes",
-                result="summary refreshed",
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                booking_found="yes", result="summary refreshed",
             )
         else:
             logger.warning(
                 f"[meeting.summary_updated] No booking for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db,
-                event,
-                payload,
-                meeting_id=meeting_id,
-                meeting_uuid=meeting_uuid,
-                booking_found="no",
-                result="no matching booking",
+                db, event, payload,
+                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                booking_found="no", result="no matching booking",
             )
 
         return {"status": "ok"}
 
-    # ── Unhandled event — log it so we know it arrived ───────────────────
+    # ── Unhandled event ──────────────────────────────────────────────────
     logger.info(f"[ZOOM WEBHOOK] Unhandled event: {event}")
     _log_webhook(
-        db,
-        event,
-        payload,
-        meeting_id=meeting_id,
-        meeting_uuid=meeting_uuid,
+        db, event, payload,
+        meeting_id=meeting_id, meeting_uuid=meeting_uuid,
         result="unhandled event",
     )
     return {"status": "ignored"}

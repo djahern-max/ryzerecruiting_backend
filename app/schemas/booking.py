@@ -59,12 +59,22 @@ class BookingResponse(BaseModel):
     meeting_url: Optional[str]
     calendar_event_id: Optional[str]
 
-    # Intelligence layer fields
+    # Intelligence layer — employer
     employer_profile_id: Optional[int] = None
+
+    # Intelligence layer — candidate (EP17)
+    # Set when a candidate booking is confirmed — links to the auto-created Candidate record
+    candidate_id: Optional[int] = None
+
+    # Call outcome & notes
     call_outcome: Optional[str] = None
     call_notes: Optional[str] = None
+
+    # Meeting intelligence
     reminded_at: Optional[datetime] = None
     meeting_summary: Optional[str] = None
+    meeting_next_steps: Optional[str] = None
+    meeting_keywords: Optional[str] = None
 
     class Config:
         from_attributes = True

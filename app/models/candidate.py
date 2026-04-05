@@ -19,7 +19,12 @@ class Candidate(Base):
     email = Column(String, nullable=True)
     phone = Column(String, nullable=True)
 
-    # Source
+    # Source — how this record was created
+    # "manual"  = recruiter added via UI (resume upload, LinkedIn paste, manual entry)
+    # "booking" = auto-created when an outbound_candidate booking was confirmed
+    source = Column(String(50), nullable=True, default="manual")
+
+    # Source fields
     linkedin_url = Column(String, nullable=True)
     linkedin_raw_text = Column(Text, nullable=True)
 
@@ -40,6 +45,10 @@ class Candidate(Base):
     ai_certifications = Column(Text, nullable=True)
     ai_skills = Column(JSON, nullable=True)
     ai_years_experience = Column(Integer, nullable=True)
+
+    # Call transcript — copied from booking.meeting_transcript when Zoom webhook fires
+    # Stored here so RYZE Intelligence can find this candidate by what was said on the call
+    meeting_transcript = Column(Text, nullable=True)
 
     # Recruiter notes
     notes = Column(Text, nullable=True)

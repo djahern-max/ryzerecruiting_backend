@@ -60,16 +60,10 @@ def require_admin(current_user: User = Depends(get_current_user)):
 
 # ---------------------------------------------------------------------------
 # Background task — AI brief generation after accept
-# Runs after the response page is already returned to the employer.
 # ---------------------------------------------------------------------------
 
 
 def _generate_brief_background(booking_id: int) -> None:
-    """
-    Generates AI brief and upserts employer profile for an accepted outbound invite.
-    Runs as a FastAPI BackgroundTask so the employer sees the confirmation page
-    immediately without waiting 10-30s for the Claude API.
-    """
     db: Session = SessionLocal()
     try:
         booking = db.query(Booking).filter(Booking.id == booking_id).first()
@@ -227,13 +221,6 @@ def respond_to_invite(
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
 ):
-    """
-    Token-based accept/decline endpoint — no login required.
-    On accept: creates Zoom + Calendar immediately, returns confirmation page,
-    then generates AI brief in the background (non-blocking).
-    On decline: flips to cancelled, notifies admin.
-    """
-
     booking = db.query(Booking).filter(Booking.response_token == token).first()
 
     if not booking:
@@ -288,17 +275,38 @@ def respond_to_invite(
         except Exception as e:
             logger.error(f"Failed to create Calendar event on accept: {e}")
 
-        # 3. Commit confirmed status — do this BEFORE kicking off background task
+        # 3. Commit confirmed status
         booking.status = "confirmed"
         booking.response_token = None
         db.commit()
+        db.refresh(booking)
 
-        # 4. Queue AI brief generation in background (non-blocking)
+        # 4. EP17 — Auto-create candidate stub for outbound_candidate accepts
+        # Done after commit so the booking.id is stable. Uses a separate commit.
+        if booking.booking_type == "outbound_candidate":
+            try:
+                from app.services.candidate_stub import find_or_create_candidate_stub
+                from app.services.embedding_service import embed_candidate_background
+
+                tenant_id = booking.tenant_id or "ryze"
+                candidate = find_or_create_candidate_stub(db, booking, tenant_id)
+                db.commit()
+                background_tasks.add_task(embed_candidate_background, candidate.id)
+                logger.info(
+                    f"[EP17] Candidate stub #{candidate.id} linked to booking #{booking.id} "
+                    f"via token accept"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
+                )
+
+        # 5. Queue AI brief for employer bookings
         if booking.booking_type == "outbound_employer" and booking.website_url:
             background_tasks.add_task(_generate_brief_background, booking.id)
             logger.info(f"AI brief queued in background for booking #{booking.id}")
 
-        # 5. Send confirmation email + SMS to contact
+        # 6. Send confirmation email + SMS to contact
         try:
             notify_invite_accepted(
                 contact_name=booking.employer_name,
@@ -313,7 +321,7 @@ def respond_to_invite(
         except Exception as e:
             logger.error(f"Failed to send acceptance notifications: {e}")
 
-        # 6. Notify recruiter that invite was accepted
+        # 7. Notify recruiter that invite was accepted
         try:
             notify_invite_accepted_admin(
                 contact_name=booking.employer_name,
@@ -423,7 +431,25 @@ def update_booking_status(
         if not is_candidate_booking and booking.website_url:
             background_tasks.add_task(_generate_brief_background, booking.id)
 
-        # Load existing brief for confirmation email (may be empty — that's fine)
+        # EP17 — Auto-create or link candidate stub for candidate bookings
+        if is_candidate_booking:
+            try:
+                from app.services.candidate_stub import find_or_create_candidate_stub
+                from app.services.embedding_service import embed_candidate_background
+
+                candidate = find_or_create_candidate_stub(db, booking, tenant_id)
+                # Don't commit yet — let the main commit below handle everything
+                background_tasks.add_task(embed_candidate_background, candidate.id)
+                logger.info(
+                    f"[EP17] Candidate stub #{candidate.id} linked to booking #{booking.id} "
+                    f"via admin confirm"
+                )
+            except Exception as e:
+                logger.error(
+                    f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
+                )
+
+        # Load existing brief for confirmation email (employer bookings only)
         brief_dict_safe = {}
         if not is_candidate_booking and booking.employer_profile_id:
             try:
@@ -474,7 +500,6 @@ def update_booking_status(
                 logger.error(f"Failed to send employer confirmed notifications: {e}")
 
     # ── Cancelling ──────────────────────────────────────────────────────
-    # ── Cancelling ──────────────────────────────────────────────────────
     if payload.status == "cancelled" and booking.status != "cancelled":
         if booking.calendar_event_id:
             try:
@@ -518,7 +543,7 @@ def create_candidate_booking(
 ):
     booking = Booking(
         booking_type="inbound_candidate",
-        tenant_id=current_user.tenant_id or "ryze",  # ← add this
+        tenant_id=current_user.tenant_id or "ryze",
         employer_id=current_user.id,
         employer_name=payload.name,
         employer_email=current_user.email,

@@ -21,6 +21,7 @@ class CandidateCreate(BaseModel):
     ai_skills: Optional[List[str]] = None
     ai_years_experience: Optional[int] = None
     notes: Optional[str] = None
+    source: Optional[str] = "manual"
 
 
 class CandidateUpdate(BaseModel):
@@ -45,7 +46,7 @@ class CandidateUpdate(BaseModel):
 
 class CandidateResponse(BaseModel):
     id: int
-    tenant_id: Optional[str] = None  # String(100) — was int, now consistent
+    tenant_id: Optional[str] = None
     name: str
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -65,6 +66,9 @@ class CandidateResponse(BaseModel):
     ai_parsed_at: Optional[datetime] = None
     embedded_at: Optional[datetime] = None
     notes: Optional[str] = None
+    # EP17 candidate flow fields
+    source: Optional[str] = "manual"
+    meeting_transcript: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
