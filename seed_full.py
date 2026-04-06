@@ -1045,6 +1045,7 @@ bookings = [
     # Today
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Michael Torres",
         employer_email="mtorres@acmemfg.com",
         company_name="Acme Manufacturing Corp",
@@ -1060,6 +1061,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Sarah Chen",
         employer_email="schen@gmail.com",
         date=today,
@@ -1075,6 +1077,7 @@ bookings = [
     # Yesterday
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Jennifer Walsh CFO",
         employer_email="cfo@bionovate.com",
         company_name="BioNovate Therapeutics",
@@ -1091,6 +1094,7 @@ bookings = [
     # 3 days ago
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="David Kim",
         employer_email="dkim@gmail.com",
         date=d(3),
@@ -1105,6 +1109,7 @@ bookings = [
     ),
     Booking(
         booking_type="inbound",
+        tenant_id="ryze",
         employer_name="Robert Huang",
         employer_email="rhuang@gmail.com",
         company_name="Atlantic Distribution Co",
@@ -1121,6 +1126,7 @@ bookings = [
     # 1 week ago
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Jennifer Walsh",
         employer_email="jwalsh@gmail.com",
         date=d(7),
@@ -1134,6 +1140,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Karen Simmons",
         employer_email="partners@summitcpa.com",
         company_name="Summit CPA Group",
@@ -1149,6 +1156,7 @@ bookings = [
     # 2 weeks ago
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Amanda Foster",
         employer_email="afoster@gmail.com",
         date=d(14),
@@ -1162,6 +1170,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Thomas Wei",
         employer_email="hr@techscale.io",
         company_name="TechScale SaaS Inc",
@@ -1177,6 +1186,7 @@ bookings = [
     # 3 weeks ago
     Booking(
         booking_type="inbound_candidate",
+        tenant_id="ryze",
         employer_name="Marcus Rivera",
         employer_email="mrivera@gmail.com",
         date=d(21),
@@ -1190,6 +1200,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Patricia Kelley",
         employer_email="cfo@coastalhealthcare.com",
         company_name="Coastal Healthcare Partners",
@@ -1205,6 +1216,7 @@ bookings = [
     # 1 month ago
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Rachel Green",
         employer_email="rgreen@gmail.com",
         date=d(30),
@@ -1218,6 +1230,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Sam Okafor",
         employer_email="mds@bostonpepartners.com",
         company_name="Boston PE Partners",
@@ -1233,6 +1246,7 @@ bookings = [
     # 6 weeks ago
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Kevin Park",
         employer_email="kpark@gmail.com",
         date=d(42),
@@ -1247,6 +1261,7 @@ bookings = [
     # 2 months ago
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Alex Fitzgerald",
         employer_email="cfo@vertexgrowth.com",
         company_name="Vertex Growth Capital",
@@ -1261,6 +1276,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Christopher Lee",
         employer_email="clee@gmail.com",
         date=d(60),
@@ -1275,6 +1291,7 @@ bookings = [
     # Cancelled / no-show examples
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Tom Bradley",
         employer_email="tbradley@randco.com",
         company_name="Rand Co",
@@ -1287,6 +1304,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Peter Walsh",
         employer_email="pwalsh@gmail.com",
         date=d(10),
@@ -1299,6 +1317,7 @@ bookings = [
     # Upcoming confirmed
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Nicole Chen CFO",
         employer_email="cfo@fieldstone.com",
         company_name="Fieldstone Capital Management",
@@ -1311,6 +1330,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="James O'Brien",
         employer_email="jobrien@gmail.com",
         date=today + timedelta(days=2),
@@ -1322,6 +1342,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Bill Grayson",
         employer_email="president@granitestatmfg.com",
         company_name="Granite State Manufacturing",
@@ -1335,6 +1356,7 @@ bookings = [
     # Pending (not yet confirmed)
     Booking(
         booking_type="inbound",
+        tenant_id="ryze",
         employer_name="Sarah Thompson",
         employer_email="sthompson@newco.com",
         company_name="NewCo Inc",
@@ -1346,6 +1368,7 @@ bookings = [
     ),
     Booking(
         booking_type="inbound_candidate",
+        tenant_id="ryze",
         employer_name="Alex Reyes",
         employer_email="areyes@gmail.com",
         date=today + timedelta(days=4),
@@ -1357,6 +1380,7 @@ bookings = [
     # Historical — completed well-documented calls
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Emily Rodriguez",
         employer_email="erodriguez@gmail.com",
         date=d(45),
@@ -1370,6 +1394,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="Howard Kim",
         employer_email="hr@harborfinancial.com",
         company_name="Harbor Financial Group",
@@ -1384,6 +1409,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Nicole Williams",
         employer_email="nwilliams@gmail.com",
         date=d(50),
@@ -1397,6 +1423,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_employer",
+        tenant_id="ryze",
         employer_name="David Park",
         employer_email="ops@fieldstonecap.com",
         company_name="Fieldstone Capital Management",
@@ -1411,6 +1438,7 @@ bookings = [
     ),
     Booking(
         booking_type="outbound_candidate",
+        tenant_id="ryze",
         employer_name="Andrew Johnson",
         employer_email="ajohnson@gmail.com",
         date=d(55),
