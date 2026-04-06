@@ -361,36 +361,58 @@ async def parse_candidate_file(
     return result
 
 
-# ── Single embed — line ~358 ──
+# ── Single embed ──
 @router.post("/{candidate_id}/embed")
 def embed_single_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # ← was get_current_user
+    current_user: User = Depends(require_admin),
 ):
     candidate = (
         db.query(Candidate)
         .filter(
             Candidate.id == candidate_id,
-            Candidate.tenant_id == _tenant(current_user),  # ← use _tenant()
+            Candidate.tenant_id == _tenant(current_user),
         )
         .first()
     )
-    ...
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    text = build_candidate_text(candidate)
+    if not text:
+        raise HTTPException(
+            status_code=400, detail="Not enough data to embed this candidate"
+        )
+
+    vector = generate_embedding(text)
+    if not vector:
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
+
+    candidate.embedding = vector
+    candidate.embedded_at = datetime.utcnow()
+    db.commit()
+
+    return {"id": candidate_id, "embedded_at": candidate.embedded_at.isoformat()}
 
 
-# ── Embed all — further down ──
+# ── Embed all unindexed ──
 @router.post("/embed-all")
 def embed_all_candidates(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # ← was get_current_user
+    current_user: User = Depends(require_admin),
 ):
     unembedded = (
         db.query(Candidate)
         .filter(
-            Candidate.tenant_id == _tenant(current_user),  # ← use _tenant()
+            Candidate.tenant_id == _tenant(current_user),
             Candidate.embedding.is_(None),
         )
         .all()
     )
+    count = len(unembedded)
+    for c in unembedded:
+        background_tasks.add_task(embed_candidate_background, c.id)
+
+    return {"queued": count, "message": f"{count} candidate(s) queued for indexing"}
