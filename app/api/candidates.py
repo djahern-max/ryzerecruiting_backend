@@ -31,9 +31,11 @@ from app.schemas.candidate import (
     CandidateParseRequest,
     CandidateParseResponse,
 )
+from datetime import datetime
 from app.schemas.job_order import JobMatchResult
 from app.services.embedding_service import (
     embed_candidate_background,
+    build_candidate_text,
     generate_embedding,
 )
 from app.services.ai_parser import parse_candidate_profile
@@ -357,3 +359,58 @@ async def parse_candidate_file(
             detail="Could not parse the file. Please try again or use text paste.",
         )
     return result
+
+
+@router.post("/{candidate_id}/embed")
+def embed_single_candidate(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    candidate = (
+        db.query(Candidate)
+        .filter(
+            Candidate.id == candidate_id, Candidate.tenant_id == current_user.tenant_id
+        )
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    text = build_candidate_text(candidate)
+    if not text:
+        raise HTTPException(
+            status_code=400, detail="Not enough data to embed this candidate"
+        )
+
+    vector = generate_embedding(text)
+    if not vector:
+        raise HTTPException(status_code=500, detail="Embedding generation failed")
+
+    candidate.embedding = vector
+    candidate.embedded_at = datetime.utcnow()
+    db.commit()
+
+    return {"id": candidate_id, "embedded_at": candidate.embedded_at.isoformat()}
+
+
+# ── Embed all unindexed candidates (background task) ──
+@router.post("/embed-all")
+def embed_all_candidates(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    unembedded = (
+        db.query(Candidate)
+        .filter(
+            Candidate.tenant_id == current_user.tenant_id,
+            Candidate.embedding.is_(None),
+        )
+        .all()
+    )
+    count = len(unembedded)
+    for c in unembedded:
+        background_tasks.add_task(embed_candidate_background, c.id)
+
+    return {"queued": count, "message": f"{count} candidate(s) queued for indexing"}
