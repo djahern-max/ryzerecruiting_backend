@@ -160,6 +160,7 @@ test_bookings = [
     # Confirmed upcoming booking for the employer user
     Booking(
         booking_type="inbound",
+        tenant_id="ryze",
         employer_id=test_employer_user.id,
         employer_name="Test Employer",
         employer_email=test_employer_email,
@@ -174,6 +175,7 @@ test_bookings = [
     # Confirmed upcoming booking for the candidate user
     Booking(
         booking_type="inbound_candidate",
+        tenant_id="ryze",
         employer_id=test_candidate_user.id,
         employer_name="Test Candidate",
         employer_email=test_candidate_email,
