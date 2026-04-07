@@ -1,6 +1,6 @@
 # app/services/candidate_stub.py
 """
-EP17 — Candidate stub creation service.
+EP18 — Candidate stub creation service.
 
 When an outbound_candidate or inbound_candidate booking is confirmed,
 the candidate record should be born at that moment. This service handles
@@ -34,7 +34,9 @@ def find_or_create_candidate_stub(
 ) -> Candidate:
     """
     Find an existing candidate by email (within the same tenant) or create a
-    minimal stub. Links booking.candidate_id to the resolved candidate.
+    minimal stub. Sets the bi-directional link:
+      - booking.candidate_id → candidate.id
+      - candidate.booking_id → booking.id  (only when the stub is newly created)
 
     Does NOT commit — the caller is responsible for committing. Uses db.flush()
     to generate a candidate.id when a new record is created so the caller can
@@ -67,16 +69,22 @@ def find_or_create_candidate_stub(
             name=booking.employer_name,
             email=booking.employer_email or None,
             phone=booking.phone or None,
+            notes=booking.notes or None,
             source="booking",
+            # booking_id set below after flush gives us candidate.id
         )
         db.add(candidate)
         db.flush()  # generate candidate.id without committing the transaction
+
+        # EP18 — set back-reference so we know which booking created this stub
+        candidate.booking_id = booking.id
+
         logger.info(
             f"[candidate_stub] Created stub candidate #{candidate.id} "
             f"({candidate.name}) for booking #{booking.id}"
         )
 
-    # ── Link booking → candidate ─────────────────────────────────────────
+    # ── Link booking → candidate (forward reference) ─────────────────────
     booking.candidate_id = candidate.id
     # Caller commits
 

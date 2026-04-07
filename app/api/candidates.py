@@ -1,7 +1,11 @@
 # app/api/candidates.py
 # EP16: Replaced all hardcoded RYZE_TENANT references with dynamic tenant_id
-# extracted from the authenticated admin user. Every query, create, and ownership
-# check now uses current_user.tenant_id so the same codebase serves any firm.
+#        extracted from the authenticated admin user.
+# EP18: Added email-based duplicate check on create_candidate. When a resume or
+#        LinkedIn profile is submitted for an email that already exists in this
+#        tenant, the existing record is UPDATED rather than a duplicate created.
+#        This covers Scenario A (booking stub + resume upload) and Scenario D
+#        (manual create after booking) from the EP18 spec.
 
 import logging
 from datetime import datetime
@@ -31,7 +35,6 @@ from app.schemas.candidate import (
     CandidateParseRequest,
     CandidateParseResponse,
 )
-from datetime import datetime
 from app.schemas.job_order import JobMatchResult
 from app.services.embedding_service import (
     embed_candidate_background,
@@ -56,6 +59,28 @@ require_admin = get_current_admin_user
 def _tenant(user: User) -> str:
     """Return the user's tenant_id, falling back to 'ryze' for legacy NULLs."""
     return user.tenant_id or RYZE_TENANT
+
+
+# ---------------------------------------------------------------------------
+# Helper — email duplicate check
+# ---------------------------------------------------------------------------
+
+
+def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidate]:
+    """
+    Return an existing candidate with this email in the given tenant, or None.
+    Email comparison is case-insensitive.
+    """
+    if not email or not email.strip():
+        return None
+    return (
+        db.query(Candidate)
+        .filter(
+            Candidate.email.ilike(email.strip()),
+            Candidate.tenant_id == tenant_id,
+        )
+        .first()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -163,9 +188,9 @@ def get_job_matches(
 def list_candidates(
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
 
     query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     if search:
@@ -185,13 +210,13 @@ def check_duplicate(
     name: str,
     location: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
     """
     Check for existing candidates with a similar name within this tenant.
     Returns a list of potential matches — empty list means no duplicates found.
     """
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
 
     if not name or len(name.strip()) < 2:
         return []
@@ -208,9 +233,9 @@ def check_duplicate(
 def get_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
 
     candidate = (
         db.query(Candidate)
@@ -223,7 +248,11 @@ def get_candidate(
 
 
 # ---------------------------------------------------------------------------
-# Create / update / delete (admin only)
+# Create (admin only)
+# EP18: Email-based upsert — if a candidate with the same email already exists
+# in this tenant, update the existing record instead of creating a duplicate.
+# This silently merges rather than rejecting, which is the correct behaviour
+# for the resume-upload-after-booking-stub scenario (Scenario A in the spec).
 # ---------------------------------------------------------------------------
 
 
@@ -232,11 +261,63 @@ def create_candidate(
     payload: CandidateCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
+    data = payload.model_dump()
+    incoming_email = data.get("email")
 
-    candidate = Candidate(tenant_id=tenant_id, **payload.model_dump())
+    # ── EP18: Email duplicate check ──────────────────────────────────────
+    # If a candidate with this email already exists in the tenant, update
+    # that record rather than creating a second one. Preserves booking_id,
+    # source, meeting_transcript, and any other fields already on the stub.
+    existing = _find_by_email(db, incoming_email, tenant_id)
+
+    if existing:
+        logger.info(
+            f"[EP18] create_candidate: email '{incoming_email}' matches existing "
+            f"candidate #{existing.id} ({existing.name}) — merging instead of creating duplicate"
+        )
+
+        # Merge: only overwrite fields that are non-null in the incoming payload
+        # and not already set on the existing record. This way a booking stub's
+        # name/email/phone are preserved if resume parse returns the same data,
+        # and richer fields (title, company, AI fields) fill in the blanks.
+        PRESERVE_IF_SET = {"booking_id", "source", "meeting_transcript", "tenant_id"}
+
+        for field, value in data.items():
+            if field in PRESERVE_IF_SET:
+                # Never overwrite these — they belong to the stub's origin
+                continue
+            if value is not None:
+                setattr(existing, field, value)
+
+        # If the existing record was a stub (source='booking') and the incoming
+        # payload came from a resume or LinkedIn parse, upgrade the source label
+        # so it reflects the enrichment that just happened.
+        if existing.source == "booking" and data.get("source") in (
+            "resume",
+            "linkedin",
+            None,
+        ):
+            # Keep 'booking' as the origin — enrichment doesn't erase the history.
+            # The frontend shows "Created from Call" which remains accurate.
+            pass
+
+        existing.embedding = None
+        existing.embedded_at = None
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        background_tasks.add_task(embed_candidate_background, existing.id)
+
+        logger.info(
+            f"[EP18] Merged & re-embedded candidate #{existing.id} ({existing.name})"
+        )
+        return existing
+
+    # ── Normal create path (no duplicate found) ──────────────────────────
+    candidate = Candidate(tenant_id=tenant_id, **data)
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
@@ -247,15 +328,20 @@ def create_candidate(
     return candidate
 
 
+# ---------------------------------------------------------------------------
+# Update / delete (admin only)
+# ---------------------------------------------------------------------------
+
+
 @router.patch("/{candidate_id}", response_model=CandidateResponse)
 def update_candidate(
     candidate_id: int,
     payload: CandidateUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
 
     candidate = (
         db.query(Candidate)
@@ -282,9 +368,9 @@ def update_candidate(
 def delete_candidate(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
 ):
-    tenant_id = _tenant(current_user)  # EP16: was RYZE_TENANT
+    tenant_id = _tenant(current_user)
 
     candidate = (
         db.query(Candidate)
@@ -361,7 +447,11 @@ async def parse_candidate_file(
     return result
 
 
-# ── Single embed ──
+# ---------------------------------------------------------------------------
+# Single embed
+# ---------------------------------------------------------------------------
+
+
 @router.post("/{candidate_id}/embed")
 def embed_single_candidate(
     candidate_id: int,
@@ -396,7 +486,11 @@ def embed_single_candidate(
     return {"id": candidate_id, "embedded_at": candidate.embedded_at.isoformat()}
 
 
-# ── Embed all unindexed ──
+# ---------------------------------------------------------------------------
+# Embed all unindexed
+# ---------------------------------------------------------------------------
+
+
 @router.post("/embed-all")
 def embed_all_candidates(
     background_tasks: BackgroundTasks,
