@@ -31,6 +31,7 @@ require_admin = get_current_admin_user
 # Response schemas
 # ---------------------------------------------------------------------------
 
+
 class CandidateSearchResult(BaseModel):
     id: int
     name: str
@@ -85,12 +86,13 @@ class SyncResponse(BaseModel):
 # EP16: Tenant-aware cosine search helper
 # ---------------------------------------------------------------------------
 
+
 def _cosine_search(
     db: Session,
     table_name: str,
     query_vector: list,
     limit: int,
-    tenant_id: str = RYZE_TENANT,         # EP16: new param, defaults to "ryze"
+    tenant_id: str = RYZE_TENANT,  # EP16: new param, defaults to "ryze"
 ):
     """
     Run a cosine similarity search via PGVector.
@@ -118,6 +120,7 @@ def _cosine_search(
 # Search endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/candidates", response_model=List[CandidateSearchResult])
 def search_candidates(
     q: str = Query(..., min_length=3),
@@ -140,7 +143,9 @@ def search_candidates(
 
     candidates = (
         db.query(Candidate)
-        .filter(Candidate.id.in_(ids), Candidate.tenant_id == tenant_id)  # EP16: double-check
+        .filter(
+            Candidate.id.in_(ids), Candidate.tenant_id == tenant_id
+        )  # EP16: double-check
         .all()
     )
     candidate_map = {c.id: c for c in candidates}
@@ -176,7 +181,9 @@ def search_employers(
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
-    rows = _cosine_search(db, "employer_profiles", query_vector, limit, tenant_id)  # EP16
+    rows = _cosine_search(
+        db, "employer_profiles", query_vector, limit, tenant_id
+    )  # EP16
     if not rows:
         return []
 
@@ -185,7 +192,9 @@ def search_employers(
 
     employers = (
         db.query(EmployerProfile)
-        .filter(EmployerProfile.id.in_(ids), EmployerProfile.tenant_id == tenant_id)  # EP16
+        .filter(
+            EmployerProfile.id.in_(ids), EmployerProfile.tenant_id == tenant_id
+        )  # EP16
         .all()
     )
     employer_map = {e.id: e for e in employers}
@@ -251,6 +260,7 @@ def search_job_orders(
 # Admin — trigger embedding sync on demand
 # ---------------------------------------------------------------------------
 
+
 @router.post("/embeddings/sync", response_model=SyncResponse)
 def trigger_embedding_sync(
     background_tasks: BackgroundTasks,
@@ -272,12 +282,8 @@ def trigger_embedding_sync(
 
 
 def _run_sync_and_log():
-    from app.core.database import SessionLocal
-    db = SessionLocal()
     try:
-        result = sync_embeddings(db)
+        result = sync_embeddings()  # ← no db argument needed
         logger.info(f"Embedding sync complete: {result}")
     except Exception as e:
         logger.error(f"Embedding sync failed: {e}")
-    finally:
-        db.close()
