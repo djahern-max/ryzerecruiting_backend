@@ -93,6 +93,9 @@ def build_candidate_text(candidate: Candidate) -> Optional[str]:
     if raw:
         parts.append(raw[:2000])
 
+    if candidate.meeting_transcript:
+        parts.append(f"Meeting transcript:\n{candidate.meeting_transcript[:6000]}")
+
     text = "\n".join(parts).strip()
     return text if len(text) > 20 else None
 

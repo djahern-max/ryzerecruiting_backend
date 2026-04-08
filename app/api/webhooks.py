@@ -18,7 +18,10 @@ from app.services.zoom import (
     get_meeting_transcript,
     download_recording_file,
 )
-from app.services.embedding_service import embed_booking_background, embed_candidate_background
+from app.services.embedding_service import (
+    embed_booking_background,
+    embed_candidate_background,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +86,7 @@ def _copy_transcript_to_candidate(
 
     try:
         candidate = (
-            db.query(Candidate)
-            .filter(Candidate.id == booking.candidate_id)
-            .first()
+            db.query(Candidate).filter(Candidate.id == booking.candidate_id).first()
         )
         if not candidate:
             logger.warning(
@@ -185,9 +186,13 @@ async def zoom_webhook(
                 f"[meeting.ended] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
-                booking_found="no", result="no matching booking",
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="no",
+                result="no matching booking",
             )
             return {"status": "ok", "reason": "no matching booking"}
 
@@ -214,8 +219,11 @@ async def zoom_webhook(
 
         db.commit()
         _log_webhook(
-            db, event, payload,
-            meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+            db,
+            event,
+            payload,
+            meeting_id=meeting_id,
+            meeting_uuid=meeting_uuid,
             booking_found=booking_found,
             result=", ".join(result_notes) or "ok",
         )
@@ -254,9 +262,13 @@ async def zoom_webhook(
                 f"[recording.completed] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
-                booking_found="no", result="no matching booking",
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="no",
+                result="no matching booking",
             )
             return {"status": "ok", "reason": "no matching booking"}
 
@@ -287,8 +299,11 @@ async def zoom_webhook(
                 "Will capture transcript on recording.transcript_completed."
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"no transcript file — files present: {[f.get('file_type') for f in recording_files]}",
             )
@@ -308,7 +323,7 @@ async def zoom_webhook(
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
 
-            # EP17 — copy transcript to linked candidate and re-embed
+            # EP18 — copy transcript to linked candidate and re-embed
             _copy_transcript_to_candidate(db, booking, transcript, background_tasks)
 
             logger.info(
@@ -316,8 +331,11 @@ async def zoom_webhook(
                 f"{len(transcript)} chars"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"transcript saved: {len(transcript)} chars",
             )
@@ -326,8 +344,11 @@ async def zoom_webhook(
                 f"[recording.completed] Transcript download returned empty for meeting {meeting_id}."
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result="transcript download returned empty",
             )
@@ -358,9 +379,13 @@ async def zoom_webhook(
                 f"[recording.transcript_completed] No booking found for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
-                booking_found="no", result="no matching booking",
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="no",
+                result="no matching booking",
             )
             return {"status": "ok"}
 
@@ -379,8 +404,11 @@ async def zoom_webhook(
 
         if not transcript_url:
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"no transcript url — files: {[f.get('file_type') for f in recording_files]}",
             )
@@ -407,8 +435,11 @@ async def zoom_webhook(
                 f"{booking.id}: {len(transcript)} chars"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result=f"transcript saved: {len(transcript)} chars",
             )
@@ -418,8 +449,11 @@ async def zoom_webhook(
                 f"{meeting_id} — call may have been too short to generate speech"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
                 booking_found="yes",
                 result="transcript download returned empty — call too short?",
             )
@@ -437,7 +471,9 @@ async def zoom_webhook(
 
         if not meeting_id or not summary_text:
             _log_webhook(
-                db, event, payload,
+                db,
+                event,
+                payload,
                 meeting_id=meeting_id,
                 result="ignored: missing data",
             )
@@ -466,18 +502,26 @@ async def zoom_webhook(
                 f"[meeting.summary_updated] Booking {booking.id} summary refreshed"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
-                booking_found="yes", result="summary refreshed",
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="yes",
+                result="summary refreshed",
             )
         else:
             logger.warning(
                 f"[meeting.summary_updated] No booking for meeting_id={meeting_id}"
             )
             _log_webhook(
-                db, event, payload,
-                meeting_id=meeting_id, meeting_uuid=meeting_uuid,
-                booking_found="no", result="no matching booking",
+                db,
+                event,
+                payload,
+                meeting_id=meeting_id,
+                meeting_uuid=meeting_uuid,
+                booking_found="no",
+                result="no matching booking",
             )
 
         return {"status": "ok"}
@@ -485,8 +529,11 @@ async def zoom_webhook(
     # ── Unhandled event ──────────────────────────────────────────────────
     logger.info(f"[ZOOM WEBHOOK] Unhandled event: {event}")
     _log_webhook(
-        db, event, payload,
-        meeting_id=meeting_id, meeting_uuid=meeting_uuid,
+        db,
+        event,
+        payload,
+        meeting_id=meeting_id,
+        meeting_uuid=meeting_uuid,
         result="unhandled event",
     )
     return {"status": "ignored"}
