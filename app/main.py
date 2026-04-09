@@ -52,22 +52,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(contact.router, prefix="/contact", tags=["contact"])
-app.include_router(blog.router, prefix="/blog", tags=["blog"])
+# Auth first — everything depends on it
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
-app.include_router(bookings_router)
-app.include_router(employer_profiles_router)
-app.include_router(waitlist_router)
-app.include_router(webhooks_router)
-app.include_router(job_orders_router)
+
+# Core recruiting data
 app.include_router(candidates_router)
+app.include_router(employer_profiles_router)
+app.include_router(job_orders_router)
+app.include_router(bookings_router)
+
+# AI / Intelligence features
 app.include_router(search_router)
 app.include_router(chat_router)
 app.include_router(chat_sessions.router)
-app.include_router(db_explorer_router)
+
+# Platform / tenant management
 app.include_router(admin_invite_router)
 app.include_router(billing_router)
 app.include_router(settings_router)
+
+# Integrations & webhooks
+app.include_router(webhooks_router)
+app.include_router(waitlist_router)
+
+# Internal / dev tools
+app.include_router(db_explorer_router)
+app.include_router(contact.router, prefix="/contact", tags=["contact"])
+app.include_router(blog.router, prefix="/blog", tags=["blog"])
 
 
 @app.get("/")
