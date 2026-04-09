@@ -3,8 +3,6 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
-from datetime import datetime
-from typing import Optional
 
 
 class Candidate(Base):
@@ -66,5 +64,5 @@ class Candidate(Base):
     embedded_at = Column(DateTime, nullable=True)
 
     # ── Timestamps ────────────────────────────────────────────────────────
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
