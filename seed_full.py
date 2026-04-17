@@ -104,6 +104,7 @@ print(f"  ✓ Employer profile linked (id={test_employer_profile.id})")
 test_candidate_profile = Candidate(
     name="Test Candidate",
     email=test_candidate_email,
+    tenant_id="ryze",
     phone="617-555-0099",
     current_title="Senior Accountant",
     current_company="Demo Corp",
@@ -200,6 +201,7 @@ print("Seeding candidates...")
 
 candidates = [
     Candidate(
+        tenant_id="ryze",
         name="Sarah Chen",
         email="schen@gmail.com",
         phone="617-555-0101",
@@ -224,6 +226,7 @@ candidates = [
         notes="Great first call. Interested in Controller track. Target $95–110K. Hybrid preferred.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Michael Torres",
         email="mtorres@gmail.com",
         phone="617-555-0102",
@@ -247,6 +250,7 @@ candidates = [
         notes="Passive candidate. Target $160–180K. Open to right opportunity.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Jennifer Walsh",
         email="jwalsh@gmail.com",
         phone="617-555-0103",
@@ -270,6 +274,7 @@ candidates = [
         notes="Ready to make the move to industry. Target $130–150K. Downtown Boston preferred.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="David Kim",
         email="dkim@gmail.com",
         phone="617-555-0104",
@@ -293,6 +298,7 @@ candidates = [
         notes="Strong quantitative background. Target $125–145K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Amanda Foster",
         email="afoster@gmail.com",
         phone="617-555-0105",
@@ -315,6 +321,7 @@ candidates = [
         notes="Ready for Controller role. Target $110–125K. South Shore preferred.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Robert Huang",
         email="rhuang@gmail.com",
         phone="617-555-0106",
@@ -338,6 +345,7 @@ candidates = [
         notes="Exploring next chapter. Open to CFO or board roles. Target $250K+.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Lisa Martinez",
         email="lmartinez@gmail.com",
         phone="617-555-0107",
@@ -353,6 +361,7 @@ candidates = [
         notes="Strong upside candidate. Target $65–75K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="James O'Brien",
         email="jobrien@gmail.com",
         phone="617-555-0108",
@@ -376,6 +385,7 @@ candidates = [
         notes="Motivated by the in-house move. Target $150–170K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Emily Rodriguez",
         email="erodriguez@gmail.com",
         phone="617-555-0109",
@@ -398,6 +408,7 @@ candidates = [
         notes="Not actively looking but open to the right CFO role. Target $200K+.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Marcus Rivera",
         email="mrivera@gmail.com",
         phone="617-555-0110",
@@ -421,6 +432,7 @@ candidates = [
         notes="Ready to make the move. Target $90–105K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Rachel Green",
         email="rgreen@gmail.com",
         phone="617-555-0111",
@@ -443,6 +455,7 @@ candidates = [
         notes="Open to VP Finance or divisional CFO. Target $165–185K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Thomas Anderson",
         email="tanderson@gmail.com",
         phone="617-555-0112",
@@ -458,6 +471,7 @@ candidates = [
         notes="Strong upside. Target $70–80K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Nicole Williams",
         email="nwilliams@gmail.com",
         phone="617-555-0113",
@@ -481,6 +495,7 @@ candidates = [
         notes="Motivated by W/L balance. Target $100–115K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Kevin Park",
         email="kpark@gmail.com",
         phone="617-555-0114",
@@ -504,6 +519,7 @@ candidates = [
         notes="Actively looking for CFO role. Target $275K+.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Stephanie Brown",
         email="sbrown@gmail.com",
         phone="617-555-0115",
@@ -526,6 +542,7 @@ candidates = [
         notes="Great background for an in-house tax senior. Target $95–110K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Daniel Murphy",
         email="dmurphy@gmail.com",
         phone="617-555-0116",
@@ -547,6 +564,7 @@ candidates = [
         notes="Niche skill set. Target $100–115K. Staying in financial services.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Alexandra Davis",
         email="adavis@gmail.com",
         phone="617-555-0117",
@@ -570,6 +588,7 @@ candidates = [
         notes="Strong operator. Target $155–175K. Open to healthcare or adjacent sectors.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Christopher Lee",
         email="clee@gmail.com",
         phone="617-555-0118",
@@ -593,6 +612,7 @@ candidates = [
         notes="High-caliber candidate. Will move for the right CFO role. Target $300K+.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Megan Taylor",
         email="mtaylor@gmail.com",
         phone="617-555-0119",
@@ -614,6 +634,7 @@ candidates = [
         notes="Early career. Target $62–70K. Willing to relocate to Boston.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Brian Wilson",
         email="bwilson@gmail.com",
         phone="617-555-0120",
@@ -637,6 +658,7 @@ candidates = [
         notes="Ready for Controller step. Target $120–135K.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Jessica Moore",
         email="jmoore@gmail.com",
         phone="617-555-0121",
@@ -659,6 +681,7 @@ candidates = [
         notes="High performer. Target $145–165K. Open to Director FP&A or VP Finance roles.",
     ),
     Candidate(
+        tenant_id="ryze",
         name="Andrew Johnson",
         email="ajohnson@gmail.com",
         phone="617-555-0122",
