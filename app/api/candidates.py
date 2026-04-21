@@ -25,6 +25,7 @@ from sqlalchemy import text
 
 from app.core.database import get_db
 from app.core.deps import get_current_admin_user, RYZE_TENANT
+from app.api.auth import get_current_user as get_any_authenticated_user
 from app.models.user import User
 from app.models.candidate import Candidate
 from app.models.job_order import JobOrder
@@ -42,6 +43,7 @@ from app.services.embedding_service import (
     generate_embedding,
 )
 from app.services.ai_parser import parse_candidate_profile
+
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,162 @@ def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidat
         )
         .first()
     )
+
+
+def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Candidate]:
+    """
+    Find the candidate record that belongs to this authenticated user.
+
+    Strategy:
+      1. Fast path  — look up by user_id FK (set after first login).
+      2. Email fall — match on email within the user's tenant (handles stubs
+                      created from bookings before the candidate had an account).
+      3. Self-heal  — if the email path finds a record, write user_id onto it
+                      so all future lookups use the fast path.
+
+    Returns None if no candidate profile exists yet.
+    """
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+
+    # 1. Fast path
+    candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+    if candidate:
+        return candidate
+
+    # 2. Email fallback
+    if current_user.email:
+        candidate = (
+            db.query(Candidate)
+            .filter(
+                Candidate.email.ilike(current_user.email.strip()),
+                Candidate.tenant_id == tenant_id,
+            )
+            .first()
+        )
+        if candidate:
+            # 3. Self-heal: write user_id so future calls are instant
+            candidate.user_id = current_user.id
+            db.commit()
+            db.refresh(candidate)
+            logger.info(
+                f"[candidates/me] Self-healed: linked user #{current_user.id} "
+                f"({current_user.email}) → candidate #{candidate.id}"
+            )
+
+    return candidate
+
+
+@router.get("/me", response_model=CandidateResponse)
+def get_my_candidate_profile(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_any_authenticated_user),
+):
+    """
+    Returns the candidate profile for the currently authenticated user.
+
+    Available to CANDIDATE users. Looks up by user_id (fast path) then
+    falls back to email match and self-heals by writing user_id.
+
+    Returns 404 if no profile exists yet — dashboard renders a
+    "no profile" state and prompts the candidate to schedule a call.
+    """
+    candidate = _resolve_candidate_for_user(db, current_user)
+    if not candidate:
+        raise HTTPException(
+            status_code=404,
+            detail="No candidate profile found. Schedule a call with RYZE to get started.",
+        )
+    return candidate
+
+
+@router.get("/me/job-matches", response_model=List[JobMatchResult])
+def get_my_job_matches(
+    limit: int = 5,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_any_authenticated_user),
+):
+    """
+    Returns open job orders ranked by AI fit for the authenticated candidate.
+
+    Uses the same pgvector cosine similarity logic as the admin-facing
+    /{candidate_id}/job-matches endpoint. Falls back to unranked if the
+    candidate hasn't been embedded yet.
+    """
+    candidate = _resolve_candidate_for_user(db, current_user)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="No candidate profile found.")
+
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+
+    def _unranked_fallback():
+        jobs = (
+            db.query(JobOrder)
+            .filter(JobOrder.status == "open", JobOrder.tenant_id == tenant_id)
+            .order_by(JobOrder.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            JobMatchResult(
+                id=j.id,
+                title=j.title,
+                location=j.location,
+                salary_min=j.salary_min,
+                salary_max=j.salary_max,
+                requirements=j.requirements,
+                status=j.status,
+                employer_profile_id=j.employer_profile_id,
+                match_score=None,
+            )
+            for j in jobs
+        ]
+
+    if candidate.embedding is None:
+        return _unranked_fallback()
+
+    try:
+        vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
+        sql = text(
+            f"""
+            SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
+            FROM job_orders
+            WHERE embedding IS NOT NULL
+              AND status = 'open'
+              AND tenant_id = :tenant_id
+            ORDER BY distance
+            LIMIT :limit
+            """
+        )
+        rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
+
+        if not rows:
+            return _unranked_fallback()
+
+        ranked_ids = [r.id for r in rows]
+        distance_map = {r.id: r.distance for r in rows}
+
+        jobs = db.query(JobOrder).filter(JobOrder.id.in_(ranked_ids)).all()
+        job_map = {j.id: j for j in jobs}
+
+        return [
+            JobMatchResult(
+                id=job_map[jid].id,
+                title=job_map[jid].title,
+                location=job_map[jid].location,
+                salary_min=job_map[jid].salary_min,
+                salary_max=job_map[jid].salary_max,
+                requirements=job_map[jid].requirements,
+                status=job_map[jid].status,
+                employer_profile_id=job_map[jid].employer_profile_id,
+                match_score=round(1 - distance_map[jid], 4),
+            )
+            for jid in ranked_ids
+            if jid in job_map
+        ]
+
+    except Exception as e:
+        logger.error(f"[candidates/me/job-matches] Vector search failed: {e}")
+        return _unranked_fallback()
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,18 @@ class Candidate(Base):
     # ── Multi-tenancy ─────────────────────────────────────────────────────
     tenant_id = Column(String(100), nullable=True, index=True)
 
+    # ── User account link ─────────────────────────────────────────────────
+    # Set when a CANDIDATE user signs up / logs in and their email matches
+    # this record. Written by GET /api/candidates/me as a self-healing step.
+    # NULL = stub created from booking before the candidate had an account.
+    # SET NULL on user delete so removing the account doesn't orphan the stub.
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # ── Identity ──────────────────────────────────────────────────────────
     name = Column(String, nullable=False)
     email = Column(String, nullable=True)
