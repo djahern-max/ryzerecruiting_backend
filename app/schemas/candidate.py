@@ -95,3 +95,19 @@ class CandidateParseResponse(BaseModel):
     ai_certifications: Optional[str] = None
     ai_skills: Optional[List[str]] = None
     ai_years_experience: Optional[int] = None
+
+
+class CandidateSelfUpdate(BaseModel):
+    """
+    Fields a candidate is allowed to update on their own profile.
+    Recruiter-owned fields (AI fields, notes, source, etc.) are excluded.
+    """
+
+    current_title: Optional[str] = None
+    current_company: Optional[str] = None
+    location: Optional[str] = None
+    phone: Optional[str] = None
+    linkedin_url: Optional[str] = None
+
+    class Config:
+        extra = "forbid"

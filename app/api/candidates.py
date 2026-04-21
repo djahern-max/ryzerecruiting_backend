@@ -35,6 +35,7 @@ from app.schemas.candidate import (
     CandidateResponse,
     CandidateParseRequest,
     CandidateParseResponse,
+    CandidateSelfUpdate,
 )
 from app.schemas.job_order import JobMatchResult
 from app.services.embedding_service import (
@@ -239,6 +240,36 @@ def get_my_job_matches(
     except Exception as e:
         logger.error(f"[candidates/me/job-matches] Vector search failed: {e}")
         return _unranked_fallback()
+
+
+@router.patch("/me", response_model=CandidateResponse)
+def update_my_candidate_profile(
+    payload: CandidateSelfUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_any_authenticated_user),
+):
+    """
+    Allows a candidate to update their own basic profile fields.
+    Recruiter-owned fields (AI summary, notes, skills, etc.) are not exposed
+    here — they can only be updated by an admin.
+    """
+    candidate = _resolve_candidate_for_user(db, current_user)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="No candidate profile found.")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(candidate, field, value)
+
+    candidate.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(candidate)
+
+    logger.info(
+        f"[candidates/me PATCH] Candidate #{candidate.id} updated fields: "
+        f"{list(update_data.keys())} by user #{current_user.id}"
+    )
+    return candidate
 
 
 # ---------------------------------------------------------------------------
