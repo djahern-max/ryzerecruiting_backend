@@ -84,3 +84,19 @@ app.include_router(blog.router, prefix="/blog", tags=["blog"])
 @app.get("/")
 async def read_root():
     return {"message": "It Works!"}
+
+
+@app.get("/api/routes", tags=["dev"])
+async def list_routes():
+    routes = []
+    for route in app.routes:
+        if hasattr(route, "methods"):
+            routes.append(
+                {
+                    "path": route.path,
+                    "methods": sorted(route.methods),
+                    "name": route.name,
+                    "tags": getattr(route, "tags", []),
+                }
+            )
+    return sorted(routes, key=lambda r: r["path"])
