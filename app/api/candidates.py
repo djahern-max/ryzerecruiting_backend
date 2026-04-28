@@ -74,10 +74,6 @@ def _tenant(user: User) -> str:
 
 
 def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidate]:
-    """
-    Return an existing candidate with this email in the given tenant, or None.
-    Email comparison is case-insensitive.
-    """
     if not email or not email.strip():
         return None
     return (
@@ -91,26 +87,12 @@ def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidat
 
 
 def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Candidate]:
-    """
-    Find the candidate record that belongs to this authenticated user.
-
-    Strategy:
-      1. Fast path  — look up by user_id FK (set after first login).
-      2. Email fall — match on email within the user's tenant (handles stubs
-                      created from bookings before the candidate had an account).
-      3. Self-heal  — if the email path finds a record, write user_id onto it
-                      so all future lookups use the fast path.
-
-    Returns None if no candidate profile exists yet.
-    """
     tenant_id = current_user.tenant_id or RYZE_TENANT
 
-    # 1. Fast path
     candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
     if candidate:
         return candidate
 
-    # 2. Email fallback
     if current_user.email:
         candidate = (
             db.query(Candidate)
@@ -121,7 +103,6 @@ def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Can
             .first()
         )
         if candidate:
-            # 3. Self-heal: write user_id so future calls are instant
             candidate.user_id = current_user.id
             db.commit()
             db.refresh(candidate)
@@ -138,15 +119,6 @@ def get_my_candidate_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
 ):
-    """
-    Returns the candidate profile for the currently authenticated user.
-
-    Available to CANDIDATE users. Looks up by user_id (fast path) then
-    falls back to email match and self-heals by writing user_id.
-
-    Returns 404 if no profile exists yet — dashboard renders a
-    "no profile" state and prompts the candidate to schedule a call.
-    """
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
         raise HTTPException(
@@ -162,13 +134,6 @@ def get_my_job_matches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
 ):
-    """
-    Returns open job orders ranked by AI fit for the authenticated candidate.
-
-    Uses the same pgvector cosine similarity logic as the admin-facing
-    /{candidate_id}/job-matches endpoint. Falls back to unranked if the
-    candidate hasn't been embedded yet.
-    """
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
         raise HTTPException(status_code=404, detail="No candidate profile found.")
@@ -252,11 +217,6 @@ def update_my_candidate_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
 ):
-    """
-    Allows a candidate to update their own basic profile fields.
-    Recruiter-owned fields (AI summary, notes, skills, etc.) are not exposed
-    here — they can only be updated by an admin.
-    """
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
         raise HTTPException(status_code=404, detail="No candidate profile found.")
@@ -274,11 +234,6 @@ def update_my_candidate_profile(
         f"{list(update_data.keys())} by user #{current_user.id}"
     )
     return candidate
-
-
-# ---------------------------------------------------------------------------
-# Job matching — candidate → ranked open roles (candidate-facing)
-# ---------------------------------------------------------------------------
 
 
 @router.get("/{candidate_id}/job-matches", response_model=List[JobMatchResult])
@@ -405,10 +360,6 @@ def check_duplicate(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Check for existing candidates with a similar name within this tenant.
-    Returns a list of potential matches — empty list means no duplicates found.
-    """
     tenant_id = _tenant(current_user)
 
     if not name or len(name.strip()) < 2:
@@ -442,10 +393,6 @@ def get_candidate(
 
 # ---------------------------------------------------------------------------
 # Create (admin only)
-# EP18: Email-based upsert — if a candidate with the same email already exists
-# in this tenant, update the existing record instead of creating a duplicate.
-# This silently merges rather than rejecting, which is the correct behaviour
-# for the resume-upload-after-booking-stub scenario (Scenario A in the spec).
 # ---------------------------------------------------------------------------
 
 
@@ -460,10 +407,6 @@ def create_candidate(
     data = payload.model_dump()
     incoming_email = data.get("email")
 
-    # ── EP18: Email duplicate check ──────────────────────────────────────
-    # If a candidate with this email already exists in the tenant, update
-    # that record rather than creating a second one. Preserves booking_id,
-    # source, meeting_transcript, and any other fields already on the stub.
     existing = _find_by_email(db, incoming_email, tenant_id)
 
     if existing:
@@ -472,30 +415,13 @@ def create_candidate(
             f"candidate #{existing.id} ({existing.name}) — merging instead of creating duplicate"
         )
 
-        # Merge: only overwrite fields that are non-null in the incoming payload
-        # and not already set on the existing record. This way a booking stub's
-        # name/email/phone are preserved if resume parse returns the same data,
-        # and richer fields (title, company, AI fields) fill in the blanks.
         PRESERVE_IF_SET = {"booking_id", "source", "meeting_transcript", "tenant_id"}
 
         for field, value in data.items():
             if field in PRESERVE_IF_SET:
-                # Never overwrite these — they belong to the stub's origin
                 continue
             if value is not None:
                 setattr(existing, field, value)
-
-        # If the existing record was a stub (source='booking') and the incoming
-        # payload came from a resume or LinkedIn parse, upgrade the source label
-        # so it reflects the enrichment that just happened.
-        if existing.source == "booking" and data.get("source") in (
-            "resume",
-            "linkedin",
-            None,
-        ):
-            # Keep 'booking' as the origin — enrichment doesn't erase the history.
-            # The frontend shows "Created from Call" which remains accurate.
-            pass
 
         existing.embedding = None
         existing.embedded_at = None
@@ -509,7 +435,6 @@ def create_candidate(
         )
         return existing
 
-    # ── Normal create path (no duplicate found) ──────────────────────────
     candidate = Candidate(tenant_id=tenant_id, **data)
     db.add(candidate)
     db.commit()
@@ -712,10 +637,6 @@ async def upload_candidate_photo(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Upload a headshot for a candidate.
-    Stores the image in DO Spaces and saves the CDN URL to photo_url.
-    """
     tenant_id = _tenant(current_user)
     candidate = (
         db.query(Candidate)
@@ -725,7 +646,6 @@ async def upload_candidate_photo(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found.")
 
-    # Validate image type
     allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
     if file.content_type not in allowed:
         raise HTTPException(
@@ -756,11 +676,6 @@ async def upload_candidate_photo(
     return {"photo_url": cdn_url}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BANNER UPLOAD  —  POST /api/candidates/{candidate_id}/banner
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 @router.post("/{candidate_id}/banner")
 async def upload_candidate_banner(
     candidate_id: int,
@@ -768,10 +683,6 @@ async def upload_candidate_banner(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Upload a banner/cover image for a candidate (like LinkedIn).
-    Stores in DO Spaces and saves the CDN URL to banner_url.
-    """
     tenant_id = _tenant(current_user)
     candidate = (
         db.query(Candidate)
@@ -813,256 +724,293 @@ async def upload_candidate_banner(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PDF EXPORT  —  GET /api/candidates/{candidate_id}/pdf
+#
+# Design mirrors the web profile page:
+#   • Full-width hero banner (image or gradient) with a dark gradient scrim
+#   • Avatar + name/title/badges overlaid at the bottom of the hero
+#   • Two-column body: main content left, sidebar right separated by a rule
+#   • Branded footer with generation date
 # ─────────────────────────────────────────────────────────────────────────────
 
-PDF_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
- 
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
- 
-  body {{
-    font-family: 'DM Sans', Arial, sans-serif;
-    font-size: 11px;
-    color: #1e293b;
-    background: #fff;
+PDF_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Serif+Display&display=swap');
+
+* {{
+    box-sizing: border-box;
+    margin: 0;
     padding: 0;
-  }}
- 
-  /* ── Banner ── */
-  .banner {{
+}}
+
+body {{
+    font-family: 'DM Sans', Arial, sans-serif;
+    font-size: 10.5px;
+    color: #1e293b;
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}}
+
+/* ─── HERO ─────────────────────────────────────────── */
+.hero {{
+    position: relative;
     width: 100%;
-    height: 110px;
+    height: 190px;
     background: {banner_style};
     background-size: cover;
     background-position: center;
-  }}
- 
-  /* ── Header ── */
-  .header {{
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
-    padding: 16px 36px 20px;
-    border-bottom: 2px solid #e2e8f0;
-    margin-top: -36px;
-  }}
- 
-  .photo-wrap {{
-    flex-shrink: 0;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    border: 3px solid #fff;
     overflow: hidden;
+}}
+
+/* Gradient scrim — makes bottom readable over any image */
+.hero-scrim {{
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        to bottom,
+        rgba(8, 20, 45, 0.05) 0%,
+        rgba(8, 20, 45, 0.20) 35%,
+        rgba(8, 20, 45, 0.72) 70%,
+        rgba(8, 20, 45, 0.96) 100%
+    );
+}}
+
+/* Identity row pinned to the bottom of the hero */
+.hero-identity {{
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0 36px 18px 36px;
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
+}}
+
+/* ─── AVATAR ────────────────────────────────────────── */
+.avatar {{
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.30);
+    overflow: hidden;
+    flex-shrink: 0;
     background: #1e3a5f;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    margin-top: 0;
-  }}
- 
-  .photo-wrap img {{
-    width: 100%;
-    height: 100%;
+}}
+
+.avatar img {{
+    width: 70px;
+    height: 70px;
     object-fit: cover;
-  }}
- 
-  .photo-initial {{
-    font-size: 28px;
-    font-weight: 700;
-    color: #fff;
-  }}
- 
-  .header-info {{
+    display: block;
+}}
+
+.avatar-initial {{
+    font-size: 26px;
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1;
+}}
+
+/* ─── NAME + META ───────────────────────────────────── */
+.hero-text {{
     flex: 1;
-    padding-top: 38px;
-  }}
- 
-  .candidate-name {{
+    min-width: 0;
+    padding-bottom: 2px;
+}}
+
+.candidate-name {{
     font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 22px;
+    font-size: 21px;
     font-weight: 400;
-    color: #0f172a;
-    line-height: 1.2;
-    margin-bottom: 4px;
-  }}
- 
-  .candidate-meta {{
-    font-size: 11px;
-    color: #475569;
+    color: #ffffff;
+    line-height: 1.15;
     margin-bottom: 3px;
-  }}
- 
-  .candidate-location {{
+}}
+
+.candidate-subtitle {{
     font-size: 10px;
-    color: #64748b;
-  }}
- 
-  .badges {{
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-  }}
- 
-  .badge {{
+    color: rgba(255, 255, 255, 0.85);
+    margin-bottom: 2px;
+    font-weight: 500;
+}}
+
+.candidate-location {{
     font-size: 9px;
+    color: rgba(255, 255, 255, 0.62);
+    margin-bottom: 7px;
+}}
+
+/* ─── BADGES ────────────────────────────────────────── */
+.badges {{
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}}
+
+.badge {{
+    font-size: 8px;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 20px;
     border: 1px solid;
-    text-transform: capitalize;
-  }}
- 
-  .badge-level {{
-    background: #eff6ff;
-    color: #1d4ed8;
-    border-color: #bfdbfe;
-  }}
- 
-  .badge-cert {{
-    background: #1d4ed8;
-    color: #fff;
-    border-color: #1d4ed8;
-  }}
- 
-  .badge-exp {{
-    background: #f1f5f9;
-    color: #475569;
-    border-color: #cbd5e1;
-  }}
- 
-  /* ── Body ── */
-  .body {{
-    padding: 20px 36px;
+    letter-spacing: 0.02em;
+}}
+
+.badge-exec  {{ background: #0f172a;  color: #f8fafc;  border-color: #1e293b; }}
+.badge-level {{ background: #eff6ff;  color: #1d4ed8;  border-color: #bfdbfe; }}
+.badge-exp   {{ background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.90); border-color: rgba(255,255,255,0.22); }}
+.badge-cert  {{ background: #1d4ed8;  color: #ffffff;  border-color: #2563eb; }}
+
+/* ─── BODY ──────────────────────────────────────────── */
+.body {{
     display: flex;
-    gap: 24px;
-  }}
- 
-  .main-col {{
+    gap: 0;
+    padding: 22px 0 22px;
+    min-height: 380px;
+}}
+
+.main-col {{
     flex: 1;
+    padding: 0 22px 0 36px;
+    border-right: 1px solid #e2e8f0;
     min-width: 0;
-  }}
- 
-  .side-col {{
-    width: 180px;
+}}
+
+.side-col {{
+    width: 185px;
     flex-shrink: 0;
-  }}
- 
-  /* ── Sections ── */
-  .section {{
+    padding: 0 24px 0 20px;
+}}
+
+/* ─── SECTIONS ──────────────────────────────────────── */
+.section {{
     margin-bottom: 18px;
-  }}
- 
-  .section-title {{
-    font-size: 9px;
-    font-weight: 700;
+}}
+
+.section-title {{
+    font-size: 8px;
+    font-weight: 800;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: #94a3b8;
+    padding-bottom: 5px;
     border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 4px;
-    margin-bottom: 8px;
-  }}
- 
-  .section-text {{
-    font-size: 10.5px;
+    margin-bottom: 9px;
+}}
+
+.section-text {{
+    font-size: 10px;
     color: #334155;
-    line-height: 1.7;
-  }}
- 
-  /* ── Skills ── */
-  .skills-wrap {{
+    line-height: 1.75;
+    white-space: pre-wrap;
+}}
+
+/* ─── SKILLS ────────────────────────────────────────── */
+.skills-wrap {{
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
-  }}
- 
-  .skill-tag {{
-    font-size: 9px;
+}}
+
+.skill-tag {{
+    font-size: 8.5px;
     font-weight: 600;
-    padding: 2px 8px;
-    background: #eff6ff;
-    color: #2563eb;
-    border: 1px solid #bfdbfe;
-    border-radius: 999px;
-  }}
- 
-  /* ── Contact rows ── */
-  .info-row {{
-    display: flex;
-    justify-content: space-between;
-    font-size: 10px;
-    margin-bottom: 5px;
-    gap: 8px;
-  }}
- 
-  .info-label {{
+    padding: 2px 7px;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}}
+
+/* ─── CONTACT ROWS ──────────────────────────────────── */
+.info-row {{
+    margin-bottom: 7px;
+}}
+
+.info-label {{
     font-weight: 700;
     color: #94a3b8;
     text-transform: uppercase;
-    font-size: 8.5px;
-    letter-spacing: 0.05em;
-    flex-shrink: 0;
-  }}
- 
-  .info-value {{
-    color: #334155;
-    text-align: right;
+    font-size: 7.5px;
+    letter-spacing: 0.07em;
+    display: block;
+    margin-bottom: 1px;
+}}
+
+.info-value {{
+    color: #1e293b;
+    font-size: 9.5px;
     word-break: break-all;
-  }}
- 
-  /* ── Footer ── */
-  .footer {{
-    margin-top: 8px;
-    padding: 10px 36px;
-    border-top: 1px solid #e2e8f0;
+}}
+
+/* ─── FOOTER ────────────────────────────────────────── */
+.footer {{
+    padding: 9px 36px;
+    border-top: 2px solid #e2e8f0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-  }}
- 
-  .footer-brand {{
+    background: #f8fafc;
+}}
+
+.footer-left {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}}
+
+.footer-brand {{
     font-size: 9px;
-    font-weight: 700;
-    color: #94a3b8;
-    letter-spacing: 0.1em;
+    font-weight: 800;
+    color: #0f2444;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-  }}
- 
-  .footer-note {{
-    font-size: 8.5px;
-    color: #cbd5e1;
-  }}
+}}
+
+.footer-tagline {{
+    font-size: 8px;
+    color: #94a3b8;
+    padding-left: 10px;
+    border-left: 1px solid #cbd5e1;
+}}
+
+.footer-date {{
+    font-size: 8px;
+    color: #94a3b8;
+}}
+"""
+
+PDF_TEMPLATE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+{css}
 </style>
 </head>
 <body>
- 
-  <!-- Banner -->
-  <div class="banner"></div>
- 
-  <!-- Header -->
-  <div class="header">
-    <div class="photo-wrap">
-      {photo_tag}
-    </div>
-    <div class="header-info">
-      <div class="candidate-name">{name}</div>
-      {meta_line}
-      {location_line}
-      <div class="badges">
-        {badges}
+
+  <!-- ═══ HERO BANNER ═══════════════════════════════════════════ -->
+  <div class="hero">
+    <div class="hero-scrim"></div>
+    <div class="hero-identity">
+      <div class="avatar">{photo_tag}</div>
+      <div class="hero-text">
+        <div class="candidate-name">{name}</div>
+        {meta_line}
+        {location_line}
+        <div class="badges">{badges}</div>
       </div>
     </div>
   </div>
- 
-  <!-- Body -->
+
+  <!-- ═══ BODY ══════════════════════════════════════════════════ -->
   <div class="body">
     <div class="main-col">
       {summary_section}
@@ -1075,26 +1023,47 @@ PDF_TEMPLATE = """
       {certs_section}
     </div>
   </div>
- 
-  <!-- Footer -->
+
+  <!-- ═══ FOOTER ════════════════════════════════════════════════ -->
   <div class="footer">
-    <span class="footer-brand">RYZE.ai</span>
-    <span class="footer-note">Prepared by your RYZE recruiter</span>
+    <div class="footer-left">
+      <span class="footer-brand">RYZE.ai</span>
+      <span class="footer-tagline">Prepared by your RYZE recruiter</span>
+    </div>
+    <span class="footer-date">Generated {today}</span>
   </div>
- 
+
 </body>
-</html>
-"""
+</html>"""
+
+
+# ---------------------------------------------------------------------------
+# PDF render helpers
+# ---------------------------------------------------------------------------
 
 
 def _section(title: str, content: str) -> str:
+    if not content.strip():
+        return ""
     return (
-        f'<div class="section"><div class="section-title">{title}</div>{content}</div>'
+        f'<div class="section">'
+        f'<div class="section-title">{title}</div>'
+        f"{content}"
+        f"</div>"
     )
 
 
 def _info_row(label: str, value: str) -> str:
-    return f'<div class="info-row"><span class="info-label">{label}</span><span class="info-value">{value}</span></div>'
+    return (
+        f'<div class="info-row">'
+        f'<span class="info-label">{label}</span>'
+        f'<span class="info-value">{value}</span>'
+        f"</div>"
+    )
+
+
+def _badge(css_class: str, text: str) -> str:
+    return f'<span class="badge {css_class}">{text}</span>'
 
 
 @router.get("/{candidate_id}/pdf")
@@ -1105,12 +1074,10 @@ def download_candidate_pdf(
 ):
     """
     Generate and stream a branded PDF profile for a candidate.
-    Uses WeasyPrint to render the HTML template to PDF.
+    Uses WeasyPrint to render an HTML/CSS template that mirrors the
+    web profile page: full-width hero, gradient scrim, identity overlay,
+    two-column body, and a branded footer with the generation date.
     """
-    from fastapi.responses import StreamingResponse
-    import io
-    from weasyprint import HTML as WeasyHTML
-
     tenant_id = _tenant(current_user)
     candidate = (
         db.query(Candidate)
@@ -1120,27 +1087,32 @@ def download_candidate_pdf(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found.")
 
-    # ── Banner style ──────────────────────────────────────────────────────
-    if candidate.banner_url:
-        banner_style = f"linear-gradient(rgba(0,26,51,0.35), rgba(0,26,51,0.35)), url('{candidate.banner_url}')"
-    else:
-        banner_style = "linear-gradient(135deg, #001a33 0%, #0a3a5c 60%, #1d4ed8 100%)"
+    today_str = datetime.utcnow().strftime("%B %d, %Y")
 
-    # ── Photo tag ─────────────────────────────────────────────────────────
+    # ── Banner background ─────────────────────────────────────────────────
+    if candidate.banner_url:
+        # Overlay a dark tint on top of the banner image for the scrim effect
+        banner_style = (
+            f"linear-gradient(135deg, #0f2444 0%, #1a3a6b 60%, #1e4a8a 100%), "
+            f"url('{candidate.banner_url}')"
+        )
+    else:
+        banner_style = "linear-gradient(135deg, #0f2444 0%, #1a3a6b 55%, #1e4a8a 100%)"
+
+    # ── Avatar / photo ────────────────────────────────────────────────────
     if candidate.photo_url:
         photo_tag = f'<img src="{candidate.photo_url}" alt="{candidate.name}" />'
     else:
-        initial = candidate.name[0].upper() if candidate.name else "?"
-        photo_tag = f'<span class="photo-initial">{initial}</span>'
+        initial = (candidate.name or "?")[0].upper()
+        photo_tag = f'<span class="avatar-initial">{initial}</span>'
 
-    # ── Meta line ─────────────────────────────────────────────────────────
+    # ── Name / subtitle / location ────────────────────────────────────────
     meta_parts = [p for p in [candidate.current_title, candidate.current_company] if p]
     meta_line = (
-        f'<div class="candidate-meta">{" · ".join(meta_parts)}</div>'
+        f'<div class="candidate-subtitle">{" · ".join(meta_parts)}</div>'
         if meta_parts
         else ""
     )
-
     location_line = (
         f'<div class="candidate-location">📍 {candidate.location}</div>'
         if candidate.location
@@ -1148,35 +1120,50 @@ def download_candidate_pdf(
     )
 
     # ── Badges ────────────────────────────────────────────────────────────
-    badges = ""
-    if candidate.ai_career_level:
-        badges += f'<span class="badge badge-level">{candidate.ai_career_level}</span>'
+    level = (candidate.ai_career_level or "").lower()
+    EXEC_LEVELS = {"c-suite", "executive", "vp", "director"}
+
+    badges_html = ""
+    if level in EXEC_LEVELS:
+        badges_html += _badge("badge-exec", candidate.ai_career_level)
+    elif level:
+        badges_html += _badge("badge-level", candidate.ai_career_level.capitalize())
+
     if candidate.ai_years_experience:
-        badges += f'<span class="badge badge-exp">{candidate.ai_years_experience} yrs exp</span>'
+        badges_html += _badge("badge-exp", f"{candidate.ai_years_experience} yrs exp")
+
     certs_text = candidate.ai_certifications or ""
     for cert in ["CPA", "CFA", "CMA"]:
-        if cert in certs_text:
-            badges += f'<span class="badge badge-cert">{cert}</span>'
+        if cert in certs_text.upper():
+            badges_html += _badge("badge-cert", cert)
 
-    # ── Main sections ─────────────────────────────────────────────────────
-    summary_section = ""
-    if candidate.ai_summary:
-        summary_section = _section(
-            "Professional Summary",
-            f'<p class="section-text">{candidate.ai_summary}</p>',
-        )
+    # ── Main column sections ──────────────────────────────────────────────
+    summary_section = _section(
+        "Professional Summary",
+        (
+            f'<p class="section-text">{candidate.ai_summary}</p>'
+            if candidate.ai_summary
+            else ""
+        ),
+    )
 
-    experience_section = ""
-    if candidate.ai_experience:
-        experience_section = _section(
-            "Experience", f'<p class="section-text">{candidate.ai_experience}</p>'
-        )
+    experience_section = _section(
+        "Experience",
+        (
+            f'<p class="section-text">{candidate.ai_experience}</p>'
+            if candidate.ai_experience
+            else ""
+        ),
+    )
 
-    education_section = ""
-    if candidate.ai_education:
-        education_section = _section(
-            "Education", f'<p class="section-text">{candidate.ai_education}</p>'
-        )
+    education_section = _section(
+        "Education",
+        (
+            f'<p class="section-text">{candidate.ai_education}</p>'
+            if candidate.ai_education
+            else ""
+        ),
+    )
 
     # ── Sidebar sections ──────────────────────────────────────────────────
     contact_rows = ""
@@ -1185,47 +1172,54 @@ def download_candidate_pdf(
     if candidate.phone:
         contact_rows += _info_row("Phone", candidate.phone)
     if candidate.linkedin_url:
-        contact_rows += _info_row("LinkedIn", "linkedin.com/in/…")
-    contact_section = _section("Contact", contact_rows) if contact_rows else ""
+        contact_rows += _info_row("LinkedIn", "View on LinkedIn")
+    if candidate.location:
+        contact_rows += _info_row("Location", candidate.location)
+    contact_section = _section("Contact", contact_rows)
 
-    skills_section = ""
+    skills_html = ""
     if candidate.ai_skills:
-        tags = "".join(
-            f'<span class="skill-tag">{s}</span>' for s in (candidate.ai_skills or [])
+        skill_list = (
+            candidate.ai_skills if isinstance(candidate.ai_skills, list) else []
         )
-        skills_section = _section("Skills", f'<div class="skills-wrap">{tags}</div>')
+        tags = "".join(f'<span class="skill-tag">{s}</span>' for s in skill_list)
+        skills_html = f'<div class="skills-wrap">{tags}</div>'
+    skills_section = _section("Skills", skills_html)
 
-    certs_section = ""
-    if candidate.ai_certifications:
-        certs_section = _section(
-            "Certifications",
-            f'<p class="section-text">{candidate.ai_certifications}</p>',
-        )
+    certs_section = _section(
+        "Certifications",
+        (
+            f'<p class="section-text">{candidate.ai_certifications}</p>'
+            if candidate.ai_certifications
+            else ""
+        ),
+    )
 
-    # ── Render ────────────────────────────────────────────────────────────
+    # ── Assemble & render ─────────────────────────────────────────────────
     html = PDF_TEMPLATE.format(
-        banner_style=banner_style,
+        css=PDF_CSS.format(banner_style=banner_style),
         photo_tag=photo_tag,
-        name=candidate.name,
+        name=candidate.name or "Unknown",
         meta_line=meta_line,
         location_line=location_line,
-        badges=badges,
+        badges=badges_html,
         summary_section=summary_section,
         experience_section=experience_section,
         education_section=education_section,
         contact_section=contact_section,
         skills_section=skills_section,
         certs_section=certs_section,
+        today=today_str,
     )
 
     try:
         pdf_bytes = WeasyHTML(string=html).write_pdf()
     except Exception as e:
-        logger.error(f"[EP18] PDF generation failed for candidate #{candidate_id}: {e}")
+        logger.error(f"PDF generation failed for candidate #{candidate_id}: {e}")
         raise HTTPException(status_code=500, detail="PDF generation failed.")
 
     safe_name = (candidate.name or "candidate").replace(" ", "_")
-    filename = f"{safe_name}_profile.pdf"
+    filename = f"{safe_name}_RYZE_Profile.pdf"
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
