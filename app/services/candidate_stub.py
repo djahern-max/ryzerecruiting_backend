@@ -51,7 +51,7 @@ def find_or_create_candidate_stub(
         candidate = (
             db.query(Candidate)
             .filter(
-                Candidate.email == booking.employer_email,
+                Candidate.email.ilike(booking.employer_email),
                 Candidate.tenant_id == tenant_id,
             )
             .first()

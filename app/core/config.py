@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID: str = ""
 
+    # DigitalOcean Spaces
+    DO_SPACES_KEY: str = ""
+    DO_SPACES_SECRET: str = ""
+    DO_SPACES_BUCKET: str = ""
+    DO_SPACES_REGION: str = "nyc3"
+    DO_SPACES_ENDPOINT: str = ""
+    DO_SPACES_CDN_BASE: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True
