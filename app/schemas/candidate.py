@@ -52,6 +52,8 @@ class CandidateResponse(BaseModel):
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     linkedin_raw_text: Optional[str] = None
+    photo_url: Optional[str] = None
+    banner_url: Optional[str] = None
     current_title: Optional[str] = None
     current_company: Optional[str] = None
     location: Optional[str] = None

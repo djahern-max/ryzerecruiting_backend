@@ -20,8 +20,12 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import io
+from weasyprint import HTML as WeasyHTML
+from app.services.spaces import upload_file, make_unique_filename
 
 from app.core.database import get_db
 from app.core.deps import get_current_admin_user, RYZE_TENANT
@@ -699,3 +703,532 @@ def embed_all_candidates(
         background_tasks.add_task(embed_candidate_background, c.id)
 
     return {"queued": count, "message": f"{count} candidate(s) queued for indexing"}
+
+
+@router.post("/{candidate_id}/photo")
+async def upload_candidate_photo(
+    candidate_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Upload a headshot for a candidate.
+    Stores the image in DO Spaces and saves the CDN URL to photo_url.
+    """
+    tenant_id = _tenant(current_user)
+    candidate = (
+        db.query(Candidate)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+
+    # Validate image type
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if file.content_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload a JPEG, PNG, or WebP image.",
+        )
+
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400, detail="Image too large. Maximum size is 5MB."
+        )
+
+    unique_name = make_unique_filename(file.filename or "photo.jpg")
+    folder = f"candidates/{candidate_id}/photo"
+
+    cdn_url = upload_file(data, folder, unique_name, file.content_type)
+    if not cdn_url:
+        raise HTTPException(
+            status_code=500, detail="Photo upload failed. Please try again."
+        )
+
+    candidate.photo_url = cdn_url
+    candidate.updated_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"[EP18] Photo uploaded for candidate #{candidate_id}: {cdn_url}")
+    return {"photo_url": cdn_url}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BANNER UPLOAD  —  POST /api/candidates/{candidate_id}/banner
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/{candidate_id}/banner")
+async def upload_candidate_banner(
+    candidate_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Upload a banner/cover image for a candidate (like LinkedIn).
+    Stores in DO Spaces and saves the CDN URL to banner_url.
+    """
+    tenant_id = _tenant(current_user)
+    candidate = (
+        db.query(Candidate)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload a JPEG, PNG, or WebP image.",
+        )
+
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(
+            status_code=400, detail="Image too large. Maximum size is 10MB."
+        )
+
+    unique_name = make_unique_filename(file.filename or "banner.jpg")
+    folder = f"candidates/{candidate_id}/banner"
+
+    cdn_url = upload_file(data, folder, unique_name, file.content_type)
+    if not cdn_url:
+        raise HTTPException(
+            status_code=500, detail="Banner upload failed. Please try again."
+        )
+
+    candidate.banner_url = cdn_url
+    candidate.updated_at = datetime.utcnow()
+    db.commit()
+
+    logger.info(f"[EP18] Banner uploaded for candidate #{candidate_id}: {cdn_url}")
+    return {"banner_url": cdn_url}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PDF EXPORT  —  GET /api/candidates/{candidate_id}/pdf
+# ─────────────────────────────────────────────────────────────────────────────
+
+PDF_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
+ 
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+ 
+  body {{
+    font-family: 'DM Sans', Arial, sans-serif;
+    font-size: 11px;
+    color: #1e293b;
+    background: #fff;
+    padding: 0;
+  }}
+ 
+  /* ── Banner ── */
+  .banner {{
+    width: 100%;
+    height: 110px;
+    background: {banner_style};
+    background-size: cover;
+    background-position: center;
+  }}
+ 
+  /* ── Header ── */
+  .header {{
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px 36px 20px;
+    border-bottom: 2px solid #e2e8f0;
+    margin-top: -36px;
+  }}
+ 
+  .photo-wrap {{
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    overflow: hidden;
+    background: #1e3a5f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    margin-top: 0;
+  }}
+ 
+  .photo-wrap img {{
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }}
+ 
+  .photo-initial {{
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+  }}
+ 
+  .header-info {{
+    flex: 1;
+    padding-top: 38px;
+  }}
+ 
+  .candidate-name {{
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 22px;
+    font-weight: 400;
+    color: #0f172a;
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }}
+ 
+  .candidate-meta {{
+    font-size: 11px;
+    color: #475569;
+    margin-bottom: 3px;
+  }}
+ 
+  .candidate-location {{
+    font-size: 10px;
+    color: #64748b;
+  }}
+ 
+  .badges {{
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }}
+ 
+  .badge {{
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    border: 1px solid;
+    text-transform: capitalize;
+  }}
+ 
+  .badge-level {{
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+  }}
+ 
+  .badge-cert {{
+    background: #1d4ed8;
+    color: #fff;
+    border-color: #1d4ed8;
+  }}
+ 
+  .badge-exp {{
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+  }}
+ 
+  /* ── Body ── */
+  .body {{
+    padding: 20px 36px;
+    display: flex;
+    gap: 24px;
+  }}
+ 
+  .main-col {{
+    flex: 1;
+    min-width: 0;
+  }}
+ 
+  .side-col {{
+    width: 180px;
+    flex-shrink: 0;
+  }}
+ 
+  /* ── Sections ── */
+  .section {{
+    margin-bottom: 18px;
+  }}
+ 
+  .section-title {{
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }}
+ 
+  .section-text {{
+    font-size: 10.5px;
+    color: #334155;
+    line-height: 1.7;
+  }}
+ 
+  /* ── Skills ── */
+  .skills-wrap {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }}
+ 
+  .skill-tag {{
+    font-size: 9px;
+    font-weight: 600;
+    padding: 2px 8px;
+    background: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+  }}
+ 
+  /* ── Contact rows ── */
+  .info-row {{
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    margin-bottom: 5px;
+    gap: 8px;
+  }}
+ 
+  .info-label {{
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-size: 8.5px;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }}
+ 
+  .info-value {{
+    color: #334155;
+    text-align: right;
+    word-break: break-all;
+  }}
+ 
+  /* ── Footer ── */
+  .footer {{
+    margin-top: 8px;
+    padding: 10px 36px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }}
+ 
+  .footer-brand {{
+    font-size: 9px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }}
+ 
+  .footer-note {{
+    font-size: 8.5px;
+    color: #cbd5e1;
+  }}
+</style>
+</head>
+<body>
+ 
+  <!-- Banner -->
+  <div class="banner"></div>
+ 
+  <!-- Header -->
+  <div class="header">
+    <div class="photo-wrap">
+      {photo_tag}
+    </div>
+    <div class="header-info">
+      <div class="candidate-name">{name}</div>
+      {meta_line}
+      {location_line}
+      <div class="badges">
+        {badges}
+      </div>
+    </div>
+  </div>
+ 
+  <!-- Body -->
+  <div class="body">
+    <div class="main-col">
+      {summary_section}
+      {experience_section}
+      {education_section}
+    </div>
+    <div class="side-col">
+      {contact_section}
+      {skills_section}
+      {certs_section}
+    </div>
+  </div>
+ 
+  <!-- Footer -->
+  <div class="footer">
+    <span class="footer-brand">RYZE.ai</span>
+    <span class="footer-note">Prepared by your RYZE recruiter</span>
+  </div>
+ 
+</body>
+</html>
+"""
+
+
+def _section(title: str, content: str) -> str:
+    return (
+        f'<div class="section"><div class="section-title">{title}</div>{content}</div>'
+    )
+
+
+def _info_row(label: str, value: str) -> str:
+    return f'<div class="info-row"><span class="info-label">{label}</span><span class="info-value">{value}</span></div>'
+
+
+@router.get("/{candidate_id}/pdf")
+def download_candidate_pdf(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Generate and stream a branded PDF profile for a candidate.
+    Uses WeasyPrint to render the HTML template to PDF.
+    """
+    from fastapi.responses import StreamingResponse
+    import io
+    from weasyprint import HTML as WeasyHTML
+
+    tenant_id = _tenant(current_user)
+    candidate = (
+        db.query(Candidate)
+        .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found.")
+
+    # ── Banner style ──────────────────────────────────────────────────────
+    if candidate.banner_url:
+        banner_style = f"linear-gradient(rgba(0,26,51,0.35), rgba(0,26,51,0.35)), url('{candidate.banner_url}')"
+    else:
+        banner_style = "linear-gradient(135deg, #001a33 0%, #0a3a5c 60%, #1d4ed8 100%)"
+
+    # ── Photo tag ─────────────────────────────────────────────────────────
+    if candidate.photo_url:
+        photo_tag = f'<img src="{candidate.photo_url}" alt="{candidate.name}" />'
+    else:
+        initial = candidate.name[0].upper() if candidate.name else "?"
+        photo_tag = f'<span class="photo-initial">{initial}</span>'
+
+    # ── Meta line ─────────────────────────────────────────────────────────
+    meta_parts = [p for p in [candidate.current_title, candidate.current_company] if p]
+    meta_line = (
+        f'<div class="candidate-meta">{" · ".join(meta_parts)}</div>'
+        if meta_parts
+        else ""
+    )
+
+    location_line = (
+        f'<div class="candidate-location">📍 {candidate.location}</div>'
+        if candidate.location
+        else ""
+    )
+
+    # ── Badges ────────────────────────────────────────────────────────────
+    badges = ""
+    if candidate.ai_career_level:
+        badges += f'<span class="badge badge-level">{candidate.ai_career_level}</span>'
+    if candidate.ai_years_experience:
+        badges += f'<span class="badge badge-exp">{candidate.ai_years_experience} yrs exp</span>'
+    certs_text = candidate.ai_certifications or ""
+    for cert in ["CPA", "CFA", "CMA"]:
+        if cert in certs_text:
+            badges += f'<span class="badge badge-cert">{cert}</span>'
+
+    # ── Main sections ─────────────────────────────────────────────────────
+    summary_section = ""
+    if candidate.ai_summary:
+        summary_section = _section(
+            "Professional Summary",
+            f'<p class="section-text">{candidate.ai_summary}</p>',
+        )
+
+    experience_section = ""
+    if candidate.ai_experience:
+        experience_section = _section(
+            "Experience", f'<p class="section-text">{candidate.ai_experience}</p>'
+        )
+
+    education_section = ""
+    if candidate.ai_education:
+        education_section = _section(
+            "Education", f'<p class="section-text">{candidate.ai_education}</p>'
+        )
+
+    # ── Sidebar sections ──────────────────────────────────────────────────
+    contact_rows = ""
+    if candidate.email:
+        contact_rows += _info_row("Email", candidate.email)
+    if candidate.phone:
+        contact_rows += _info_row("Phone", candidate.phone)
+    if candidate.linkedin_url:
+        contact_rows += _info_row("LinkedIn", "linkedin.com/in/…")
+    contact_section = _section("Contact", contact_rows) if contact_rows else ""
+
+    skills_section = ""
+    if candidate.ai_skills:
+        tags = "".join(
+            f'<span class="skill-tag">{s}</span>' for s in (candidate.ai_skills or [])
+        )
+        skills_section = _section("Skills", f'<div class="skills-wrap">{tags}</div>')
+
+    certs_section = ""
+    if candidate.ai_certifications:
+        certs_section = _section(
+            "Certifications",
+            f'<p class="section-text">{candidate.ai_certifications}</p>',
+        )
+
+    # ── Render ────────────────────────────────────────────────────────────
+    html = PDF_TEMPLATE.format(
+        banner_style=banner_style,
+        photo_tag=photo_tag,
+        name=candidate.name,
+        meta_line=meta_line,
+        location_line=location_line,
+        badges=badges,
+        summary_section=summary_section,
+        experience_section=experience_section,
+        education_section=education_section,
+        contact_section=contact_section,
+        skills_section=skills_section,
+        certs_section=certs_section,
+    )
+
+    try:
+        pdf_bytes = WeasyHTML(string=html).write_pdf()
+    except Exception as e:
+        logger.error(f"[EP18] PDF generation failed for candidate #{candidate_id}: {e}")
+        raise HTTPException(status_code=500, detail="PDF generation failed.")
+
+    safe_name = (candidate.name or "candidate").replace(" ", "_")
+    filename = f"{safe_name}_profile.pdf"
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

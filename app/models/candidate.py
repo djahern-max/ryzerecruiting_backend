@@ -32,6 +32,10 @@ class Candidate(Base):
     linkedin_url = Column(String, nullable=True)
     linkedin_raw_text = Column(Text, nullable=True)
 
+    # ── Profile images (EP18) ─────────────────────────────────────────────
+    photo_url = Column(String, nullable=True)
+    banner_url = Column(String, nullable=True)
+
     # ── Current position ──────────────────────────────────────────────────
     current_title = Column(String, nullable=True)
     current_company = Column(String, nullable=True)
