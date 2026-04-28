@@ -752,20 +752,23 @@ body {{
     width: 100%;
     border-collapse: collapse;
     padding: 22px 0;
+    min-height: 760px;        /* keeps footer pinned near the bottom of the page */
 }}
-
+ 
 .main-col {{
     display: table-cell;
     padding: 0 22px 0 36px;
     border-right: 1px solid #e2e8f0;
     vertical-align: top;
+    height: 760px;            /* makes the divider line run full column height */
 }}
-
+ 
 .side-col {{
     display: table-cell;
     width: 188px;
     padding: 0 28px 0 20px;
     vertical-align: top;
+    height: 760px;
 }}
 
 /* ── Sections ── */
