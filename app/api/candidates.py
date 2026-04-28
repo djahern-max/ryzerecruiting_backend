@@ -1,11 +1,4 @@
 # app/api/candidates.py
-# EP16: Replaced all hardcoded RYZE_TENANT references with dynamic tenant_id
-#        extracted from the authenticated admin user.
-# EP18: Added email-based duplicate check on create_candidate. When a resume or
-#        LinkedIn profile is submitted for an email that already exists in this
-#        tenant, the existing record is UPDATED rather than a duplicate created.
-#        This covers Scenario A (booking stub + resume upload) and Scenario D
-#        (manual create after booking) from the EP18 spec.
 
 import logging
 from datetime import datetime
@@ -54,23 +47,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/candidates", tags=["candidates"])
 
-# Convenience alias — keeps existing code readable
 require_admin = get_current_admin_user
 
 
-# ---------------------------------------------------------------------------
-# Helper — resolve tenant from current user
-# ---------------------------------------------------------------------------
-
-
 def _tenant(user: User) -> str:
-    """Return the user's tenant_id, falling back to 'ryze' for legacy NULLs."""
     return user.tenant_id or RYZE_TENANT
-
-
-# ---------------------------------------------------------------------------
-# Helper — email duplicate check
-# ---------------------------------------------------------------------------
 
 
 def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidate]:
@@ -106,11 +87,6 @@ def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Can
             candidate.user_id = current_user.id
             db.commit()
             db.refresh(candidate)
-            logger.info(
-                f"[candidates/me] Self-healed: linked user #{current_user.id} "
-                f"({current_user.email}) → candidate #{candidate.id}"
-            )
-
     return candidate
 
 
@@ -121,10 +97,7 @@ def get_my_candidate_profile(
 ):
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
-        raise HTTPException(
-            status_code=404,
-            detail="No candidate profile found. Schedule a call with RYZE to get started.",
-        )
+        raise HTTPException(status_code=404, detail="No candidate profile found.")
     return candidate
 
 
@@ -172,21 +145,16 @@ def get_my_job_matches(
             f"""
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM job_orders
-            WHERE embedding IS NOT NULL
-              AND status = 'open'
-              AND tenant_id = :tenant_id
-            ORDER BY distance
-            LIMIT :limit
+            WHERE embedding IS NOT NULL AND status = 'open' AND tenant_id = :tenant_id
+            ORDER BY distance LIMIT :limit
             """
         )
         rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
-
         if not rows:
             return _unranked_fallback()
 
         ranked_ids = [r.id for r in rows]
         distance_map = {r.id: r.distance for r in rows}
-
         jobs = db.query(JobOrder).filter(JobOrder.id.in_(ranked_ids)).all()
         job_map = {j.id: j for j in jobs}
 
@@ -205,7 +173,6 @@ def get_my_job_matches(
             for jid in ranked_ids
             if jid in job_map
         ]
-
     except Exception as e:
         logger.error(f"[candidates/me/job-matches] Vector search failed: {e}")
         return _unranked_fallback()
@@ -228,11 +195,6 @@ def update_my_candidate_profile(
     candidate.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(candidate)
-
-    logger.info(
-        f"[candidates/me PATCH] Candidate #{candidate.id} updated fields: "
-        f"{list(update_data.keys())} by user #{current_user.id}"
-    )
     return candidate
 
 
@@ -244,7 +206,6 @@ def get_job_matches(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     candidate = (
         db.query(Candidate)
         .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
@@ -285,11 +246,8 @@ def get_job_matches(
             f"""
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM job_orders
-            WHERE embedding IS NOT NULL
-              AND status = 'open'
-              AND tenant_id = :tenant_id
-            ORDER BY distance
-            LIMIT :limit
+            WHERE embedding IS NOT NULL AND status = 'open' AND tenant_id = :tenant_id
+            ORDER BY distance LIMIT :limit
             """
         )
         rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
@@ -302,7 +260,6 @@ def get_job_matches(
 
     ids = [r[0] for r in rows]
     distances = {r[0]: float(r[1]) for r in rows}
-
     jobs = (
         db.query(JobOrder)
         .filter(JobOrder.id.in_(ids), JobOrder.tenant_id == tenant_id)
@@ -327,11 +284,6 @@ def get_job_matches(
     ]
 
 
-# ---------------------------------------------------------------------------
-# List / get (admin only)
-# ---------------------------------------------------------------------------
-
-
 @router.get("", response_model=List[CandidateResponse])
 def list_candidates(
     search: Optional[str] = None,
@@ -339,7 +291,6 @@ def list_candidates(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     if search:
         term = f"%{search}%"
@@ -361,15 +312,12 @@ def check_duplicate(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     if not name or len(name.strip()) < 2:
         return []
-
     tokens = name.strip().lower().split()
     query = db.query(Candidate).filter(Candidate.tenant_id == tenant_id)
     for token in tokens:
         query = query.filter(Candidate.name.ilike(f"%{token}%"))
-
     return query.order_by(Candidate.created_at.desc()).all()
 
 
@@ -380,7 +328,6 @@ def get_candidate(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     candidate = (
         db.query(Candidate)
         .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
@@ -389,11 +336,6 @@ def get_candidate(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found.")
     return candidate
-
-
-# ---------------------------------------------------------------------------
-# Create (admin only)
-# ---------------------------------------------------------------------------
 
 
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
@@ -408,47 +350,27 @@ def create_candidate(
     incoming_email = data.get("email")
 
     existing = _find_by_email(db, incoming_email, tenant_id)
-
     if existing:
-        logger.info(
-            f"[EP18] create_candidate: email '{incoming_email}' matches existing "
-            f"candidate #{existing.id} ({existing.name}) — merging instead of creating duplicate"
-        )
-
         PRESERVE_IF_SET = {"booking_id", "source", "meeting_transcript", "tenant_id"}
-
         for field, value in data.items():
             if field in PRESERVE_IF_SET:
                 continue
             if value is not None:
                 setattr(existing, field, value)
-
         existing.embedding = None
         existing.embedded_at = None
         existing.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(existing)
         background_tasks.add_task(embed_candidate_background, existing.id)
-
-        logger.info(
-            f"[EP18] Merged & re-embedded candidate #{existing.id} ({existing.name})"
-        )
         return existing
 
     candidate = Candidate(tenant_id=tenant_id, **data)
     db.add(candidate)
     db.commit()
     db.refresh(candidate)
-    logger.info(
-        f"Candidate created: {candidate.name} (#{candidate.id}) tenant={tenant_id}"
-    )
     background_tasks.add_task(embed_candidate_background, candidate.id)
     return candidate
-
-
-# ---------------------------------------------------------------------------
-# Update / delete (admin only)
-# ---------------------------------------------------------------------------
 
 
 @router.patch("/{candidate_id}", response_model=CandidateResponse)
@@ -460,7 +382,6 @@ def update_candidate(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     candidate = (
         db.query(Candidate)
         .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
@@ -472,7 +393,6 @@ def update_candidate(
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(candidate, field, value)
-
     candidate.embedding = None
     candidate.embedded_at = None
     candidate.updated_at = datetime.utcnow()
@@ -489,7 +409,6 @@ def delete_candidate(
     current_user: User = Depends(require_admin),
 ):
     tenant_id = _tenant(current_user)
-
     candidate = (
         db.query(Candidate)
         .filter(Candidate.id == candidate_id, Candidate.tenant_id == tenant_id)
@@ -501,33 +420,19 @@ def delete_candidate(
     db.commit()
 
 
-# ---------------------------------------------------------------------------
-# Parse — text paste (admin only)
-# ---------------------------------------------------------------------------
-
-
 @router.post("/parse", response_model=CandidateParseResponse)
 def parse_candidate(
     payload: CandidateParseRequest,
     _: User = Depends(require_admin),
 ):
     if not payload.text or len(payload.text.strip()) < 50:
-        raise HTTPException(
-            status_code=400,
-            detail="Text is too short to parse. Please paste the full profile or resume.",
-        )
+        raise HTTPException(status_code=400, detail="Text is too short to parse.")
     result = parse_candidate_profile(payload.text)
     if not result:
         raise HTTPException(
-            status_code=422,
-            detail="Could not parse the provided text. Please try again.",
+            status_code=422, detail="Could not parse the provided text."
         )
     return result
-
-
-# ---------------------------------------------------------------------------
-# Parse — file upload PDF or DOCX (admin only)
-# ---------------------------------------------------------------------------
 
 
 @router.post("/parse-file", response_model=CandidateParseResponse)
@@ -537,37 +442,22 @@ async def parse_candidate_file(
 ):
     filename = file.filename or ""
     content_type = file.content_type or ""
-
     is_pdf = filename.lower().endswith(".pdf") or content_type == "application/pdf"
     is_docx = filename.lower().endswith(".docx") or content_type in (
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/msword",
     )
-
     if not is_pdf and not is_docx:
-        raise HTTPException(
-            status_code=400,
-            detail="Unsupported file type. Please upload a PDF or Word (.docx) document.",
-        )
+        raise HTTPException(status_code=400, detail="Unsupported file type.")
 
     data = await file.read()
     if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400, detail="File too large. Maximum size is 10MB."
-        )
+        raise HTTPException(status_code=400, detail="File too large (max 10MB).")
 
     result = parse_candidate_profile(data, filename=filename, content_type=content_type)
     if not result:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not parse the file. Please try again or use text paste.",
-        )
+        raise HTTPException(status_code=422, detail="Could not parse the file.")
     return result
-
-
-# ---------------------------------------------------------------------------
-# Single embed
-# ---------------------------------------------------------------------------
 
 
 @router.post("/{candidate_id}/embed")
@@ -579,8 +469,7 @@ def embed_single_candidate(
     candidate = (
         db.query(Candidate)
         .filter(
-            Candidate.id == candidate_id,
-            Candidate.tenant_id == _tenant(current_user),
+            Candidate.id == candidate_id, Candidate.tenant_id == _tenant(current_user)
         )
         .first()
     )
@@ -589,9 +478,7 @@ def embed_single_candidate(
 
     text = build_candidate_text(candidate)
     if not text:
-        raise HTTPException(
-            status_code=400, detail="Not enough data to embed this candidate"
-        )
+        raise HTTPException(status_code=400, detail="Not enough data to embed")
 
     vector = generate_embedding(text)
     if not vector:
@@ -600,13 +487,7 @@ def embed_single_candidate(
     candidate.embedding = vector
     candidate.embedded_at = datetime.utcnow()
     db.commit()
-
     return {"id": candidate_id, "embedded_at": candidate.embedded_at.isoformat()}
-
-
-# ---------------------------------------------------------------------------
-# Embed all unindexed
-# ---------------------------------------------------------------------------
 
 
 @router.post("/embed-all")
@@ -618,15 +499,13 @@ def embed_all_candidates(
     unembedded = (
         db.query(Candidate)
         .filter(
-            Candidate.tenant_id == _tenant(current_user),
-            Candidate.embedding.is_(None),
+            Candidate.tenant_id == _tenant(current_user), Candidate.embedding.is_(None)
         )
         .all()
     )
     count = len(unembedded)
     for c in unembedded:
         background_tasks.add_task(embed_candidate_background, c.id)
-
     return {"queued": count, "message": f"{count} candidate(s) queued for indexing"}
 
 
@@ -648,31 +527,22 @@ async def upload_candidate_photo(
 
     allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
     if file.content_type not in allowed:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Please upload a JPEG, PNG, or WebP image.",
-        )
+        raise HTTPException(status_code=400, detail="Invalid image type.")
 
     data = await file.read()
     if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400, detail="Image too large. Maximum size is 5MB."
-        )
+        raise HTTPException(status_code=400, detail="Image too large (max 5MB).")
 
     unique_name = make_unique_filename(file.filename or "photo.jpg")
-    folder = f"candidates/{candidate_id}/photo"
-
-    cdn_url = upload_file(data, folder, unique_name, file.content_type)
+    cdn_url = upload_file(
+        data, f"candidates/{candidate_id}/photo", unique_name, file.content_type
+    )
     if not cdn_url:
-        raise HTTPException(
-            status_code=500, detail="Photo upload failed. Please try again."
-        )
+        raise HTTPException(status_code=500, detail="Photo upload failed.")
 
     candidate.photo_url = cdn_url
     candidate.updated_at = datetime.utcnow()
     db.commit()
-
-    logger.info(f"[EP18] Photo uploaded for candidate #{candidate_id}: {cdn_url}")
     return {"photo_url": cdn_url}
 
 
@@ -694,51 +564,51 @@ async def upload_candidate_banner(
 
     allowed = {"image/jpeg", "image/png", "image/webp"}
     if file.content_type not in allowed:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file type. Please upload a JPEG, PNG, or WebP image.",
-        )
+        raise HTTPException(status_code=400, detail="Invalid image type.")
 
     data = await file.read()
     if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(
-            status_code=400, detail="Image too large. Maximum size is 10MB."
-        )
+        raise HTTPException(status_code=400, detail="Image too large (max 10MB).")
 
     unique_name = make_unique_filename(file.filename or "banner.jpg")
-    folder = f"candidates/{candidate_id}/banner"
-
-    cdn_url = upload_file(data, folder, unique_name, file.content_type)
+    cdn_url = upload_file(
+        data, f"candidates/{candidate_id}/banner", unique_name, file.content_type
+    )
     if not cdn_url:
-        raise HTTPException(
-            status_code=500, detail="Banner upload failed. Please try again."
-        )
+        raise HTTPException(status_code=500, detail="Banner upload failed.")
 
     candidate.banner_url = cdn_url
     candidate.updated_at = datetime.utcnow()
     db.commit()
-
-    logger.info(f"[EP18] Banner uploaded for candidate #{candidate_id}: {cdn_url}")
     return {"banner_url": cdn_url}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF EXPORT  —  GET /api/candidates/{candidate_id}/pdf
+# PDF EXPORT
 #
-# Design mirrors the web profile page:
-#   • Full-width hero banner (image or gradient) with a dark gradient scrim
-#   • Avatar + name/title/badges overlaid at the bottom of the hero
-#   • Two-column body: main content left, sidebar right separated by a rule
-#   • Branded footer with generation date
+# WeasyPrint compatibility rules applied throughout:
+#   1. @page { margin: 0 }  — kills the default white border
+#   2. display: table-cell  — used for ALL side-by-side layouts; flexbox inside
+#      position:absolute containers is unreliable in WeasyPrint
+#   3. No inset: shorthand  — use explicit top/right/bottom/left
+#   4. -webkit-print-color-adjust: exact  — forces background colours to print
+#   5. overflow: hidden on .hero clips the scrim to the banner bounds
 # ─────────────────────────────────────────────────────────────────────────────
 
-PDF_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Serif+Display&display=swap');
+_PDF_STYLE = """
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Serif+Display&display=swap');
+
+@page {{
+    margin: 0;
+    size: 8.5in 11in;
+}}
 
 * {{
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
 }}
 
 body {{
@@ -746,22 +616,19 @@ body {{
     font-size: 10.5px;
     color: #1e293b;
     background: #ffffff;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
 }}
 
-/* ─── HERO ─────────────────────────────────────────── */
+/* ── Hero ── */
 .hero {{
     position: relative;
     width: 100%;
-    height: 190px;
+    height: 200px;
     background: {banner_style};
     background-size: cover;
     background-position: center;
     overflow: hidden;
 }}
 
-/* Gradient scrim — makes bottom readable over any image */
 .hero-scrim {{
     position: absolute;
     top: 0;
@@ -771,62 +638,73 @@ body {{
     background: linear-gradient(
         to bottom,
         rgba(8, 20, 45, 0.05) 0%,
-        rgba(8, 20, 45, 0.20) 35%,
-        rgba(8, 20, 45, 0.72) 70%,
-        rgba(8, 20, 45, 0.96) 100%
+        rgba(8, 20, 45, 0.25) 35%,
+        rgba(8, 20, 45, 0.78) 68%,
+        rgba(8, 20, 45, 0.97) 100%
     );
 }}
 
-/* Identity row pinned to the bottom of the hero */
+/* Identity row — table layout so avatar+text sit side-by-side reliably */
 .hero-identity {{
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
     padding: 0 36px 18px 36px;
-    display: flex;
-    align-items: flex-end;
-    gap: 14px;
 }}
 
-/* ─── AVATAR ────────────────────────────────────────── */
+.identity-table {{
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+}}
+
+.avatar-cell {{
+    display: table-cell;
+    width: 78px;
+    vertical-align: bottom;
+    padding-right: 14px;
+}}
+
+.info-cell {{
+    display: table-cell;
+    vertical-align: bottom;
+}}
+
+/* ── Avatar ── */
 .avatar {{
-    width: 70px;
-    height: 70px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
     border: 3px solid rgba(255, 255, 255, 0.30);
     overflow: hidden;
-    flex-shrink: 0;
     background: #1e3a5f;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: table;     /* makes centering work without flex */
+    text-align: center;
 }}
 
 .avatar img {{
-    width: 70px;
-    height: 70px;
-    object-fit: cover;
+    width: 72px;
+    height: 72px;
     display: block;
+    object-fit: cover;
 }}
 
 .avatar-initial {{
-    font-size: 26px;
+    display: table-cell;
+    vertical-align: middle;
+    font-size: 28px;
     font-weight: 800;
     color: #ffffff;
-    line-height: 1;
+    text-align: center;
+    width: 72px;
+    height: 72px;
 }}
 
-/* ─── NAME + META ───────────────────────────────────── */
-.hero-text {{
-    flex: 1;
-    min-width: 0;
-    padding-bottom: 2px;
-}}
-
+/* ── Name / meta ── */
 .candidate-name {{
     font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 21px;
+    font-size: 22px;
     font-weight: 400;
     color: #ffffff;
     line-height: 1.15;
@@ -834,61 +712,63 @@ body {{
 }}
 
 .candidate-subtitle {{
-    font-size: 10px;
+    font-size: 10.5px;
     color: rgba(255, 255, 255, 0.85);
-    margin-bottom: 2px;
     font-weight: 500;
+    margin-bottom: 2px;
 }}
 
 .candidate-location {{
     font-size: 9px;
-    color: rgba(255, 255, 255, 0.62);
-    margin-bottom: 7px;
+    color: rgba(255, 255, 255, 0.60);
+    margin-bottom: 8px;
 }}
 
-/* ─── BADGES ────────────────────────────────────────── */
+/* ── Badges — inline-block so they wrap naturally ── */
 .badges {{
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
+    line-height: 1.8;
 }}
 
 .badge {{
+    display: inline-block;
     font-size: 8px;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 2px 9px;
     border-radius: 20px;
     border: 1px solid;
+    margin-right: 4px;
     letter-spacing: 0.02em;
+    text-transform: capitalize;
 }}
 
-.badge-exec  {{ background: #0f172a;  color: #f8fafc;  border-color: #1e293b; }}
-.badge-level {{ background: #eff6ff;  color: #1d4ed8;  border-color: #bfdbfe; }}
-.badge-exp   {{ background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.90); border-color: rgba(255,255,255,0.22); }}
-.badge-cert  {{ background: #1d4ed8;  color: #ffffff;  border-color: #2563eb; }}
+.badge-exec  {{ background: #0f172a;  color: #f8fafc;                 border-color: #334155; }}
+.badge-level {{ background: #eff6ff;  color: #1d4ed8;                 border-color: #bfdbfe; }}
+.badge-exp   {{ background: rgba(255,255,255,0.15); color: #ffffff;   border-color: rgba(255,255,255,0.28); }}
+.badge-cert  {{ background: #1d4ed8;  color: #ffffff;                 border-color: #3b82f6; }}
 
-/* ─── BODY ──────────────────────────────────────────── */
+/* ── Body — two columns via table ── */
 .body {{
-    display: flex;
-    gap: 0;
-    padding: 22px 0 22px;
-    min-height: 380px;
+    display: table;
+    width: 100%;
+    border-collapse: collapse;
+    padding: 22px 0;
 }}
 
 .main-col {{
-    flex: 1;
+    display: table-cell;
     padding: 0 22px 0 36px;
     border-right: 1px solid #e2e8f0;
-    min-width: 0;
+    vertical-align: top;
 }}
 
 .side-col {{
-    width: 185px;
-    flex-shrink: 0;
-    padding: 0 24px 0 20px;
+    display: table-cell;
+    width: 188px;
+    padding: 0 28px 0 20px;
+    vertical-align: top;
 }}
 
-/* ─── SECTIONS ──────────────────────────────────────── */
+/* ── Sections ── */
 .section {{
     margin-bottom: 18px;
 }}
@@ -896,7 +776,7 @@ body {{
 .section-title {{
     font-size: 8px;
     font-weight: 800;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.10em;
     text-transform: uppercase;
     color: #94a3b8;
     padding-bottom: 5px;
@@ -911,58 +791,58 @@ body {{
     white-space: pre-wrap;
 }}
 
-/* ─── SKILLS ────────────────────────────────────────── */
-.skills-wrap {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}}
-
+/* ── Skills ── */
 .skill-tag {{
+    display: inline-block;
     font-size: 8.5px;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 2px 8px;
     background: #f1f5f9;
     color: #334155;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
+    margin: 0 3px 4px 0;
 }}
 
-/* ─── CONTACT ROWS ──────────────────────────────────── */
+/* ── Contact rows ── */
 .info-row {{
-    margin-bottom: 7px;
+    margin-bottom: 8px;
 }}
 
 .info-label {{
+    display: block;
     font-weight: 700;
     color: #94a3b8;
     text-transform: uppercase;
     font-size: 7.5px;
     letter-spacing: 0.07em;
-    display: block;
     margin-bottom: 1px;
 }}
 
 .info-value {{
-    color: #1e293b;
     font-size: 9.5px;
+    color: #1e293b;
     word-break: break-all;
 }}
 
-/* ─── FOOTER ────────────────────────────────────────── */
+/* ── Footer ── */
 .footer {{
-    padding: 9px 36px;
+    display: table;
+    width: 100%;
     border-top: 2px solid #e2e8f0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     background: #f8fafc;
+    padding: 10px 36px;
 }}
 
 .footer-left {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: table-cell;
+    vertical-align: middle;
+}}
+
+.footer-right {{
+    display: table-cell;
+    vertical-align: middle;
+    text-align: right;
 }}
 
 .footer-brand {{
@@ -973,11 +853,19 @@ body {{
     text-transform: uppercase;
 }}
 
+.footer-sep {{
+    display: inline-block;
+    width: 1px;
+    height: 10px;
+    background: #cbd5e1;
+    margin: 0 8px;
+    vertical-align: middle;
+}}
+
 .footer-tagline {{
     font-size: 8px;
     color: #94a3b8;
-    padding-left: 10px;
-    border-left: 1px solid #cbd5e1;
+    vertical-align: middle;
 }}
 
 .footer-date {{
@@ -986,22 +874,23 @@ body {{
 }}
 """
 
-PDF_TEMPLATE = """<!DOCTYPE html>
+_PDF_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<style>
-{css}
-</style>
+<style>{style}</style>
 </head>
 <body>
 
-  <!-- ═══ HERO BANNER ═══════════════════════════════════════════ -->
-  <div class="hero">
-    <div class="hero-scrim"></div>
-    <div class="hero-identity">
-      <div class="avatar">{photo_tag}</div>
-      <div class="hero-text">
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-scrim"></div>
+  <div class="hero-identity">
+    <div class="identity-table">
+      <div class="avatar-cell">
+        <div class="avatar">{photo_tag}</div>
+      </div>
+      <div class="info-cell">
         <div class="candidate-name">{name}</div>
         {meta_line}
         {location_line}
@@ -1009,29 +898,33 @@ PDF_TEMPLATE = """<!DOCTYPE html>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ═══ BODY ══════════════════════════════════════════════════ -->
-  <div class="body">
-    <div class="main-col">
-      {summary_section}
-      {experience_section}
-      {education_section}
-    </div>
-    <div class="side-col">
-      {contact_section}
-      {skills_section}
-      {certs_section}
-    </div>
+<!-- BODY -->
+<div class="body">
+  <div class="main-col">
+    {summary_section}
+    {experience_section}
+    {education_section}
   </div>
+  <div class="side-col">
+    {contact_section}
+    {skills_section}
+    {certs_section}
+  </div>
+</div>
 
-  <!-- ═══ FOOTER ════════════════════════════════════════════════ -->
-  <div class="footer">
-    <div class="footer-left">
-      <span class="footer-brand">RYZE.ai</span>
-      <span class="footer-tagline">Prepared by your RYZE recruiter</span>
-    </div>
+<!-- FOOTER -->
+<div class="footer">
+  <div class="footer-left">
+    <span class="footer-brand">RYZE.ai</span>
+    <span class="footer-sep"></span>
+    <span class="footer-tagline">Prepared by your RYZE recruiter</span>
+  </div>
+  <div class="footer-right">
     <span class="footer-date">Generated {today}</span>
   </div>
+</div>
 
 </body>
 </html>"""
@@ -1042,13 +935,13 @@ PDF_TEMPLATE = """<!DOCTYPE html>
 # ---------------------------------------------------------------------------
 
 
-def _section(title: str, content: str) -> str:
-    if not content.strip():
+def _section(title: str, inner: str) -> str:
+    if not inner.strip():
         return ""
     return (
         f'<div class="section">'
         f'<div class="section-title">{title}</div>'
-        f"{content}"
+        f"{inner}"
         f"</div>"
     )
 
@@ -1062,8 +955,8 @@ def _info_row(label: str, value: str) -> str:
     )
 
 
-def _badge(css_class: str, text: str) -> str:
-    return f'<span class="badge {css_class}">{text}</span>'
+def _badge(cls: str, text: str) -> str:
+    return f'<span class="badge {cls}">{text}</span>'
 
 
 @router.get("/{candidate_id}/pdf")
@@ -1073,10 +966,14 @@ def download_candidate_pdf(
     current_user: User = Depends(require_admin),
 ):
     """
-    Generate and stream a branded PDF profile for a candidate.
-    Uses WeasyPrint to render an HTML/CSS template that mirrors the
-    web profile page: full-width hero, gradient scrim, identity overlay,
-    two-column body, and a branded footer with the generation date.
+    Stream a branded PDF profile for a candidate.
+
+    WeasyPrint layout notes:
+    - @page margin:0 removes the default white border
+    - All side-by-side sections use display:table-cell (flex inside
+      position:absolute is unreliable in WeasyPrint)
+    - Badges use display:inline-block so they wrap naturally
+    - Background colours forced with print-color-adjust:exact
     """
     tenant_id = _tenant(current_user)
     candidate = (
@@ -1089,32 +986,28 @@ def download_candidate_pdf(
 
     today_str = datetime.utcnow().strftime("%B %d, %Y")
 
-    # ── Banner background ─────────────────────────────────────────────────
+    # ── Banner ────────────────────────────────────────────────────────────
     if candidate.banner_url:
-        # Overlay a dark tint on top of the banner image for the scrim effect
-        banner_style = (
-            f"linear-gradient(135deg, #0f2444 0%, #1a3a6b 60%, #1e4a8a 100%), "
-            f"url('{candidate.banner_url}')"
-        )
+        banner_style = f"url('{candidate.banner_url}')"
     else:
         banner_style = "linear-gradient(135deg, #0f2444 0%, #1a3a6b 55%, #1e4a8a 100%)"
 
-    # ── Avatar / photo ────────────────────────────────────────────────────
+    # ── Avatar ────────────────────────────────────────────────────────────
     if candidate.photo_url:
-        photo_tag = f'<img src="{candidate.photo_url}" alt="{candidate.name}" />'
+        photo_tag = f'<img src="{candidate.photo_url}" alt="" />'
     else:
         initial = (candidate.name or "?")[0].upper()
         photo_tag = f'<span class="avatar-initial">{initial}</span>'
 
-    # ── Name / subtitle / location ────────────────────────────────────────
+    # ── Name / subtitle ───────────────────────────────────────────────────
     meta_parts = [p for p in [candidate.current_title, candidate.current_company] if p]
     meta_line = (
-        f'<div class="candidate-subtitle">{" · ".join(meta_parts)}</div>'
+        f'<div class="candidate-subtitle">{" &middot; ".join(meta_parts)}</div>'
         if meta_parts
         else ""
     )
     location_line = (
-        f'<div class="candidate-location">📍 {candidate.location}</div>'
+        f'<div class="candidate-location">&#128205; {candidate.location}</div>'
         if candidate.location
         else ""
     )
@@ -1122,22 +1015,18 @@ def download_candidate_pdf(
     # ── Badges ────────────────────────────────────────────────────────────
     level = (candidate.ai_career_level or "").lower()
     EXEC_LEVELS = {"c-suite", "executive", "vp", "director"}
-
     badges_html = ""
     if level in EXEC_LEVELS:
         badges_html += _badge("badge-exec", candidate.ai_career_level)
     elif level:
         badges_html += _badge("badge-level", candidate.ai_career_level.capitalize())
-
     if candidate.ai_years_experience:
         badges_html += _badge("badge-exp", f"{candidate.ai_years_experience} yrs exp")
-
-    certs_text = candidate.ai_certifications or ""
     for cert in ["CPA", "CFA", "CMA"]:
-        if cert in certs_text.upper():
+        if cert in (candidate.ai_certifications or "").upper():
             badges_html += _badge("badge-cert", cert)
 
-    # ── Main column sections ──────────────────────────────────────────────
+    # ── Main sections ─────────────────────────────────────────────────────
     summary_section = _section(
         "Professional Summary",
         (
@@ -1146,7 +1035,6 @@ def download_candidate_pdf(
             else ""
         ),
     )
-
     experience_section = _section(
         "Experience",
         (
@@ -1155,7 +1043,6 @@ def download_candidate_pdf(
             else ""
         ),
     )
-
     education_section = _section(
         "Education",
         (
@@ -1165,7 +1052,7 @@ def download_candidate_pdf(
         ),
     )
 
-    # ── Sidebar sections ──────────────────────────────────────────────────
+    # ── Sidebar ───────────────────────────────────────────────────────────
     contact_rows = ""
     if candidate.email:
         contact_rows += _info_row("Email", candidate.email)
@@ -1177,14 +1064,9 @@ def download_candidate_pdf(
         contact_rows += _info_row("Location", candidate.location)
     contact_section = _section("Contact", contact_rows)
 
-    skills_html = ""
-    if candidate.ai_skills:
-        skill_list = (
-            candidate.ai_skills if isinstance(candidate.ai_skills, list) else []
-        )
-        tags = "".join(f'<span class="skill-tag">{s}</span>' for s in skill_list)
-        skills_html = f'<div class="skills-wrap">{tags}</div>'
-    skills_section = _section("Skills", skills_html)
+    skill_list = candidate.ai_skills if isinstance(candidate.ai_skills, list) else []
+    skills_inner = "".join(f'<span class="skill-tag">{s}</span>' for s in skill_list)
+    skills_section = _section("Skills", skills_inner)
 
     certs_section = _section(
         "Certifications",
@@ -1195,9 +1077,9 @@ def download_candidate_pdf(
         ),
     )
 
-    # ── Assemble & render ─────────────────────────────────────────────────
-    html = PDF_TEMPLATE.format(
-        css=PDF_CSS.format(banner_style=banner_style),
+    # ── Render ────────────────────────────────────────────────────────────
+    html = _PDF_HTML.format(
+        style=_PDF_STYLE.format(banner_style=banner_style),
         photo_tag=photo_tag,
         name=candidate.name or "Unknown",
         meta_line=meta_line,
@@ -1219,10 +1101,10 @@ def download_candidate_pdf(
         raise HTTPException(status_code=500, detail="PDF generation failed.")
 
     safe_name = (candidate.name or "candidate").replace(" ", "_")
-    filename = f"{safe_name}_RYZE_Profile.pdf"
-
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}_RYZE_Profile.pdf"'
+        },
     )
