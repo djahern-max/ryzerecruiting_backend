@@ -3,6 +3,9 @@
 import logging
 from datetime import datetime
 from typing import List, Optional
+import html
+import json
+import re
 
 from fastapi import (
     APIRouter,
@@ -621,16 +624,16 @@ _PDF_STYLE = """
 
 body {{
     font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-    font-size: 10.5px;
+    font-size: 9.5px;
     color: #1e293b;
     background: #ffffff;
 }}
 
-/* ── Hero ── */
+/* HERO */
 .hero {{
     position: relative;
     width: 100%;
-    height: 240px;
+    height: 175px;
     background: {banner_style};
     background-size: cover;
     background-position: center top;
@@ -645,19 +648,17 @@ body {{
     bottom: 0;
     background: linear-gradient(
         to bottom,
-        rgba(8, 20, 45, 0.0)  0%,
-        rgba(8, 20, 45, 0.15) 30%,
-        rgba(8, 20, 45, 0.72) 62%,
-        rgba(8, 20, 45, 0.96) 100%
+        rgba(8, 20, 45, 0.05) 0%,
+        rgba(8, 20, 45, 0.35) 45%,
+        rgba(8, 20, 45, 0.92) 100%
     );
 }}
 
 .hero-identity {{
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 0 40px 20px 40px;
+    left: 36px;
+    right: 36px;
+    bottom: 18px;
 }}
 
 .identity-table {{
@@ -668,9 +669,9 @@ body {{
 
 .avatar-cell {{
     display: table-cell;
-    width: 88px;
+    width: 78px;
     vertical-align: bottom;
-    padding-right: 16px;
+    padding-right: 14px;
 }}
 
 .info-cell {{
@@ -678,20 +679,20 @@ body {{
     vertical-align: bottom;
 }}
 
-/* ── Avatar — border-radius on img directly; reliable in WeasyPrint ── */
 .avatar {{
-    width: 78px;
-    height: 78px;
+    width: 68px;
+    height: 68px;
     border-radius: 50%;
-    border: 3px solid rgba(255, 255, 255, 0.35);
+    border: 3px solid rgba(255,255,255,0.38);
     background: #1e3a5f;
     display: table;
     text-align: center;
+    overflow: hidden;
 }}
 
 .avatar img {{
-    width: 78px;
-    height: 78px;
+    width: 68px;
+    height: 68px;
     border-radius: 50%;
     display: block;
     object-fit: cover;
@@ -700,51 +701,48 @@ body {{
 .avatar-initial {{
     display: table-cell;
     vertical-align: middle;
-    font-size: 30px;
+    width: 68px;
+    height: 68px;
+    font-size: 28px;
     font-weight: 800;
     color: #ffffff;
     text-align: center;
-    width: 78px;
-    height: 78px;
 }}
 
-/* ── Name / meta ── */
 .candidate-name {{
     font-family: Georgia, 'Times New Roman', serif;
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 700;
     color: #ffffff;
-    line-height: 1.1;
-    margin-bottom: 4px;
-    letter-spacing: -0.3px;
-}}
-
-.candidate-subtitle {{
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.88);
-    font-weight: 500;
+    line-height: 1.05;
     margin-bottom: 3px;
 }}
 
-.candidate-location {{
-    font-size: 9.5px;
-    color: rgba(255, 255, 255, 0.62);
-    margin-bottom: 9px;
+.candidate-subtitle {{
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.88);
+    font-weight: 500;
+    margin-bottom: 2px;
 }}
 
-/* ── Badges ── */
+.candidate-location {{
+    font-size: 8.8px;
+    color: rgba(255,255,255,0.68);
+    margin-bottom: 7px;
+}}
+
 .badges {{
-    line-height: 2;
+    line-height: 1.7;
 }}
 
 .badge {{
     display: inline-block;
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: 700;
-    padding: 3px 10px;
+    padding: 2px 8px;
     border-radius: 20px;
     border: 1px solid;
-    margin-right: 5px;
+    margin-right: 4px;
     letter-spacing: 0.04em;
     text-transform: capitalize;
 }}
@@ -754,76 +752,74 @@ body {{
 .badge-exp   {{ background: rgba(255,255,255,0.18); color: #ffffff; border-color: rgba(255,255,255,0.32); }}
 .badge-cert  {{ background: #1d4ed8; color: #ffffff; border-color: #3b82f6; }}
 
-/* ── Accent bar under hero ── */
 .accent-bar {{
     width: 100%;
-    height: 4px;
+    height: 3px;
     background: linear-gradient(to right, #1e3a5f, #2563eb, #1e3a5f);
 }}
 
-/* ── Body layout ── */
+/* BODY */
 .body {{
     display: table;
     width: 100%;
     border-collapse: collapse;
-    padding: 0;
 }}
 
 .main-col {{
     display: table-cell;
-    padding: 26px 26px 30px 40px;
+    padding: 20px 24px 14px 36px;
     border-right: 1px solid #e2e8f0;
     vertical-align: top;
 }}
 
 .side-col {{
     display: table-cell;
-    width: 200px;
-    padding: 26px 28px 30px 22px;
+    width: 205px;
+    padding: 20px 28px 14px 20px;
     vertical-align: top;
     background: #f8fafc;
 }}
 
-/* ── Sections ── */
 .section {{
-    margin-bottom: 22px;
+    margin-bottom: 13px;
+    page-break-inside: avoid;
 }}
 
 .section-title {{
-    font-size: 7.5px;
+    font-size: 7px;
     font-weight: 800;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     color: #1e3a5f;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #1e3a5f;
-    margin-bottom: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1.5px solid #1e3a5f;
+    margin-bottom: 7px;
 }}
 
 .section-text {{
-    font-size: 10px;
+    font-size: 9.1px;
     color: #334155;
-    line-height: 1.8;
+    line-height: 1.45;
     white-space: pre-wrap;
 }}
 
-/* ── Skills ── */
+/* SKILLS */
 .skill-tag {{
     display: inline-block;
-    font-size: 8.5px;
+    font-size: 7.8px;
     font-weight: 600;
-    padding: 3px 9px;
+    padding: 2px 7px;
     background: #eff6ff;
     color: #1e40af;
     border: 1px solid #bfdbfe;
-    border-radius: 6px;
-    margin: 0 4px 5px 0;
+    border-radius: 5px;
+    margin: 0 3px 4px 0;
 }}
 
-/* ── Contact rows ── */
+/* INFO ROWS */
 .info-row {{
-    margin-bottom: 10px;
-    padding-bottom: 10px;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #e2e8f0;
 }}
 
@@ -836,25 +832,25 @@ body {{
     font-weight: 800;
     color: #1e3a5f;
     text-transform: uppercase;
-    font-size: 7px;
+    font-size: 6.5px;
     letter-spacing: 0.1em;
     margin-bottom: 2px;
 }}
 
 .info-value {{
-    font-size: 9.5px;
+    font-size: 8.5px;
     color: #334155;
-    word-break: break-all;
-    line-height: 1.4;
+    word-break: break-word;
+    line-height: 1.35;
 }}
 
-/* ── Footer ── */
+/* FOOTER */
 .footer {{
     display: table;
     width: 100%;
     border-top: 2px solid #1e3a5f;
     background: #0f2444;
-    padding: 11px 40px;
+    padding: 8px 36px;
 }}
 
 .footer-left {{
@@ -869,31 +865,31 @@ body {{
 }}
 
 .footer-brand {{
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
     color: #ffffff;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
 }}
 
 .footer-sep {{
     display: inline-block;
     width: 1px;
-    height: 10px;
+    height: 9px;
     background: rgba(255,255,255,0.3);
-    margin: 0 9px;
+    margin: 0 8px;
     vertical-align: middle;
 }}
 
 .footer-tagline {{
-    font-size: 8px;
-    color: rgba(255,255,255,0.55);
+    font-size: 7.5px;
+    color: rgba(255,255,255,0.58);
     vertical-align: middle;
 }}
 
 .footer-date {{
-    font-size: 8px;
-    color: rgba(255,255,255,0.55);
+    font-size: 7.5px;
+    color: rgba(255,255,255,0.58);
 }}
 """
 
@@ -984,6 +980,32 @@ def _badge(cls: str, text: str) -> str:
     return f'<span class="badge {cls}">{text}</span>'
 
 
+def _e(value) -> str:
+    return html.escape(str(value or ""))
+
+
+def _clean_text(value, max_chars=900) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= max_chars:
+        return _e(text)
+    return _e(text[:max_chars].rstrip() + "…")
+
+
+def _parse_skills(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value[:12]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed[:12]
+        except Exception:
+            return [s.strip() for s in value.split(",") if s.strip()][:12]
+    return []
+
+
 @router.get("/{candidate_id}/pdf")
 def download_candidate_pdf(
     candidate_id: int,
@@ -1056,23 +1078,25 @@ def download_candidate_pdf(
     summary_section = _section(
         "Professional Summary",
         (
-            f'<p class="section-text">{candidate.ai_summary}</p>'
+            f'<p class="section-text">{_clean_text(candidate.ai_summary, 700)}</p>'
             if candidate.ai_summary
             else ""
         ),
     )
+
     experience_section = _section(
         "Experience",
         (
-            f'<p class="section-text">{candidate.ai_experience}</p>'
+            f'<p class="section-text">{_clean_text(candidate.ai_experience, 1050)}</p>'
             if candidate.ai_experience
             else ""
         ),
     )
+
     education_section = _section(
         "Education",
         (
-            f'<p class="section-text">{candidate.ai_education}</p>'
+            f'<p class="section-text">{_clean_text(candidate.ai_education, 450)}</p>'
             if candidate.ai_education
             else ""
         ),
@@ -1081,23 +1105,26 @@ def download_candidate_pdf(
     # ── Sidebar ───────────────────────────────────────────────────────────
     contact_rows = ""
     if candidate.email:
-        contact_rows += _info_row("Email", candidate.email)
+        contact_rows += _info_row("Email", _e(candidate.email))
     if candidate.phone:
-        contact_rows += _info_row("Phone", candidate.phone)
+        contact_rows += _info_row("Phone", _e(candidate.phone))
     if candidate.linkedin_url:
         contact_rows += _info_row("LinkedIn", "View on LinkedIn")
     if candidate.location:
-        contact_rows += _info_row("Location", candidate.location)
+        contact_rows += _info_row("Location", _e(candidate.location))
+
     contact_section = _section("Contact", contact_rows)
 
-    skill_list = candidate.ai_skills if isinstance(candidate.ai_skills, list) else []
-    skills_inner = "".join(f'<span class="skill-tag">{s}</span>' for s in skill_list)
+    skill_list = _parse_skills(candidate.ai_skills)
+    skills_inner = "".join(
+        f'<span class="skill-tag">{_e(skill)}</span>' for skill in skill_list
+    )
     skills_section = _section("Skills", skills_inner)
 
     certs_section = _section(
         "Certifications",
         (
-            f'<p class="section-text">{candidate.ai_certifications}</p>'
+            f'<p class="section-text">{_clean_text(candidate.ai_certifications, 250)}</p>'
             if candidate.ai_certifications
             else ""
         ),
@@ -1107,7 +1134,7 @@ def download_candidate_pdf(
     html = _PDF_HTML.format(
         style=_PDF_STYLE.format(banner_style=banner_style),
         photo_tag=photo_tag,
-        name=candidate.name or "Unknown",
+        name=_e(candidate.name or "Unknown"),
         meta_line=meta_line,
         location_line=location_line,
         badges=badges_html,
