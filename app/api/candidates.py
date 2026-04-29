@@ -606,8 +606,6 @@ async def upload_candidate_banner(
 # ─────────────────────────────────────────────────────────────────────────────
 
 _PDF_STYLE = """
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Serif+Display&display=swap');
-
 @page {{
     margin: 0;
     size: 8.5in 11in;
@@ -622,7 +620,7 @@ _PDF_STYLE = """
 }}
 
 body {{
-    font-family: 'DM Sans', Arial, sans-serif;
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
     font-size: 10.5px;
     color: #1e293b;
     background: #ffffff;
@@ -632,10 +630,10 @@ body {{
 .hero {{
     position: relative;
     width: 100%;
-    height: 200px;
+    height: 240px;
     background: {banner_style};
     background-size: cover;
-    background-position: center;
+    background-position: center top;
     overflow: hidden;
 }}
 
@@ -647,20 +645,19 @@ body {{
     bottom: 0;
     background: linear-gradient(
         to bottom,
-        rgba(8, 20, 45, 0.05) 0%,
-        rgba(8, 20, 45, 0.25) 35%,
-        rgba(8, 20, 45, 0.78) 68%,
-        rgba(8, 20, 45, 0.97) 100%
+        rgba(8, 20, 45, 0.0)  0%,
+        rgba(8, 20, 45, 0.15) 30%,
+        rgba(8, 20, 45, 0.72) 62%,
+        rgba(8, 20, 45, 0.96) 100%
     );
 }}
 
-/* Identity row — table layout so avatar+text sit side-by-side reliably */
 .hero-identity {{
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 0 36px 18px 36px;
+    padding: 0 40px 20px 40px;
 }}
 
 .identity-table {{
@@ -671,9 +668,9 @@ body {{
 
 .avatar-cell {{
     display: table-cell;
-    width: 78px;
+    width: 88px;
     vertical-align: bottom;
-    padding-right: 14px;
+    padding-right: 16px;
 }}
 
 .info-cell {{
@@ -681,21 +678,21 @@ body {{
     vertical-align: bottom;
 }}
 
-/* ── Avatar ── */
+/* ── Avatar — border-radius on img directly; reliable in WeasyPrint ── */
 .avatar {{
-    width: 72px;
-    height: 72px;
+    width: 78px;
+    height: 78px;
     border-radius: 50%;
-    border: 3px solid rgba(255, 255, 255, 0.30);
-    overflow: hidden;
+    border: 3px solid rgba(255, 255, 255, 0.35);
     background: #1e3a5f;
-    display: table;     /* makes centering work without flex */
+    display: table;
     text-align: center;
 }}
 
 .avatar img {{
-    width: 72px;
-    height: 72px;
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
     display: block;
     object-fit: cover;
 }}
@@ -703,104 +700,110 @@ body {{
 .avatar-initial {{
     display: table-cell;
     vertical-align: middle;
-    font-size: 28px;
+    font-size: 30px;
     font-weight: 800;
     color: #ffffff;
     text-align: center;
-    width: 72px;
-    height: 72px;
+    width: 78px;
+    height: 78px;
 }}
 
 /* ── Name / meta ── */
 .candidate-name {{
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 22px;
-    font-weight: 400;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 26px;
+    font-weight: 700;
     color: #ffffff;
-    line-height: 1.15;
-    margin-bottom: 3px;
+    line-height: 1.1;
+    margin-bottom: 4px;
+    letter-spacing: -0.3px;
 }}
 
 .candidate-subtitle {{
-    font-size: 10.5px;
-    color: rgba(255, 255, 255, 0.85);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.88);
     font-weight: 500;
-    margin-bottom: 2px;
+    margin-bottom: 3px;
 }}
 
 .candidate-location {{
-    font-size: 9px;
-    color: rgba(255, 255, 255, 0.60);
-    margin-bottom: 8px;
+    font-size: 9.5px;
+    color: rgba(255, 255, 255, 0.62);
+    margin-bottom: 9px;
 }}
 
-/* ── Badges — inline-block so they wrap naturally ── */
+/* ── Badges ── */
 .badges {{
-    line-height: 1.8;
+    line-height: 2;
 }}
 
 .badge {{
     display: inline-block;
     font-size: 8px;
     font-weight: 700;
-    padding: 2px 9px;
+    padding: 3px 10px;
     border-radius: 20px;
     border: 1px solid;
-    margin-right: 4px;
-    letter-spacing: 0.02em;
+    margin-right: 5px;
+    letter-spacing: 0.04em;
     text-transform: capitalize;
 }}
 
-.badge-exec  {{ background: #0f172a;  color: #f8fafc;                 border-color: #334155; }}
-.badge-level {{ background: #eff6ff;  color: #1d4ed8;                 border-color: #bfdbfe; }}
-.badge-exp   {{ background: rgba(255,255,255,0.15); color: #ffffff;   border-color: rgba(255,255,255,0.28); }}
-.badge-cert  {{ background: #1d4ed8;  color: #ffffff;                 border-color: #3b82f6; }}
+.badge-exec  {{ background: #0f172a; color: #f8fafc; border-color: #475569; }}
+.badge-level {{ background: #dbeafe; color: #1e40af; border-color: #93c5fd; }}
+.badge-exp   {{ background: rgba(255,255,255,0.18); color: #ffffff; border-color: rgba(255,255,255,0.32); }}
+.badge-cert  {{ background: #1d4ed8; color: #ffffff; border-color: #3b82f6; }}
 
-/* ── Body — two columns via table ── */
+/* ── Accent bar under hero ── */
+.accent-bar {{
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(to right, #1e3a5f, #2563eb, #1e3a5f);
+}}
+
+/* ── Body layout ── */
 .body {{
     display: table;
     width: 100%;
     border-collapse: collapse;
-    padding: 22px 0;
-    min-height: 760px;        /* keeps footer pinned near the bottom of the page */
+    padding: 0;
 }}
- 
+
 .main-col {{
     display: table-cell;
-    padding: 0 22px 0 36px;
+    padding: 26px 26px 30px 40px;
     border-right: 1px solid #e2e8f0;
     vertical-align: top;
-    height: 760px;            /* makes the divider line run full column height */
 }}
- 
+
 .side-col {{
     display: table-cell;
-    width: 188px;
-    padding: 0 28px 0 20px;
+    width: 200px;
+    padding: 26px 28px 30px 22px;
     vertical-align: top;
-    height: 760px;
+    background: #f8fafc;
 }}
 
 /* ── Sections ── */
 .section {{
-    margin-bottom: 18px;
+    margin-bottom: 22px;
 }}
 
 .section-title {{
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: 800;
-    letter-spacing: 0.10em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #94a3b8;
-    padding-bottom: 5px;
-    border-bottom: 1px solid #e2e8f0;
-    margin-bottom: 9px;
+    color: #1e3a5f;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #1e3a5f;
+    margin-bottom: 10px;
 }}
 
 .section-text {{
     font-size: 10px;
     color: #334155;
-    line-height: 1.75;
+    line-height: 1.8;
     white-space: pre-wrap;
 }}
 
@@ -809,42 +812,49 @@ body {{
     display: inline-block;
     font-size: 8.5px;
     font-weight: 600;
-    padding: 2px 8px;
-    background: #f1f5f9;
-    color: #334155;
-    border: 1px solid #e2e8f0;
+    padding: 3px 9px;
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
     border-radius: 6px;
-    margin: 0 3px 4px 0;
+    margin: 0 4px 5px 0;
 }}
 
 /* ── Contact rows ── */
 .info-row {{
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e2e8f0;
+}}
+
+.info-row:last-child {{
+    border-bottom: none;
 }}
 
 .info-label {{
     display: block;
-    font-weight: 700;
-    color: #94a3b8;
+    font-weight: 800;
+    color: #1e3a5f;
     text-transform: uppercase;
-    font-size: 7.5px;
-    letter-spacing: 0.07em;
-    margin-bottom: 1px;
+    font-size: 7px;
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
 }}
 
 .info-value {{
     font-size: 9.5px;
-    color: #1e293b;
+    color: #334155;
     word-break: break-all;
+    line-height: 1.4;
 }}
 
 /* ── Footer ── */
 .footer {{
     display: table;
     width: 100%;
-    border-top: 2px solid #e2e8f0;
-    background: #f8fafc;
-    padding: 10px 36px;
+    border-top: 2px solid #1e3a5f;
+    background: #0f2444;
+    padding: 11px 40px;
 }}
 
 .footer-left {{
@@ -859,10 +869,10 @@ body {{
 }}
 
 .footer-brand {{
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 800;
-    color: #0f2444;
-    letter-spacing: 0.18em;
+    color: #ffffff;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
 }}
 
@@ -870,20 +880,20 @@ body {{
     display: inline-block;
     width: 1px;
     height: 10px;
-    background: #cbd5e1;
-    margin: 0 8px;
+    background: rgba(255,255,255,0.3);
+    margin: 0 9px;
     vertical-align: middle;
 }}
 
 .footer-tagline {{
     font-size: 8px;
-    color: #94a3b8;
+    color: rgba(255,255,255,0.55);
     vertical-align: middle;
 }}
 
 .footer-date {{
     font-size: 8px;
-    color: #94a3b8;
+    color: rgba(255,255,255,0.55);
 }}
 """
 
@@ -913,6 +923,9 @@ _PDF_HTML = """<!DOCTYPE html>
   </div>
 </div>
 
+<!-- ACCENT BAR -->
+<div class="accent-bar"></div>
+
 <!-- BODY -->
 <div class="body">
   <div class="main-col">
@@ -941,7 +954,6 @@ _PDF_HTML = """<!DOCTYPE html>
 
 </body>
 </html>"""
-
 
 # ---------------------------------------------------------------------------
 # PDF render helpers
@@ -1007,7 +1019,8 @@ def download_candidate_pdf(
 
     # ── Avatar ────────────────────────────────────────────────────────────
     if candidate.photo_url:
-        photo_tag = f'<img src="{candidate.photo_url}" alt="" />'
+        # border-radius on the img tag directly — more reliable in WeasyPrint
+        photo_tag = f'<img src="{candidate.photo_url}" alt="" style="width:78px;height:78px;border-radius:50%;display:block;" />'
     else:
         initial = (candidate.name or "?")[0].upper()
         photo_tag = f'<span class="avatar-initial">{initial}</span>'
