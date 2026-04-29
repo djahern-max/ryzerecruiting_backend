@@ -596,6 +596,7 @@ async def upload_candidate_banner(
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PDF EXPORT  (Playwright / headless Chromium)
+# CSS mirrors CandidateProfile.module.css as closely as possible.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _PDF_STYLE = """
@@ -616,54 +617,61 @@ _PDF_STYLE = """
 
 body {{
     font-family: 'DM Sans', Arial, Helvetica, sans-serif;
-    font-size: 9.5px;
+    font-size: 10px;
     color: #1e293b;
-    background: #ffffff;
+    background: #f1f5f9;
     width: 8.5in;
-    min-height: 11in;
     display: flex;
     flex-direction: column;
+    min-height: 11in;
 }}
 
-/* ── HERO ── */
+/* ─── HERO — mirrors .heroBanner ─── */
 .hero {{
     position: relative;
     width: 100%;
-    height: 185px;
+    height: 260px;
     background: {banner_style};
     background-size: cover;
     background-position: center;
-    flex-shrink: 0;
     overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
 }}
 
+/* mirrors .heroScrim */
 .hero-scrim {{
     position: absolute;
     inset: 0;
     background: linear-gradient(
         to bottom,
-        rgba(8, 20, 45, 0.05) 0%,
-        rgba(8, 20, 45, 0.35) 45%,
-        rgba(8, 20, 45, 0.92) 100%
+        transparent 0%,
+        rgba(8, 18, 38, 0.25) 40%,
+        rgba(8, 18, 38, 0.65) 70%,
+        rgba(8, 18, 38, 0.78) 100%
     );
+    z-index: 1;
 }}
 
+/* mirrors .identityOverlay */
 .hero-identity {{
-    position: absolute;
-    left: 36px;
-    right: 36px;
-    bottom: 18px;
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    padding: 0 40px;
     display: flex;
-    align-items: flex-end;
-    gap: 14px;
+    align-items: center;
+    gap: 22px;
 }}
 
+/* mirrors .avatarWrap / .avatarImg / .avatarInitial */
 .avatar {{
-    width: 72px;
-    height: 72px;
+    width: 88px;
+    height: 88px;
     border-radius: 50%;
-    border: 3px solid rgba(255, 255, 255, 0.38);
-    background: #1e3a5f;
+    border: 3px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.12);
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -672,60 +680,77 @@ body {{
 }}
 
 .avatar img {{
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    display: block;
+    width: 88px;
+    height: 88px;
     object-fit: cover;
+    display: block;
+    border-radius: 50%;
 }}
 
 .avatar-initial {{
-    font-size: 28px;
+    font-size: 2.2rem;
     font-weight: 800;
     color: #ffffff;
+    letter-spacing: -1px;
     line-height: 1;
 }}
 
+/* mirrors .headerInfo */
 .identity-info {{
     flex: 1;
     min-width: 0;
 }}
 
+/* mirrors .candidateName */
 .candidate-name {{
-    font-family: 'DM Serif Display', Georgia, serif;
-    font-size: 26px;
-    font-weight: 400;
+    font-size: 28px;
+    font-weight: 800;
     color: #ffffff;
-    line-height: 1.05;
-    margin-bottom: 3px;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.45);
+    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }}
 
-.candidate-subtitle {{
-    font-size: 10.5px;
-    color: rgba(255, 255, 255, 0.88);
+/* mirrors .candidateMeta */
+.candidate-meta {{
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
     font-weight: 500;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
 }}
 
+.meta-divider {{
+    color: rgba(255, 255, 255, 0.38);
+    font-style: italic;
+    font-size: 10px;
+}}
+
+/* mirrors .candidateLocation */
 .candidate-location {{
-    font-size: 8.8px;
-    color: rgba(255, 255, 255, 0.68);
-    margin-bottom: 7px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 8px;
+    letter-spacing: 0.01em;
 }}
 
 .badges {{
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 5px;
 }}
 
 .badge {{
-    font-size: 7.5px;
+    font-size: 9px;
     font-weight: 700;
-    padding: 2px 8px;
+    padding: 3px 9px;
     border-radius: 20px;
     border: 1px solid;
     letter-spacing: 0.04em;
@@ -733,12 +758,13 @@ body {{
     white-space: nowrap;
 }}
 
-.badge-exec  {{ background: #0f172a; color: #f8fafc; border-color: #475569; }}
-.badge-level {{ background: #dbeafe; color: #1e40af; border-color: #93c5fd; }}
+/* mirrors CAREER_LEVEL_COLORS */
+.badge-exec  {{ background: #0f172a;  color: #f8fafc; border-color: #1e293b; }}
+.badge-level {{ background: #eff6ff;  color: #1d4ed8; border-color: #bfdbfe; }}
 .badge-exp   {{ background: rgba(255,255,255,0.18); color: #ffffff; border-color: rgba(255,255,255,0.32); }}
-.badge-cert  {{ background: #1d4ed8; color: #ffffff; border-color: #3b82f6; }}
+.badge-cert  {{ background: #1d4ed8;  color: #ffffff; border-color: #3b82f6; }}
 
-/* ── ACCENT BAR ── */
+/* ─── ACCENT BAR ─── */
 .accent-bar {{
     width: 100%;
     height: 3px;
@@ -746,109 +772,154 @@ body {{
     flex-shrink: 0;
 }}
 
-/* ── BODY ── */
+/* ─── BODY — mirrors .profileBody / .profileBodyInner ─── */
 .body {{
-    display: flex;
     flex: 1;
-    align-items: stretch;
-    min-height: 0;
+    display: flex;
+    gap: 20px;
+    padding: 22px 28px;
+    align-items: flex-start;
+    background: #f1f5f9;
 }}
 
 .main-col {{
     flex: 1;
-    padding: 20px 24px 20px 36px;
-    border-right: 1px solid #e2e8f0;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }}
 
 .side-col {{
-    width: 205px;
+    width: 255px;
     flex-shrink: 0;
-    padding: 20px 24px 20px 20px;
-    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
 }}
 
-/* ── SECTIONS ── */
-.section {{
-    margin-bottom: 14px;
+/* ─── SECTION CARD — mirrors .section + .sectionTitle + .sectionBody ─── */
+.card {{
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
     page-break-inside: avoid;
 }}
 
-.section-title {{
-    font-size: 7px;
+.card-title {{
+    font-size: 8px;
     font-weight: 800;
-    letter-spacing: 0.13em;
     text-transform: uppercase;
-    color: #1e3a5f;
-    padding-bottom: 4px;
-    border-bottom: 1.5px solid #1e3a5f;
-    margin-bottom: 7px;
+    letter-spacing: 0.7px;
+    color: #94a3b8;
+    padding: 11px 16px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    background: #f8fafc;
 }}
 
-.section-text {{
-    font-size: 9.1px;
+.card-body {{
+    padding: 14px 16px;
+}}
+
+/* mirrors .summaryText */
+.summary-text {{
+    font-size: 10px;
     color: #334155;
-    line-height: 1.5;
+    line-height: 1.7;
     white-space: pre-wrap;
     word-break: break-word;
 }}
 
-/* ── SKILLS ── */
+/* mirrors .bodyText */
+.body-text {{
+    font-size: 9.5px;
+    color: #334155;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+}}
+
+/* ─── SKILLS — mirrors .skillTag ─── */
 .skills-wrap {{
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 5px;
 }}
 
 .skill-tag {{
-    font-size: 7.8px;
-    font-weight: 600;
-    padding: 2px 7px;
-    background: #eff6ff;
-    color: #1e40af;
-    border: 1px solid #bfdbfe;
-    border-radius: 5px;
+    font-size: 9px;
+    font-weight: 500;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    border-radius: 6px;
+    padding: 3px 8px;
 }}
 
-/* ── INFO ROWS (sidebar) ── */
+/* ─── CERT BADGES — mirrors .certBadge ─── */
+.cert-badges {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+}}
+
+.cert-badge {{
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 20px;
+    background: #1d4ed8;
+    border: 1px solid #3b82f6;
+    color: #ffffff;
+    padding: 3px 10px;
+}}
+
+/* ─── INFO ROWS — mirrors .infoRow / .infoLabel / .infoValue ─── */
+.info-list {{
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}}
+
 .info-row {{
-    margin-bottom: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #e2e8f0;
-}}
-
-.info-row:last-child {{
-    border-bottom: none;
-    margin-bottom: 0;
-    padding-bottom: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
 }}
 
 .info-label {{
-    display: block;
-    font-weight: 800;
-    color: #1e3a5f;
+    font-size: 8px;
+    font-weight: 700;
     text-transform: uppercase;
-    font-size: 6.5px;
-    letter-spacing: 0.1em;
-    margin-bottom: 2px;
+    letter-spacing: 0.4px;
+    color: #94a3b8;
+    flex-shrink: 0;
+    width: 66px;
+    padding-top: 1px;
 }}
 
 .info-value {{
-    font-size: 8.5px;
-    color: #334155;
+    font-size: 9.5px;
+    color: #1e293b;
     word-break: break-word;
     line-height: 1.35;
 }}
 
-/* ── FOOTER ── */
+/* ─── FOOTER ─── */
 .footer {{
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-top: 2px solid #1e3a5f;
     background: #0f2444;
-    padding: 8px 36px;
+    padding: 9px 36px;
     flex-shrink: 0;
+}}
+
+.footer-left {{
+    display: flex;
+    align-items: center;
 }}
 
 .footer-brand {{
@@ -862,21 +933,19 @@ body {{
 .footer-sep {{
     display: inline-block;
     width: 1px;
-    height: 9px;
+    height: 10px;
     background: rgba(255, 255, 255, 0.3);
-    margin: 0 8px;
-    vertical-align: middle;
+    margin: 0 10px;
 }}
 
 .footer-tagline {{
-    font-size: 7.5px;
-    color: rgba(255, 255, 255, 0.58);
-    vertical-align: middle;
+    font-size: 8px;
+    color: rgba(255, 255, 255, 0.55);
 }}
 
 .footer-date {{
-    font-size: 7.5px;
-    color: rgba(255, 255, 255, 0.58);
+    font-size: 8px;
+    color: rgba(255, 255, 255, 0.55);
 }}
 """
 
@@ -907,21 +976,25 @@ _PDF_HTML = """<!DOCTYPE html>
 
 <!-- BODY -->
 <div class="body">
+
   <div class="main-col">
     {summary_section}
     {experience_section}
     {education_section}
   </div>
+
   <div class="side-col">
     {contact_section}
     {skills_section}
     {certs_section}
+    {details_section}
   </div>
+
 </div>
 
 <!-- FOOTER -->
 <div class="footer">
-  <div>
+  <div class="footer-left">
     <span class="footer-brand">RYZE.ai</span>
     <span class="footer-sep"></span>
     <span class="footer-tagline">Prepared by your RYZE recruiter</span>
@@ -952,13 +1025,14 @@ def _render_pdf(html_string: str) -> bytes:
     return pdf
 
 
-def _section(title: str, inner: str) -> str:
+def _card(title: str, inner: str) -> str:
+    """Mirrors .section > .sectionTitle + .sectionBody"""
     if not inner.strip():
         return ""
     return (
-        f'<div class="section">'
-        f'<div class="section-title">{title}</div>'
-        f"{inner}"
+        f'<div class="card">'
+        f'<div class="card-title">{title}</div>'
+        f'<div class="card-body">{inner}</div>'
         f"</div>"
     )
 
@@ -991,14 +1065,14 @@ def _parse_skills(value):
     if not value:
         return []
     if isinstance(value, list):
-        return value[:12]
+        return value[:14]
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
             if isinstance(parsed, list):
-                return parsed[:12]
+                return parsed[:14]
         except Exception:
-            return [s.strip() for s in value.split(",") if s.strip()][:12]
+            return [s.strip() for s in value.split(",") if s.strip()][:14]
     return []
 
 
@@ -1029,7 +1103,7 @@ def download_candidate_pdf(
     if candidate.banner_url:
         banner_style = f"url('{candidate.banner_url}')"
     else:
-        banner_style = "linear-gradient(135deg, #0f2444 0%, #1a3a6b 55%, #1e4a8a 100%)"
+        banner_style = "linear-gradient(135deg, #0f2444 0%, #1a3a6b 60%, #1e4a8a 100%)"
 
     # ── Avatar ────────────────────────────────────────────────────────────
     if candidate.photo_url:
@@ -1038,15 +1112,24 @@ def download_candidate_pdf(
         initial = (candidate.name or "?")[0].upper()
         photo_tag = f'<span class="avatar-initial">{initial}</span>'
 
-    # ── Name / subtitle ───────────────────────────────────────────────────
-    meta_parts = [p for p in [candidate.current_title, candidate.current_company] if p]
-    meta_line = (
-        f'<div class="candidate-subtitle">{" &middot; ".join(_e(p) for p in meta_parts)}</div>'
-        if meta_parts
-        else ""
-    )
+    # ── Name / meta — mirrors .candidateMeta with metaDivider ────────────
+    title_part = _e(candidate.current_title) if candidate.current_title else ""
+    company_part = _e(candidate.current_company) if candidate.current_company else ""
+    if title_part and company_part:
+        meta_line = (
+            f'<div class="candidate-meta">'
+            f"<span>{title_part}</span>"
+            f'<span class="meta-divider">at</span>'
+            f'<span style="font-weight:600;color:rgba(255,255,255,0.92)">{company_part}</span>'
+            f"</div>"
+        )
+    elif title_part or company_part:
+        meta_line = f'<div class="candidate-meta">{title_part or company_part}</div>'
+    else:
+        meta_line = ""
+
     location_line = (
-        f'<div class="candidate-location">&#128205; {_e(candidate.location)}</div>'
+        f'<div class="candidate-location">{_e(candidate.location)}</div>'
         if candidate.location
         else ""
     )
@@ -1061,50 +1144,52 @@ def download_candidate_pdf(
         badges_html += _badge("badge-level", _e(candidate.ai_career_level.capitalize()))
     if candidate.ai_years_experience:
         badges_html += _badge(
-            "badge-exp", f"{_e(candidate.ai_years_experience)} yrs exp"
+            "badge-exp", f"{_e(candidate.ai_years_experience)} Yrs Exp"
         )
     for cert in ["CPA", "CFA", "CMA"]:
         if cert in (candidate.ai_certifications or "").upper():
             badges_html += _badge("badge-cert", cert)
 
     # ── Main sections ─────────────────────────────────────────────────────
-    summary_section = _section(
-        "Professional Summary",
+    summary_section = _card(
+        "AI Summary",
         (
-            f'<p class="section-text">{_clean_text(candidate.ai_summary, 700)}</p>'
+            f'<p class="summary-text">{_clean_text(candidate.ai_summary, 700)}</p>'
             if candidate.ai_summary
             else ""
         ),
     )
-    experience_section = _section(
+    experience_section = _card(
         "Experience",
         (
-            f'<p class="section-text">{_clean_text(candidate.ai_experience, 1050)}</p>'
+            f'<p class="body-text">{_clean_text(candidate.ai_experience, 1100)}</p>'
             if candidate.ai_experience
             else ""
         ),
     )
-    education_section = _section(
+    education_section = _card(
         "Education",
         (
-            f'<p class="section-text">{_clean_text(candidate.ai_education, 450)}</p>'
+            f'<p class="body-text">{_clean_text(candidate.ai_education, 450)}</p>'
             if candidate.ai_education
             else ""
         ),
     )
 
-    # ── Sidebar ───────────────────────────────────────────────────────────
-    contact_rows = ""
+    # ── Contact ───────────────────────────────────────────────────────────
+    contact_rows = '<div class="info-list">'
     if candidate.email:
         contact_rows += _info_row("Email", _e(candidate.email))
     if candidate.phone:
         contact_rows += _info_row("Phone", _e(candidate.phone))
     if candidate.linkedin_url:
-        contact_rows += _info_row("LinkedIn", "View on LinkedIn")
+        contact_rows += _info_row("LinkedIn", "View Profile")
     if candidate.location:
         contact_rows += _info_row("Location", _e(candidate.location))
-    contact_section = _section("Contact", contact_rows)
+    contact_rows += "</div>"
+    contact_section = _card("Contact", contact_rows)
 
+    # ── Skills ────────────────────────────────────────────────────────────
     skill_list = _parse_skills(candidate.ai_skills)
     skills_inner = (
         (
@@ -1115,18 +1200,40 @@ def download_candidate_pdf(
         if skill_list
         else ""
     )
-    skills_section = _section("Skills", skills_inner)
+    skills_section = _card("Skills", skills_inner)
 
-    certs_section = _section(
-        "Certifications",
-        (
-            f'<p class="section-text">{_clean_text(candidate.ai_certifications, 250)}</p>'
-            if candidate.ai_certifications
-            else ""
-        ),
+    # ── Certifications — known ones as blue pills, else plain text ────────
+    certs_inner = ""
+    if candidate.ai_certifications:
+        known = [
+            c for c in ["CPA", "CFA", "CMA"] if c in candidate.ai_certifications.upper()
+        ]
+        if known:
+            certs_inner = (
+                '<div class="cert-badges">'
+                + "".join(f'<span class="cert-badge">{c}</span>' for c in known)
+                + "</div>"
+            )
+        else:
+            certs_inner = f'<p class="body-text">{_clean_text(candidate.ai_certifications, 200)}</p>'
+    certs_section = _card("Certifications", certs_inner)
+
+    # ── Profile Details ───────────────────────────────────────────────────
+    details_rows = '<div class="info-list">'
+    if candidate.ai_career_level:
+        details_rows += _info_row("Level", _e(candidate.ai_career_level.capitalize()))
+    if candidate.ai_years_experience:
+        details_rows += _info_row(
+            "Experience", f"{_e(candidate.ai_years_experience)} years"
+        )
+    details_rows += _info_row(
+        "Added",
+        candidate.created_at.strftime("%b %d, %Y") if candidate.created_at else "—",
     )
+    details_rows += "</div>"
+    details_section = _card("Profile Details", details_rows)
 
-    # ── Assemble HTML ─────────────────────────────────────────────────────
+    # ── Assemble ──────────────────────────────────────────────────────────
     html_string = _PDF_HTML.format(
         style=_PDF_STYLE.format(banner_style=banner_style),
         photo_tag=photo_tag,
@@ -1140,6 +1247,7 @@ def download_candidate_pdf(
         contact_section=contact_section,
         skills_section=skills_section,
         certs_section=certs_section,
+        details_section=details_section,
         today=today_str,
     )
 
