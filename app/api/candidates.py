@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 import io
 from weasyprint import HTML as WeasyHTML
-from app.services.spaces import upload_file, make_unique_filename
+from app.services.spaces import upload_file, make_unique_filename, delete_file
+from app.core.config import settings
 
 from app.core.database import get_db
 from app.core.deps import get_current_admin_user, RYZE_TENANT
@@ -41,7 +42,6 @@ from app.services.embedding_service import (
     generate_embedding,
 )
 from app.services.ai_parser import parse_candidate_profile
-
 
 logger = logging.getLogger(__name__)
 
@@ -141,14 +141,12 @@ def get_my_job_matches(
 
     try:
         vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
-        sql = text(
-            f"""
+        sql = text(f"""
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM job_orders
             WHERE embedding IS NOT NULL AND status = 'open' AND tenant_id = :tenant_id
             ORDER BY distance LIMIT :limit
-            """
-        )
+            """)
         rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
         if not rows:
             return _unranked_fallback()
@@ -242,14 +240,12 @@ def get_job_matches(
 
     try:
         vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
-        sql = text(
-            f"""
+        sql = text(f"""
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM job_orders
             WHERE embedding IS NOT NULL AND status = 'open' AND tenant_id = :tenant_id
             ORDER BY distance LIMIT :limit
-            """
-        )
+            """)
         rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
     except Exception as e:
         logger.error(f"Cosine search failed for candidate #{candidate_id}: {e}")
@@ -533,6 +529,13 @@ async def upload_candidate_photo(
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 5MB).")
 
+    # Delete old photo from Spaces before uploading replacement
+    if candidate.photo_url:
+        old_key = candidate.photo_url.replace(
+            settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
+        )
+        delete_file(old_key)
+
     unique_name = make_unique_filename(file.filename or "photo.jpg")
     cdn_url = upload_file(
         data, f"candidates/{candidate_id}/photo", unique_name, file.content_type
@@ -569,6 +572,13 @@ async def upload_candidate_banner(
     data = await file.read()
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 10MB).")
+
+    # Delete old banner from Spaces before uploading replacement
+    if candidate.banner_url:
+        old_key = candidate.banner_url.replace(
+            settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
+        )
+        delete_file(old_key)
 
     unique_name = make_unique_filename(file.filename or "banner.jpg")
     cdn_url = upload_file(
