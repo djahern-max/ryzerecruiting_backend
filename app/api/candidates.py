@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 import io
-from weasyprint import HTML as WeasyHTML
+from playwright.sync_api import sync_playwright
 from app.services.spaces import upload_file, make_unique_filename, delete_file
 from app.core.config import settings
 
@@ -532,7 +532,6 @@ async def upload_candidate_photo(
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 5MB).")
 
-    # Delete old photo from Spaces before uploading replacement
     if candidate.photo_url:
         old_key = candidate.photo_url.replace(
             settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
@@ -576,7 +575,6 @@ async def upload_candidate_banner(
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Image too large (max 10MB).")
 
-    # Delete old banner from Spaces before uploading replacement
     if candidate.banner_url:
         old_key = candidate.banner_url.replace(
             settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
@@ -597,18 +595,12 @@ async def upload_candidate_banner(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PDF EXPORT
-#
-# WeasyPrint compatibility rules applied throughout:
-#   1. @page { margin: 0 }  — kills the default white border
-#   2. display: table-cell  — used for ALL side-by-side layouts; flexbox inside
-#      position:absolute containers is unreliable in WeasyPrint
-#   3. No inset: shorthand  — use explicit top/right/bottom/left
-#   4. -webkit-print-color-adjust: exact  — forces background colours to print
-#   5. overflow: hidden on .hero clips the scrim to the banner bounds
+# PDF EXPORT  (Playwright / headless Chromium)
 # ─────────────────────────────────────────────────────────────────────────────
 
 _PDF_STYLE = """
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Serif+Display&display=swap');
+
 @page {{
     margin: 0;
     size: 8.5in 11in;
@@ -623,29 +615,31 @@ _PDF_STYLE = """
 }}
 
 body {{
-    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    font-family: 'DM Sans', Arial, Helvetica, sans-serif;
     font-size: 9.5px;
     color: #1e293b;
     background: #ffffff;
+    width: 8.5in;
+    min-height: 11in;
+    display: flex;
+    flex-direction: column;
 }}
 
-/* HERO */
+/* ── HERO ── */
 .hero {{
     position: relative;
     width: 100%;
-    height: 175px;
+    height: 185px;
     background: {banner_style};
     background-size: cover;
-    background-position: center top;
+    background-position: center;
+    flex-shrink: 0;
     overflow: hidden;
 }}
 
 .hero-scrim {{
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background: linear-gradient(
         to bottom,
         rgba(8, 20, 45, 0.05) 0%,
@@ -659,92 +653,84 @@ body {{
     left: 36px;
     right: 36px;
     bottom: 18px;
-}}
-
-.identity-table {{
-    display: table;
-    width: 100%;
-    border-collapse: collapse;
-}}
-
-.avatar-cell {{
-    display: table-cell;
-    width: 78px;
-    vertical-align: bottom;
-    padding-right: 14px;
-}}
-
-.info-cell {{
-    display: table-cell;
-    vertical-align: bottom;
+    display: flex;
+    align-items: flex-end;
+    gap: 14px;
 }}
 
 .avatar {{
-    width: 68px;
-    height: 68px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
-    border: 3px solid rgba(255,255,255,0.38);
+    border: 3px solid rgba(255, 255, 255, 0.38);
     background: #1e3a5f;
-    display: table;
-    text-align: center;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }}
 
 .avatar img {{
-    width: 68px;
-    height: 68px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
     display: block;
     object-fit: cover;
 }}
 
 .avatar-initial {{
-    display: table-cell;
-    vertical-align: middle;
-    width: 68px;
-    height: 68px;
     font-size: 28px;
     font-weight: 800;
     color: #ffffff;
-    text-align: center;
+    line-height: 1;
+}}
+
+.identity-info {{
+    flex: 1;
+    min-width: 0;
 }}
 
 .candidate-name {{
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 24px;
-    font-weight: 700;
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 26px;
+    font-weight: 400;
     color: #ffffff;
     line-height: 1.05;
     margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }}
 
 .candidate-subtitle {{
     font-size: 10.5px;
-    color: rgba(255,255,255,0.88);
+    color: rgba(255, 255, 255, 0.88);
     font-weight: 500;
     margin-bottom: 2px;
 }}
 
 .candidate-location {{
     font-size: 8.8px;
-    color: rgba(255,255,255,0.68);
+    color: rgba(255, 255, 255, 0.68);
     margin-bottom: 7px;
 }}
 
 .badges {{
-    line-height: 1.7;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
 }}
 
 .badge {{
-    display: inline-block;
     font-size: 7.5px;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 20px;
     border: 1px solid;
-    margin-right: 4px;
     letter-spacing: 0.04em;
     text-transform: capitalize;
+    white-space: nowrap;
 }}
 
 .badge-exec  {{ background: #0f172a; color: #f8fafc; border-color: #475569; }}
@@ -752,36 +738,39 @@ body {{
 .badge-exp   {{ background: rgba(255,255,255,0.18); color: #ffffff; border-color: rgba(255,255,255,0.32); }}
 .badge-cert  {{ background: #1d4ed8; color: #ffffff; border-color: #3b82f6; }}
 
+/* ── ACCENT BAR ── */
 .accent-bar {{
     width: 100%;
     height: 3px;
     background: linear-gradient(to right, #1e3a5f, #2563eb, #1e3a5f);
+    flex-shrink: 0;
 }}
 
-/* BODY */
+/* ── BODY ── */
 .body {{
-    display: table;
-    width: 100%;
-    border-collapse: collapse;
+    display: flex;
+    flex: 1;
+    align-items: stretch;
+    min-height: 0;
 }}
 
 .main-col {{
-    display: table-cell;
-    padding: 20px 24px 14px 36px;
+    flex: 1;
+    padding: 20px 24px 20px 36px;
     border-right: 1px solid #e2e8f0;
-    vertical-align: top;
+    min-width: 0;
 }}
 
 .side-col {{
-    display: table-cell;
     width: 205px;
-    padding: 20px 28px 14px 20px;
-    vertical-align: top;
+    flex-shrink: 0;
+    padding: 20px 24px 20px 20px;
     background: #f8fafc;
 }}
 
+/* ── SECTIONS ── */
 .section {{
-    margin-bottom: 13px;
+    margin-bottom: 14px;
     page-break-inside: avoid;
 }}
 
@@ -799,13 +788,19 @@ body {{
 .section-text {{
     font-size: 9.1px;
     color: #334155;
-    line-height: 1.45;
+    line-height: 1.5;
     white-space: pre-wrap;
+    word-break: break-word;
 }}
 
-/* SKILLS */
+/* ── SKILLS ── */
+.skills-wrap {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}}
+
 .skill-tag {{
-    display: inline-block;
     font-size: 7.8px;
     font-weight: 600;
     padding: 2px 7px;
@@ -813,10 +808,9 @@ body {{
     color: #1e40af;
     border: 1px solid #bfdbfe;
     border-radius: 5px;
-    margin: 0 3px 4px 0;
 }}
 
-/* INFO ROWS */
+/* ── INFO ROWS (sidebar) ── */
 .info-row {{
     margin-bottom: 8px;
     padding-bottom: 8px;
@@ -825,6 +819,8 @@ body {{
 
 .info-row:last-child {{
     border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
 }}
 
 .info-label {{
@@ -844,24 +840,15 @@ body {{
     line-height: 1.35;
 }}
 
-/* FOOTER */
+/* ── FOOTER ── */
 .footer {{
-    display: table;
-    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     border-top: 2px solid #1e3a5f;
     background: #0f2444;
     padding: 8px 36px;
-}}
-
-.footer-left {{
-    display: table-cell;
-    vertical-align: middle;
-}}
-
-.footer-right {{
-    display: table-cell;
-    vertical-align: middle;
-    text-align: right;
+    flex-shrink: 0;
 }}
 
 .footer-brand {{
@@ -876,20 +863,20 @@ body {{
     display: inline-block;
     width: 1px;
     height: 9px;
-    background: rgba(255,255,255,0.3);
+    background: rgba(255, 255, 255, 0.3);
     margin: 0 8px;
     vertical-align: middle;
 }}
 
 .footer-tagline {{
     font-size: 7.5px;
-    color: rgba(255,255,255,0.58);
+    color: rgba(255, 255, 255, 0.58);
     vertical-align: middle;
 }}
 
 .footer-date {{
     font-size: 7.5px;
-    color: rgba(255,255,255,0.58);
+    color: rgba(255, 255, 255, 0.58);
 }}
 """
 
@@ -905,16 +892,12 @@ _PDF_HTML = """<!DOCTYPE html>
 <div class="hero">
   <div class="hero-scrim"></div>
   <div class="hero-identity">
-    <div class="identity-table">
-      <div class="avatar-cell">
-        <div class="avatar">{photo_tag}</div>
-      </div>
-      <div class="info-cell">
-        <div class="candidate-name">{name}</div>
-        {meta_line}
-        {location_line}
-        <div class="badges">{badges}</div>
-      </div>
+    <div class="avatar">{photo_tag}</div>
+    <div class="identity-info">
+      <div class="candidate-name">{name}</div>
+      {meta_line}
+      {location_line}
+      <div class="badges">{badges}</div>
     </div>
   </div>
 </div>
@@ -938,22 +921,35 @@ _PDF_HTML = """<!DOCTYPE html>
 
 <!-- FOOTER -->
 <div class="footer">
-  <div class="footer-left">
+  <div>
     <span class="footer-brand">RYZE.ai</span>
     <span class="footer-sep"></span>
     <span class="footer-tagline">Prepared by your RYZE recruiter</span>
   </div>
-  <div class="footer-right">
-    <span class="footer-date">Generated {today}</span>
-  </div>
+  <div class="footer-date">Generated {today}</div>
 </div>
 
 </body>
 </html>"""
 
-# ---------------------------------------------------------------------------
-# PDF render helpers
-# ---------------------------------------------------------------------------
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _render_pdf(html_string: str) -> bytes:
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.set_content(html_string, wait_until="networkidle")
+        pdf = page.pdf(
+            format="Letter",
+            print_background=True,
+            margin={"top": "0", "bottom": "0", "left": "0", "right": "0"},
+        )
+        browser.close()
+    return pdf
 
 
 def _section(title: str, inner: str) -> str:
@@ -985,10 +981,10 @@ def _e(value) -> str:
 
 
 def _clean_text(value, max_chars=900) -> str:
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    if len(text) <= max_chars:
-        return _e(text)
-    return _e(text[:max_chars].rstrip() + "…")
+    t = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(t) <= max_chars:
+        return _e(t)
+    return _e(t[:max_chars].rstrip() + "…")
 
 
 def _parse_skills(value):
@@ -1006,22 +1002,18 @@ def _parse_skills(value):
     return []
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Route
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 @router.get("/{candidate_id}/pdf")
 def download_candidate_pdf(
     candidate_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
-    """
-    Stream a branded PDF profile for a candidate.
-
-    WeasyPrint layout notes:
-    - @page margin:0 removes the default white border
-    - All side-by-side sections use display:table-cell (flex inside
-      position:absolute is unreliable in WeasyPrint)
-    - Badges use display:inline-block so they wrap naturally
-    - Background colours forced with print-color-adjust:exact
-    """
+    """Stream a branded PDF profile for a candidate via headless Chromium."""
     tenant_id = _tenant(current_user)
     candidate = (
         db.query(Candidate)
@@ -1041,8 +1033,7 @@ def download_candidate_pdf(
 
     # ── Avatar ────────────────────────────────────────────────────────────
     if candidate.photo_url:
-        # border-radius on the img tag directly — more reliable in WeasyPrint
-        photo_tag = f'<img src="{candidate.photo_url}" alt="" style="width:78px;height:78px;border-radius:50%;display:block;" />'
+        photo_tag = f'<img src="{candidate.photo_url}" alt="" />'
     else:
         initial = (candidate.name or "?")[0].upper()
         photo_tag = f'<span class="avatar-initial">{initial}</span>'
@@ -1050,12 +1041,12 @@ def download_candidate_pdf(
     # ── Name / subtitle ───────────────────────────────────────────────────
     meta_parts = [p for p in [candidate.current_title, candidate.current_company] if p]
     meta_line = (
-        f'<div class="candidate-subtitle">{" &middot; ".join(meta_parts)}</div>'
+        f'<div class="candidate-subtitle">{" &middot; ".join(_e(p) for p in meta_parts)}</div>'
         if meta_parts
         else ""
     )
     location_line = (
-        f'<div class="candidate-location">&#128205; {candidate.location}</div>'
+        f'<div class="candidate-location">&#128205; {_e(candidate.location)}</div>'
         if candidate.location
         else ""
     )
@@ -1065,11 +1056,13 @@ def download_candidate_pdf(
     EXEC_LEVELS = {"c-suite", "executive", "vp", "director"}
     badges_html = ""
     if level in EXEC_LEVELS:
-        badges_html += _badge("badge-exec", candidate.ai_career_level)
+        badges_html += _badge("badge-exec", _e(candidate.ai_career_level))
     elif level:
-        badges_html += _badge("badge-level", candidate.ai_career_level.capitalize())
+        badges_html += _badge("badge-level", _e(candidate.ai_career_level.capitalize()))
     if candidate.ai_years_experience:
-        badges_html += _badge("badge-exp", f"{candidate.ai_years_experience} yrs exp")
+        badges_html += _badge(
+            "badge-exp", f"{_e(candidate.ai_years_experience)} yrs exp"
+        )
     for cert in ["CPA", "CFA", "CMA"]:
         if cert in (candidate.ai_certifications or "").upper():
             badges_html += _badge("badge-cert", cert)
@@ -1083,7 +1076,6 @@ def download_candidate_pdf(
             else ""
         ),
     )
-
     experience_section = _section(
         "Experience",
         (
@@ -1092,7 +1084,6 @@ def download_candidate_pdf(
             else ""
         ),
     )
-
     education_section = _section(
         "Education",
         (
@@ -1112,12 +1103,17 @@ def download_candidate_pdf(
         contact_rows += _info_row("LinkedIn", "View on LinkedIn")
     if candidate.location:
         contact_rows += _info_row("Location", _e(candidate.location))
-
     contact_section = _section("Contact", contact_rows)
 
     skill_list = _parse_skills(candidate.ai_skills)
-    skills_inner = "".join(
-        f'<span class="skill-tag">{_e(skill)}</span>' for skill in skill_list
+    skills_inner = (
+        (
+            '<div class="skills-wrap">'
+            + "".join(f'<span class="skill-tag">{_e(s)}</span>' for s in skill_list)
+            + "</div>"
+        )
+        if skill_list
+        else ""
     )
     skills_section = _section("Skills", skills_inner)
 
@@ -1130,8 +1126,8 @@ def download_candidate_pdf(
         ),
     )
 
-    # ── Render ────────────────────────────────────────────────────────────
-    html = _PDF_HTML.format(
+    # ── Assemble HTML ─────────────────────────────────────────────────────
+    html_string = _PDF_HTML.format(
         style=_PDF_STYLE.format(banner_style=banner_style),
         photo_tag=photo_tag,
         name=_e(candidate.name or "Unknown"),
@@ -1147,8 +1143,9 @@ def download_candidate_pdf(
         today=today_str,
     )
 
+    # ── Render ────────────────────────────────────────────────────────────
     try:
-        pdf_bytes = WeasyHTML(string=html).write_pdf()
+        pdf_bytes = _render_pdf(html_string)
     except Exception as e:
         logger.error(f"PDF generation failed for candidate #{candidate_id}: {e}")
         raise HTTPException(status_code=500, detail="PDF generation failed.")
