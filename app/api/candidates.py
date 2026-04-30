@@ -906,6 +906,21 @@ body {{
     line-height: 1.35;
 }}
 
+.bullet-list {{
+    margin: 0;
+    padding: 0 0 0 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}}
+
+.bullet-list li {{
+    font-size: 9.5px;
+    color: #334155;
+    line-height: 1.55;
+    padding-left: 4px;
+}}
+
 /* ─── FOOTER ─── */
 .footer {{
     display: flex;
@@ -1076,6 +1091,35 @@ def _parse_skills(value):
     return []
 
 
+def _parse_to_bullets(text: str, max_items: int = 6) -> str:
+    """
+    Converts prose experience/education text into HTML bullet points.
+    Splits on sentence boundaries that start a new role/institution.
+    """
+    if not text:
+        return ""
+    # Split on ". He " / ". She " / ". They " — common AI narrative transitions
+    # Also split on newlines if the text has them
+    raw = str(text).strip()
+    # Split on period + space + capital letter (new sentence)
+    sentences = re.split(r"(?<=\.)\s+(?=[A-Z])", raw)
+    # Filter out very short fragments and the opening "Name has..." sentence
+    bullets = []
+    for s in sentences:
+        s = s.strip()
+        if len(s) < 20:
+            continue
+        # Skip the generic opening sentence ("Dane Ahern has an extensive career...")
+        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+ (has|holds|is a)", s):
+            continue
+        bullets.append(s)
+    bullets = bullets[:max_items]
+    if not bullets:
+        return f'<p class="body-text">{_e(raw)}</p>'
+    items = "".join(f"<li>{_e(b)}</li>" for b in bullets)
+    return f'<ul class="bullet-list">{items}</ul>'
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Route
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1162,17 +1206,21 @@ def download_candidate_pdf(
     experience_section = _card(
         "Experience",
         (
-            f'<p class="body-text">{_clean_text(candidate.ai_experience, 1100)}</p>'
+            _parse_to_bullets(candidate.ai_experience, max_items=6)
             if candidate.ai_experience
             else ""
         ),
     )
-    education_section = _card(
-        "Education",
-        (
-            f'<p class="body-text">{_clean_text(candidate.ai_education, 450)}</p>'
-            if candidate.ai_education
-            else ""
+
+    # Was: f'<p class="body-text">{_clean_text(candidate.ai_education, 450)}</p>'
+    education_section = (
+        _card(
+            "Education",
+            (
+                _parse_to_bullets(candidate.ai_education, max_items=3)
+                if candidate.ai_education
+                else ""
+            ),
         ),
     )
 
