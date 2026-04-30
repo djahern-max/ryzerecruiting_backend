@@ -1094,25 +1094,52 @@ def _parse_skills(value):
 def _parse_to_bullets(text: str, max_items: int = 6) -> str:
     """
     Converts prose experience/education text into HTML bullet points.
-    Splits on sentence boundaries that start a new role/institution.
+    Strips redundant subject pronouns from the start of each sentence.
     """
     if not text:
         return ""
-    # Split on ". He " / ". She " / ". They " — common AI narrative transitions
-    # Also split on newlines if the text has them
     raw = str(text).strip()
-    # Split on period + space + capital letter (new sentence)
+
+    # Split on sentence boundaries
     sentences = re.split(r"(?<=\.)\s+(?=[A-Z])", raw)
-    # Filter out very short fragments and the opening "Name has..." sentence
+
+    # Prefixes to strip from bullet starts
+    STRIP_PREFIXES = (
+        "He then ",
+        "He also ",
+        "He currently ",
+        "He is currently ",
+        "She then ",
+        "She also ",
+        "She currently ",
+        "She is currently ",
+        "They then ",
+        "They also ",
+        "They currently ",
+        "He ",
+        "She ",
+        "They ",
+        "Concurrently, he ",
+        "Concurrently, she ",
+        "Concurrently, they ",
+    )
+
     bullets = []
     for s in sentences:
         s = s.strip()
         if len(s) < 20:
             continue
-        # Skip the generic opening sentence ("Dane Ahern has an extensive career...")
-        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+ (has|holds|is a)", s):
+        # Skip generic opening sentence ("Dane Ahern has an extensive career...")
+        if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+ has (an|a) ", s):
             continue
+        # Strip subject pronouns and recapitalize
+        for prefix in STRIP_PREFIXES:
+            if s.startswith(prefix):
+                s = s[len(prefix) :]
+                s = s[0].upper() + s[1:]
+                break
         bullets.append(s)
+
     bullets = bullets[:max_items]
     if not bullets:
         return f'<p class="body-text">{_e(raw)}</p>'
