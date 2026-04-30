@@ -1240,14 +1240,12 @@ def download_candidate_pdf(
     )
 
     # Was: f'<p class="body-text">{_clean_text(candidate.ai_education, 450)}</p>'
-    education_section = (
-        _card(
-            "Education",
-            (
-                _parse_to_bullets(candidate.ai_education, max_items=3)
-                if candidate.ai_education
-                else ""
-            ),
+    education_section = _card(
+        "Education",
+        (
+            _parse_to_bullets(candidate.ai_education, max_items=3)
+            if candidate.ai_education
+            else ""
         ),
     )
 
