@@ -389,13 +389,14 @@ PDF_HTML = """<!DOCTYPE html>
   <div class="avatar">{photo_tag}</div>
 </div>
 
-<!-- NAME BLOCK: name, title/company, location, badges — all in white space -->
+<!--
 <div class="name-block">
   <div class="candidate-name">{name}</div>
   {meta_line}
   {location_line}
   <div class="badges">{badges}</div>
 </div>
+-->
 
 <!-- BODY: two-column, mirrors .profileBodyInner -->
 <div class="body">
