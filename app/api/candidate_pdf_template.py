@@ -103,6 +103,24 @@ body {{
     border-radius: 50%;
 }}
 
+.identity-left {{
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    min-width: 0;
+}}
+
+.identity-name {{
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2937;
+    letter-spacing: -0.2px;
+    padding-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}}
+
 /* ─── NAME BLOCK (mirrors .nameBlock) ─── */
 .name-block {{
     padding: 8px 36px 14px 28px;
@@ -386,7 +404,10 @@ PDF_HTML = """<!DOCTYPE html>
 
 <!-- IDENTITY ZONE: avatar overlaps the banner/white seam -->
 <div class="identity-zone">
-  <div class="avatar">{photo_tag}</div>
+  <div class="identity-left">
+    <div class="avatar">{photo_tag}</div>
+    <div class="identity-name">{name}</div>
+  </div>
 </div>
 
 <!--
