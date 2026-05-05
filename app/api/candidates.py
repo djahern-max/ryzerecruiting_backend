@@ -157,28 +157,23 @@ def get_my_job_matches(
     if candidate.embedding is None:
         return _unranked_fallback()
 
-    sql = text("""
-        SELECT id, embedding <-> :vec AS distance
-        FROM job_orders
-        WHERE tenant_id = :tenant
-          AND status = 'open'
-          AND embedding IS NOT NULL
-        ORDER BY distance
-        LIMIT :lim
-    """)
     try:
+        vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
+        sql = text(f"""
+            SELECT id, (embedding <-> '{vector_str}'::vector) AS distance
+            FROM job_orders
+            WHERE tenant_id = :tenant
+            AND status = 'open'
+            AND embedding IS NOT NULL
+            ORDER BY distance
+            LIMIT :lim
+        """)
         rows = db.execute(
             sql,
-            {
-                "vec": str(candidate.embedding),
-                "tenant": tenant_id,
-                "lim": limit,
-            },
+            {"tenant": tenant_id, "lim": limit},
         ).fetchall()
     except Exception:
-        return _unranked_fallback()
-
-    if not rows:
+        db.rollback()
         return _unranked_fallback()
 
     ids = [r[0] for r in rows]
