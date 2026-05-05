@@ -651,6 +651,24 @@ def get_booking(
     return booking
 
 
+@router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    tenant_id = current_user.tenant_id or "ryze"
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    db.delete(booking)
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Response page helper
 # ---------------------------------------------------------------------------
