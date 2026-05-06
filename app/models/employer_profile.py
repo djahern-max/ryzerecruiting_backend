@@ -31,6 +31,10 @@ class EmployerProfile(Base):
     recruiter_notes = Column(Text, nullable=True)
     relationship_status = Column(String(50), nullable=True)
 
+    # Profile images (EP19)
+    logo_url = Column(String(1000), nullable=True)
+    banner_url = Column(String(1000), nullable=True)
+
     # Raw source text (original paste / job posting used to create this profile)
     raw_text = Column(Text, nullable=True)
 
