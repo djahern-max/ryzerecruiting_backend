@@ -479,7 +479,27 @@ async def parse_candidate_file(
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 10MB).")
 
-    result = parse_candidate_profile(data, filename=filename, content_type=content_type)
+    try:
+        if is_pdf:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages).strip()
+        else:
+            import docx
+
+            doc = docx.Document(io.BytesIO(data))
+            text = "\n".join(p.text for p in doc.paragraphs).strip()
+    except Exception as e:
+        logger.error(f"File text extraction failed: {e}")
+        raise HTTPException(status_code=422, detail="Could not extract text from file.")
+
+    if len(text) < 50:
+        raise HTTPException(
+            status_code=422, detail="File appears to be empty or unreadable."
+        )
+
+    result = parse_candidate_profile(text)
     if not result:
         raise HTTPException(status_code=422, detail="Could not parse the file.")
     return result
