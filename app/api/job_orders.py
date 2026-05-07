@@ -1,11 +1,12 @@
 # app/api/job_orders.py
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import List, Optional
+from fastapi import Response
 
 from app.core.database import get_db
 from app.models.job_order import JobOrder
@@ -22,6 +23,14 @@ from app.schemas.job_order import (
 )
 from app.services.ai_parser import parse_job_description
 from app.services.embedding_service import embed_job_order_background
+from app.models.employer_profile import EmployerProfile
+from app.api.job_order_pdf_template import (
+    PDF_STYLE,
+    PDF_HTML,
+    render_pdf,
+    pdf_e,
+    fmt_salary,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,16 +137,14 @@ def get_candidate_matches_for_job(
     # Run cosine similarity: job embedding vs candidates table
     try:
         vector_str = "[" + ",".join(str(v) for v in job.embedding) + "]"
-        sql = text(
-            f"""
+        sql = text(f"""
             SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM candidates
             WHERE embedding IS NOT NULL
               AND tenant_id = :tenant_id
             ORDER BY distance
             LIMIT :limit
-            """
-        )
+            """)
         rows = db.execute(
             sql, {"tenant_id": tenant_id, "limit": limit}
         ).fetchall()  # EP16
@@ -296,6 +303,104 @@ def delete_job_order(
         raise HTTPException(status_code=404, detail="Job order not found.")
     db.delete(job_order)
     db.commit()
+
+
+# Add before the /parse endpoint
+@router.get("/{job_order_id}/pdf")
+async def download_job_order_pdf(
+    job_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Generate and stream a branded PDF for a job order. Admin only."""
+    tenant_id = current_user.tenant_id or "ryze"
+    job = (
+        db.query(JobOrder)
+        .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == tenant_id)
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job order not found.")
+
+    # Fetch linked employer profile for logo + about section
+    employer = None
+    if job.employer_profile_id:
+        employer = (
+            db.query(EmployerProfile)
+            .filter(EmployerProfile.id == job.employer_profile_id)
+            .first()
+        )
+
+    # Logo tag
+    logo_url = getattr(employer, "logo_url", None) if employer else None
+    if logo_url:
+        logo_tag = f'<img src="{pdf_e(logo_url)}" />'
+    else:
+        initial = employer.company_name[:1].upper() if employer else "R"
+        logo_tag = pdf_e(initial)
+
+    # Location / salary parts
+    location_part = (
+        f'<span class="meta-sep">·</span><span>{pdf_e(job.location)}</span>'
+        if job.location
+        else ""
+    )
+    salary_str = fmt_salary(job.salary_min, job.salary_max)
+    salary_part = (
+        f'<span class="meta-sep">·</span><span>{pdf_e(salary_str)}</span>'
+        if salary_str
+        else ""
+    )
+
+    # Status
+    status_raw = (job.status or "open").lower()
+    status_label = status_raw.replace("_", " ").title()
+
+    # Notes block
+    notes_block = ""
+    if job.notes:
+        notes_block = f"""
+        <div>
+            <div class="section-label">Recruiter Notes</div>
+            <div class="notes-box">{pdf_e(job.notes)}</div>
+        </div>"""
+
+    # About company block
+    about_block = ""
+    if employer and employer.ai_company_overview:
+        about_block = f"""
+        <div>
+            <div class="section-label">About {pdf_e(employer.company_name)}</div>
+            <div class="about-box">{pdf_e(employer.ai_company_overview)}</div>
+        </div>"""
+
+    company_name = employer.company_name if employer else "—"
+
+    style = PDF_STYLE.format()
+    html_str = PDF_HTML.format(
+        style=style,
+        logo_tag=logo_tag,
+        job_title=pdf_e(job.title),
+        company_name=pdf_e(company_name),
+        location_part=location_part,
+        salary_part=salary_part,
+        status=status_raw,
+        status_label=pdf_e(status_label),
+        requirements=pdf_e(job.requirements or ""),
+        notes_block=notes_block,
+        about_block=about_block,
+        today=date.today().strftime("%B %d, %Y"),
+    )
+
+    pdf_bytes = render_pdf(html_str)
+    safe_title = job.title.replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_title}_JobOrder.pdf"'
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
