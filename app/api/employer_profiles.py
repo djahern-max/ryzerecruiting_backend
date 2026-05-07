@@ -495,7 +495,7 @@ async def upload_employer_banner(
 
 
 @router.get("/{profile_id}/pdf")
-async def download_employer_profile_pdf(
+def download_employer_profile_pdf(
     profile_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
