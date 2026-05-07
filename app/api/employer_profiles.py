@@ -381,6 +381,108 @@ def update_employer_profile(
     return _build_response(profile)
 
 
+@router.post("/{profile_id}/logo")
+async def upload_employer_logo(
+    profile_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Admin: Upload (or replace) the company logo for any employer profile by ID.
+    """
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id,
+            EmployerProfile.tenant_id == tenant_id,
+        )
+        .first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Employer profile not found.")
+
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid image type.")
+
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 5MB).")
+
+    if getattr(profile, "logo_url", None):
+        old_key = profile.logo_url.replace(
+            settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
+        )
+        delete_file(old_key)
+
+    unique_name = make_unique_filename(file.filename or "logo.jpg")
+    cdn_url = upload_file(
+        data,
+        f"employers/{profile.id}/logo",
+        unique_name,
+        file.content_type,
+    )
+    if not cdn_url:
+        raise HTTPException(status_code=500, detail="Logo upload failed.")
+
+    profile.logo_url = cdn_url
+    db.commit()
+    return {"logo_url": cdn_url}
+
+
+@router.post("/{profile_id}/banner")
+async def upload_employer_banner(
+    profile_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Admin: Upload (or replace) the banner image for any employer profile by ID.
+    """
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+    profile = (
+        db.query(EmployerProfile)
+        .filter(
+            EmployerProfile.id == profile_id,
+            EmployerProfile.tenant_id == tenant_id,
+        )
+        .first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Employer profile not found.")
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid image type.")
+
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 10MB).")
+
+    if getattr(profile, "banner_url", None):
+        old_key = profile.banner_url.replace(
+            settings.DO_SPACES_CDN_BASE.rstrip("/") + "/", ""
+        )
+        delete_file(old_key)
+
+    unique_name = make_unique_filename(file.filename or "banner.jpg")
+    cdn_url = upload_file(
+        data,
+        f"employers/{profile.id}/banner",
+        unique_name,
+        file.content_type,
+    )
+    if not cdn_url:
+        raise HTTPException(status_code=500, detail="Banner upload failed.")
+
+    profile.banner_url = cdn_url
+    db.commit()
+    return {"banner_url": cdn_url}
+
+
 @router.post("/parse", response_model=EmployerProfileParseResponse)
 def parse_employer_profile(
     payload: EmployerProfileParseRequest,
