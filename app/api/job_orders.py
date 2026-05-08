@@ -29,6 +29,8 @@ from app.api.job_order_pdf_template import (
     PDF_HTML,
     render_pdf,
     pdf_e,
+    pdf_card,
+    pdf_info_row,
     fmt_salary,
 )
 
@@ -322,7 +324,7 @@ def download_job_order_pdf(
     if not job:
         raise HTTPException(status_code=404, detail="Job order not found.")
 
-    # Fetch linked employer profile for logo + about section
+    # Fetch linked employer profile
     employer = None
     if job.employer_profile_id:
         employer = (
@@ -331,64 +333,95 @@ def download_job_order_pdf(
             .first()
         )
 
-    # Logo tag
+    # ── Banner style ──
+    banner_url = getattr(employer, "banner_url", None) if employer else None
+    banner_style = (
+        f"url('{banner_url}') center/cover no-repeat"
+        if banner_url
+        else "linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #1e3a5f 100%)"
+    )
+
+    # ── Logo tag ──
     logo_url = getattr(employer, "logo_url", None) if employer else None
     if logo_url:
         logo_tag = f'<img src="{pdf_e(logo_url)}" />'
     else:
         initial = employer.company_name[:1].upper() if employer else "R"
-        logo_tag = pdf_e(initial)
+        logo_tag = f'<div class="logo-initial">{pdf_e(initial)}</div>'
 
-    # Location / salary parts
-    location_part = (
-        f'<span class="meta-sep">·</span><span>{pdf_e(job.location)}</span>'
-        if job.location
+    # ── Company name tag ──
+    company_name_tag = (
+        f'<div class="company-name">{pdf_e(employer.company_name)}</div>'
+        if employer
         else ""
     )
+
+    # ── Chips: location, salary, status ──
+    chips = ""
+    if job.location:
+        chips += f'<span class="chip">{pdf_e(job.location)}</span>'
     salary_str = fmt_salary(job.salary_min, job.salary_max)
-    salary_part = (
-        f'<span class="meta-sep">·</span><span>{pdf_e(salary_str)}</span>'
-        if salary_str
-        else ""
-    )
-
-    # Status
+    if salary_str:
+        chips += f'<span class="chip">{pdf_e(salary_str)}</span>'
     status_raw = (job.status or "open").lower()
     status_label = status_raw.replace("_", " ").title()
+    chips += f'<span class="chip chip-{status_raw}">{pdf_e(status_label)}</span>'
 
-    # Notes block
-    notes_block = ""
+    # ── Requirements section ──
+    requirements_section = (
+        pdf_card(
+            "Requirements",
+            f'<p class="body-text">{pdf_e(job.requirements)}</p>',
+        )
+        if job.requirements
+        else ""
+    )
+
+    # ── Notes section (amber accent) ──
+    notes_section = ""
     if job.notes:
-        notes_block = f"""
-        <div>
-            <div class="section-label">Recruiter Notes</div>
-            <div class="notes-box">{pdf_e(job.notes)}</div>
+        notes_section = f"""
+        <div class="card notes-card">
+            <div class="card-label">Recruiter Notes</div>
+            <div class="card-body">
+                <div class="notes-box">{pdf_e(job.notes)}</div>
+            </div>
         </div>"""
 
-    # About company block
-    about_block = ""
+    # ── About employer section ──
+    about_section = ""
     if employer and employer.ai_company_overview:
-        about_block = f"""
-        <div>
-            <div class="section-label">About {pdf_e(employer.company_name)}</div>
-            <div class="about-box">{pdf_e(employer.ai_company_overview)}</div>
-        </div>"""
+        about_section = pdf_card(
+            f"About {pdf_e(employer.company_name)}",
+            f'<div class="about-box">{pdf_e(employer.ai_company_overview)}</div>',
+        )
 
-    company_name = employer.company_name if employer else "—"
+    # ── Sidebar: job details ──
+    details_rows = '<div class="info-list">'
+    if employer:
+        details_rows += pdf_info_row("Employer", pdf_e(employer.company_name))
+    if job.location:
+        details_rows += pdf_info_row("Location", pdf_e(job.location))
+    if salary_str:
+        details_rows += pdf_info_row("Salary", pdf_e(salary_str))
+    details_rows += pdf_info_row("Status", pdf_e(status_label))
+    if job.created_at:
+        details_rows += pdf_info_row("Added", job.created_at.strftime("%b %d, %Y"))
+    details_rows += "</div>"
+    details_section = pdf_card("Job Details", details_rows)
 
-    style = PDF_STYLE.format()
+    # ── Render ──
+    style = PDF_STYLE.format(banner_style=banner_style)
     html_str = PDF_HTML.format(
         style=style,
         logo_tag=logo_tag,
+        company_name_tag=company_name_tag,
         job_title=pdf_e(job.title),
-        company_name=pdf_e(company_name),
-        location_part=location_part,
-        salary_part=salary_part,
-        status=status_raw,
-        status_label=pdf_e(status_label),
-        requirements=pdf_e(job.requirements or ""),
-        notes_block=notes_block,
-        about_block=about_block,
+        chips=chips,
+        requirements_section=requirements_section,
+        notes_section=notes_section,
+        about_section=about_section,
+        details_section=details_section,
         today=date.today().strftime("%B %d, %Y"),
     )
 
