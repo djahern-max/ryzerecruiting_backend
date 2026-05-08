@@ -307,7 +307,7 @@ def delete_job_order(
 
 # Add before the /parse endpoint
 @router.get("/{job_order_id}/pdf")
-async def download_job_order_pdf(
+def download_job_order_pdf(
     job_order_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
