@@ -393,7 +393,7 @@ def download_job_order_pdf(
     )
 
     pdf_bytes = render_pdf(html_str)
-    safe_title = job.title.replace(" ", "_")
+    safe_title = job.title.encode("ascii", "ignore").decode("ascii").replace(" ", "_")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
