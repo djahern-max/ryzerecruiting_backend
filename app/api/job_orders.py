@@ -168,7 +168,7 @@ def get_candidate_matches_for_job(
     )
     candidate_map = {c.id: c for c in candidates}
 
-    results = [] @ router.get("", response_model=List[JobOrderResponse])
+    results = []
     for cid in ids:
         if cid not in candidate_map:
             continue
