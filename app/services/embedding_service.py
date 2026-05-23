@@ -5,6 +5,7 @@ Embedding service for RYZE.ai RAG / PGVector functionality.
 Uses OpenAI text-embedding-3-small (1536 dimensions).
 Handles text composition from structured fields and batch embedding generation.
 """
+
 import json
 import logging
 from datetime import datetime
@@ -18,6 +19,7 @@ from app.core.database import SessionLocal
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +216,7 @@ def embed_candidate_background(candidate_id: int) -> None:
     Generate and store an embedding for a single candidate.
     Designed to run as a FastAPI BackgroundTask.
     """
+    time.sleep(2)  # allow webhook commit to fully propagate before reading
     db: Session = SessionLocal()
     try:
         candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
@@ -378,14 +381,12 @@ def embed_booking_background(booking_id: int) -> None:
         from sqlalchemy import text
 
         result = db.execute(
-            text(
-                """
+            text("""
                 SELECT id, company_name, employer_name, date, call_notes,
                        meeting_summary, meeting_next_steps, meeting_keywords,
                        meeting_transcript
                 FROM bookings WHERE id = :id
-            """
-            ),
+            """),
             {"id": booking_id},
         ).fetchone()
 
@@ -449,18 +450,14 @@ def backfill_bookings() -> dict:
     db: Session = SessionLocal()
     count, errors = 0, 0
     try:
-        rows = db.execute(
-            text(
-                """
+        rows = db.execute(text("""
                 SELECT id, company_name, employer_name, date, call_notes,
                        meeting_summary, meeting_next_steps, meeting_keywords,
                        meeting_transcript
                 FROM bookings
                 WHERE meeting_summary IS NOT NULL
                 AND embedding IS NULL
-            """
-            )
-        ).fetchall()
+            """)).fetchall()
 
         for result in rows:
             parts = []
