@@ -273,16 +273,14 @@ def _vector_search(
         return []
 
     vector_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    sql = text(
-        f"""
+    sql = text(f"""
         SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
         FROM {table_name}
         WHERE embedding IS NOT NULL
           AND tenant_id = :tenant_id
         ORDER BY distance
         LIMIT :limit
-        """
-    )
+        """)
     rows = db.execute(sql, {"tenant_id": tenant_id, "limit": limit}).fetchall()
     return rows
 
@@ -497,7 +495,7 @@ def tool_get_candidate_by_name(
                 "ai_career_level": c.ai_career_level,
                 "ai_certifications": c.ai_certifications,
                 "ai_years_experience": c.ai_years_experience,
-                "score": None,
+                "meeting_transcript": c.meeting_transcript,  # ADD THIS
             }
         )
 
