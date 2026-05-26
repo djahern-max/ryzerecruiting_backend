@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app.core.deps import RYZE_TENANT
+from app.core.deps import RYZE_TENANT, get_current_admin_tenant
 
 from app.api.bookings import require_admin
 from app.core.config import settings
@@ -59,6 +59,7 @@ TOOL_STATUS_MESSAGES = {
     "get_employer_by_name": "Looking up employer...",
     "match_candidates_to_job": "Matching candidates to role...",
     "search_meeting_notes": "Searching meeting notes...",
+    "get_candidate_calls": "Looking up call history...",
 }
 
 
@@ -67,6 +68,26 @@ TOOL_STATUS_MESSAGES = {
 # ---------------------------------------------------------------------------
 
 TOOLS = [
+    # In TOOLS list — add this entry:
+    {
+        "name": "get_candidate_calls",
+        "description": (
+            "Look up all calls and meetings associated with a specific candidate by name. "
+            "Use when asked about a call with a candidate, what was discussed with a candidate, "
+            "meeting notes for a candidate, or any question about a specific person's call history. "
+            "Returns bookings linked to the candidate including meeting summary, transcript, and call notes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The candidate's name or partial name",
+                },
+            },
+            "required": ["name"],
+        },
+    },
     {
         "name": "search_candidates",
         "description": (
@@ -570,7 +591,6 @@ def tool_search_meeting_notes(
     bookings = (
         db.query(Booking)
         .filter(Booking.id.in_(ids), Booking.tenant_id == tenant_id)
-        .filter(Booking.meeting_summary.isnot(None))
         .all()
     )
 
@@ -585,6 +605,83 @@ def tool_search_meeting_notes(
                 "time_slot": b.time_slot,
                 "meeting_summary": b.meeting_summary,
                 "call_notes": b.call_notes,
+            }
+        )
+
+    return {"meetings": results, "count": len(results)}
+
+
+def tool_get_candidate_calls(
+    db: Session, name: str, tenant_id: str = RYZE_TENANT
+) -> dict:
+    # First find the candidate(s) matching the name
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.name.ilike(f"%{name}%"), Candidate.tenant_id == tenant_id)
+        .limit(5)
+        .all()
+    )
+
+    if not candidates:
+        return {
+            "calls": [],
+            "count": 0,
+            "message": f"No candidate found matching '{name}'",
+        }
+
+    candidate_ids = [c.id for c in candidates]
+    candidate_names = {c.id: c.name for c in candidates}
+
+    # Find all bookings linked to those candidates via candidate_id FK
+    bookings = (
+        db.query(Booking)
+        .filter(
+            Booking.candidate_id.in_(candidate_ids),
+            Booking.tenant_id == tenant_id,
+        )
+        .order_by(Booking.date.desc())
+        .all()
+    )
+
+    # Also search by employer_name as a fallback (some bookings may not have candidate_id set)
+    name_matched_bookings = (
+        db.query(Booking)
+        .filter(
+            Booking.employer_name.ilike(f"%{name}%"),
+            Booking.tenant_id == tenant_id,
+            Booking.id.notin_([b.id for b in bookings]),  # avoid dupes
+        )
+        .order_by(Booking.date.desc())
+        .all()
+    )
+
+    all_bookings = bookings + name_matched_bookings
+
+    if not all_bookings:
+        candidate_name = candidates[0].name if candidates else name
+        return {
+            "calls": [],
+            "count": 0,
+            "candidate_found": True,
+            "candidate_name": candidate_name,
+            "message": f"Found candidate '{candidate_name}' but no calls are on record yet.",
+        }
+
+    results = []
+    for b in all_bookings:
+        results.append(
+            {
+                "id": b.id,
+                "candidate_name": candidate_names.get(b.candidate_id, b.employer_name),
+                "date": str(b.date),
+                "time_slot": b.time_slot,
+                "booking_type": b.booking_type,
+                "status": b.status,
+                "call_outcome": b.call_outcome,
+                "call_notes": b.call_notes,
+                "meeting_summary": b.meeting_summary,
+                "meeting_next_steps": b.meeting_next_steps,
+                "meeting_transcript": b.meeting_transcript,
             }
         )
 
@@ -622,6 +719,9 @@ def make_tool_dispatch(tenant_id: str) -> dict:
         ),
         "search_meeting_notes": lambda db, inp: tool_search_meeting_notes(
             db, inp["query"], inp.get("limit", 5), tenant_id
+        ),
+        "get_candidate_calls": lambda db, inp: tool_get_candidate_calls(
+            db, inp["name"], tenant_id
         ),
     }
 
@@ -818,18 +918,17 @@ def stream_chat_response(
 async def chat(
     payload: ChatRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_admin),  # EP16: was `_`
+    current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
-
-    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
     return StreamingResponse(
         stream_chat_response(payload, db, tenant_id),
         media_type="text/plain",
         headers={
-            "X-Accel-Buffering": "no",  # tell nginx not to buffer the stream
+            "X-Accel-Buffering": "no",
             "Cache-Control": "no-cache",
         },
     )
