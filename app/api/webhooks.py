@@ -111,6 +111,75 @@ def _copy_transcript_to_candidate(
         )
 
 
+def _generate_summary_from_transcript(
+    db: Session,
+    booking: Booking,
+) -> None:
+    """
+    If a booking has a transcript but no AI summary, generate one using Claude.
+    Called as a background task after transcript is saved.
+    """
+    if not booking.meeting_transcript:
+        return
+    if booking.meeting_summary:  # already has one, skip
+        return
+
+    try:
+        from anthropic import Anthropic
+        from app.core.config import settings
+
+        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+        booking_context = (
+            f"Booking type: {booking.booking_type}. Candidate: {booking.employer_name}."
+        )
+
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"""You are summarizing a recruiting call transcript for a recruiter's CRM.
+
+{booking_context}
+
+Transcript:
+{booking.meeting_transcript}
+
+Note: Zoom may have attributed all speech to a single speaker — interpret the conversation naturally.
+
+Return ONLY a JSON object with these keys:
+- "summary": 2-3 sentence prose summary of the call
+- "next_steps": key follow-up actions (string, or null)
+- "keywords": comma-separated skills/topics mentioned (string, or null)""",
+                }
+            ],
+        )
+
+        import json
+
+        text = response.content[0].text.strip()
+        # Strip markdown fences if present
+        text = text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(text)
+
+        if data.get("summary"):
+            booking.meeting_summary = data["summary"]
+        if data.get("next_steps"):
+            booking.meeting_next_steps = data["next_steps"]
+        if data.get("keywords"):
+            booking.meeting_keywords = data["keywords"]
+
+        db.commit()
+        logger.info(
+            f"[summary_from_transcript] Generated AI summary for booking #{booking.id}"
+        )
+
+    except Exception as e:
+        logger.error(f"[summary_from_transcript] Failed for booking #{booking.id}: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Endpoint
 # ---------------------------------------------------------------------------
@@ -212,6 +281,7 @@ async def zoom_webhook(
                 result_notes.append("keywords saved")
         else:
             result_notes.append("no AI Companion summary yet")
+            background_tasks.add_task(_generate_summary_from_transcript, db, booking)
             logger.info(
                 f"[meeting.ended] No AI Companion summary for meeting {meeting_id} "
                 "— will update on meeting.summary_updated"
@@ -322,9 +392,8 @@ async def zoom_webhook(
             booking.meeting_transcript = transcript
             db.commit()
             background_tasks.add_task(embed_booking_background, booking.id)
-
-            # EP18 — copy transcript to linked candidate and re-embed
             _copy_transcript_to_candidate(db, booking, transcript, background_tasks)
+            background_tasks.add_task(_generate_summary_from_transcript, db, booking)
 
             logger.info(
                 f"[recording.completed] Transcript saved for booking {booking.id}: "
