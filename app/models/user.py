@@ -33,3 +33,7 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    invited_at = Column(DateTime, nullable=True)
+    invited_by = Column(String(100), nullable=True)
+    first_login_at = Column(DateTime, nullable=True)

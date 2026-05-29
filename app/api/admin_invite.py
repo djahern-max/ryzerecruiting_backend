@@ -133,6 +133,8 @@ def invite_firm(
         is_superuser=True,
         is_active=True,
         tenant_id=slug,
+        invited_at=datetime.now(timezone.utc),  # ← add this
+        invited_by=current_user.email,
     )
     db.add(new_user)
     db.commit()

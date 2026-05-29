@@ -1,4 +1,7 @@
 # app/api/auth.py - Updated to use Redis for OAuth temp storage
+from time import timezone
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -155,6 +158,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
         if existing_user:
             # User exists - log them in
+            if existing_user.first_login_at is None:
+                existing_user.first_login_at = datetime.now(timezone.utc)
+                db.commit()
             access_token = create_access_token(data={"sub": existing_user.email})
             return RedirectResponse(
                 url=f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
@@ -296,6 +302,9 @@ async def linkedin_callback(request: Request, db: Session = Depends(get_db)):
 
         if existing_user:
             logger.info(f"✓ Existing user found: {existing_user.email}")
+            if existing_user.first_login_at is None:
+                existing_user.first_login_at = datetime.now(timezone.utc)
+                db.commit()
             access_token = create_access_token(data={"sub": existing_user.email})
             redirect_url = f"{settings.FRONTEND_URL}/auth/callback?token={access_token}"
             logger.info(f"Redirecting existing user to: {redirect_url}")
@@ -347,18 +356,15 @@ async def complete_oauth_signup(
         existing_user = db.query(User).filter(User.email == oauth_data["email"]).first()
 
         if existing_user:
-            # Email exists — update their OAuth info and log them in
-            logger.info(
-                f"Email already exists, linking OAuth to existing user: {existing_user.email}"
-            )
             existing_user.oauth_provider = oauth_data["oauth_provider"]
             existing_user.oauth_provider_id = oauth_data["oauth_provider_id"]
             existing_user.avatar_url = oauth_data.get("avatar_url")
+            if existing_user.first_login_at is None:  # ← add this
+                existing_user.first_login_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(existing_user)
             user = existing_user
         else:
-            # Truly new user — create them
             user = User(
                 email=oauth_data["email"],
                 full_name=oauth_data.get("full_name"),
@@ -367,6 +373,7 @@ async def complete_oauth_signup(
                 avatar_url=oauth_data.get("avatar_url"),
                 user_type=user_type,
                 hashed_password=None,
+                first_login_at=datetime.now(timezone.utc),  # ← add this
             )
             db.add(user)
             db.commit()
