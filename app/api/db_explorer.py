@@ -130,15 +130,15 @@ TABLE_COLS: dict[str, list[str]] = {
     ],
     "users": [
         "id",
-        "tenant_id",
         "email",
         "full_name",
         "user_type",
-        "oauth_provider",
-        "oauth_provider_id",
-        "avatar_url",
+        "tenant_id",
         "is_active",
         "is_superuser",
+        "invited_at",
+        "invited_by",
+        "first_login_at",
         "created_at",
         "updated_at",
     ],
@@ -324,13 +324,21 @@ async def get_all_counts(
     for table in TABLE_COLS:
         try:
             if table in TENANT_SCOPED_TABLES:
-                counts[table] = (
-                    db.execute(
-                        text(f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'),
-                        {"tid": tenant_id},
-                    ).scalar()
-                    or 0
-                )
+                if table == "users" and current_user.is_superuser:
+                    counts[table] = (
+                        db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
+                        or 0
+                    )
+                else:
+                    counts[table] = (
+                        db.execute(
+                            text(
+                                f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'
+                            ),
+                            {"tid": tenant_id},
+                        ).scalar()
+                        or 0
+                    )
             else:
                 counts[table] = (
                     db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar() or 0
@@ -368,8 +376,9 @@ async def browse_table(
 
     # Tenant filter — applied first so it anchors every query on scoped tables
     if table in TENANT_SCOPED_TABLES:
-        conditions.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
+        if not (table == "users" and current_user.is_superuser):
+            conditions.append("tenant_id = :tenant_id")
+            params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
@@ -525,8 +534,9 @@ async def export_table_csv(
     params: dict = {}
 
     if table in TENANT_SCOPED_TABLES:
-        conditions.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
+        if not (table == "users" and current_user.is_superuser):
+            conditions.append("tenant_id = :tenant_id")
+            params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
