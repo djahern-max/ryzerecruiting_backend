@@ -30,11 +30,6 @@ def _parse_booking_datetime(date, time_slot: str) -> datetime | None:
 
 
 def send_upcoming_reminders() -> None:
-    """
-    Runs every minute via APScheduler.
-    Finds confirmed bookings starting in 13–17 minutes (EST) with no reminder sent yet,
-    fires email + SMS reminder, and stamps reminded_at to prevent duplicates.
-    """
     db: Session = SessionLocal()
     try:
         now_est = datetime.now(tz=EST)
@@ -46,9 +41,6 @@ def send_upcoming_reminders() -> None:
             f"{window_start.strftime('%I:%M %p')} and {window_end.strftime('%I:%M %p')} EST"
         )
 
-        # Pull all confirmed bookings with no reminder sent yet.
-        # Filter by date first in SQL to keep the query efficient,
-        # then do precise time matching in Python.
         today = now_est.date()
         tomorrow = today + timedelta(days=1)
 
@@ -73,6 +65,12 @@ def send_upcoming_reminders() -> None:
                     f"Firing reminder for booking #{booking.id} — "
                     f"{booking.employer_name} at {booking.time_slot} EST"
                 )
+
+                # ✅ Stamp BEFORE sending — prevents duplicate sends
+                # if this tick overlaps with the next before the commit lands
+                booking.reminded_at = datetime.utcnow()
+                db.commit()
+
                 try:
                     notify_reminder(
                         employer_name=booking.employer_name,
@@ -82,12 +80,11 @@ def send_upcoming_reminders() -> None:
                         time_slot=booking.time_slot,
                         meeting_url=booking.meeting_url or "",
                     )
-                    booking.reminded_at = datetime.utcnow()
-                    db.commit()
                     fired += 1
                 except Exception as e:
                     logger.error(f"Reminder failed for booking #{booking.id}: {e}")
-                    db.rollback()
+                    # Don't clear reminded_at — a partial send is better than
+                    # spamming. The admin will see the error in journalctl.
 
         if fired:
             logger.info(f"Scheduler — {fired} reminder(s) sent.")
