@@ -378,15 +378,10 @@ def download_job_order_pdf(
     )
 
     # ── Notes section (amber accent) ──
+    # ── Recruiter Notes — intentionally NOT exported ──
+    # The job order PDF is a candidate-facing artifact. Recruiter notes stay
+    # internal-only (still visible on the admin detail page, never in the PDF).
     notes_section = ""
-    if job.notes:
-        notes_section = f"""
-        <div class="card notes-card">
-            <div class="card-label">Recruiter Notes</div>
-            <div class="card-body">
-                <div class="notes-box">{pdf_e(job.notes)}</div>
-            </div>
-        </div>"""
 
     # ── About employer section ──
     about_section = ""
