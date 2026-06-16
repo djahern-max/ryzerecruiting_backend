@@ -84,9 +84,17 @@ def _generate_brief_background(booking_id: int) -> None:
             profile = EmployerProfile(
                 website_url=booking.website_url,
                 company_name=booking.company_name or "",
+                primary_contact_email=booking.employer_email,
+                tenant_id=booking.tenant_id,
             )
             db.add(profile)
             db.flush()
+        elif not profile.primary_contact_email:
+            # Backfill the link so the employer login can resolve an
+            # already-created profile on their next booking.
+            profile.primary_contact_email = booking.employer_email
+            if not profile.tenant_id:
+                profile.tenant_id = booking.tenant_id
 
         if brief_dict:
             profile.ai_company_overview = brief_dict.get("company_overview")
