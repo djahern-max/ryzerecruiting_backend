@@ -1356,7 +1356,6 @@ def send_welcome_invite_email(
                         <td style="padding:8px 0;color:#64748b;font-size:14px;width:40%;">Login URL</td>
                         <td style="padding:8px 0;font-size:14px;">
                             <a href="https://ryze.ai/auth" style="color:#0a66c2;font-weight:600;">https://ryze.ai/auth</a>
-
                         </td>
                     </tr>
                     <tr>
@@ -1364,14 +1363,16 @@ def send_welcome_invite_email(
                         <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{email}</td>
                     </tr>
                     <tr>
-                        <td style="padding:8px 0;color:#64748b;font-size:14px;">Temporary Password</td>
-                        <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;font-family:monospace;">{temp_password}</td>
-                    </tr>
-                    <tr>
                         <td style="padding:8px 0;color:#64748b;font-size:14px;">Trial Ends</td>
                         <td style="padding:8px 0;color:#111827;font-size:14px;font-weight:600;">{trial_end_str}</td>
                     </tr>
                 </table>
+            </div>
+
+            <!-- Temporary password — standalone block so a copy grabs only the value -->
+            <p style="color:#64748b;font-size:13px;margin:0 0 6px;">Your temporary password</p>
+            <div style="background:#0f172a;border-radius:8px;padding:16px 20px;margin:0 0 24px;text-align:center;">
+                <span style="color:#ffffff;font-family:'Courier New',monospace;font-size:18px;font-weight:700;letter-spacing:0.05em;">{temp_password}</span>
             </div>
 
             <div style="text-align:center;margin:32px 0;">

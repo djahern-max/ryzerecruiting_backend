@@ -34,6 +34,11 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+    @field_validator("email", "password", mode="before")
+    @classmethod
+    def _strip_whitespace(cls, v):
+        return v.strip() if isinstance(v, str) else v
+
 
 class UserResponse(BaseModel):
     id: int
