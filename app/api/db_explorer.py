@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.deps import get_current_admin_user
+from app.core.deps import get_current_superuser
 
 router = APIRouter(prefix="/admin", tags=["db-explorer"])
 
@@ -309,14 +309,14 @@ def _tenant(user) -> str:
 
 
 @router.get("/db/explorer/tables")
-async def list_tables(current_user=Depends(get_current_admin_user)):
+async def list_tables(current_user=Depends(get_current_superuser)):
     return {"tables": list(TABLE_COLS.keys())}
 
 
 @router.get("/db/counts")
 async def get_all_counts(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_admin_user),
+    current_user=Depends(get_current_superuser),
 ):
     """Row count for every table — scoped to tenant where applicable."""
     tenant_id = _tenant(current_user)
@@ -359,7 +359,7 @@ async def browse_table(
     date_from: str = Query(default=None),
     date_to: str = Query(default=None),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_admin_user),
+    current_user=Depends(get_current_superuser),
 ):
     if table not in TABLE_COLS:
         raise HTTPException(
@@ -435,7 +435,7 @@ async def update_record(
     record_id: int,
     payload: dict[str, Any],
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_admin_user),
+    current_user=Depends(get_current_superuser),
 ):
     """Patch editable fields on a record. Only EDITABLE_COLS are accepted.
     On tenant-scoped tables the WHERE clause includes tenant_id so cross-tenant
@@ -484,7 +484,7 @@ async def delete_record(
     table: str,
     record_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_admin_user),
+    current_user=Depends(get_current_superuser),
 ):
     """Hard delete a record by ID. On tenant-scoped tables the WHERE clause
     includes tenant_id — cross-tenant deletes return 404."""
@@ -518,7 +518,7 @@ async def export_table_csv(
     date_from: str = Query(default=None),
     date_to: str = Query(default=None),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_admin_user),
+    current_user=Depends(get_current_superuser),
 ):
     """Export the current filtered view as a CSV file download.
     Tenant-scoped tables are filtered to the requesting admin's tenant."""
