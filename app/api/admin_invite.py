@@ -130,7 +130,7 @@ def invite_firm(
         full_name=payload.full_name,
         hashed_password=get_password_hash(temp_password),
         user_type=UserType.ADMIN,
-        is_superuser=True,
+        is_superuser=False,
         is_active=True,
         tenant_id=slug,
         invited_at=datetime.now(timezone.utc),  # ← add this
