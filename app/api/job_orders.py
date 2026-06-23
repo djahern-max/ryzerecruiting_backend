@@ -11,7 +11,7 @@ from fastapi import Response
 from app.core.database import get_db
 from app.models.job_order import JobOrder
 from app.models.candidate import Candidate
-from app.api.bookings import require_admin
+from app.core.deps import get_current_admin_user
 from app.core.deps import get_current_user
 from app.models.user import User, UserType
 from app.schemas.job_order import (
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/job-orders", tags=["job-orders"])
 
+require_admin = get_current_admin_user
 
 # ---------------------------------------------------------------------------
 # Inline response schema for EP15 employer candidate-matching endpoint
@@ -108,7 +109,7 @@ def get_candidate_matches_for_job(
     Available to: authenticated employer and admin users.
     """
     is_employer = current_user.user_type == UserType.EMPLOYER
-    is_admin = current_user.is_superuser
+    is_admin = current_user.user_type == UserType.ADMIN or current_user.is_superuser
 
     if not (is_employer or is_admin):
         raise HTTPException(

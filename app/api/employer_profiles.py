@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, RYZE_TENANT
 from app.models.employer_profile import EmployerProfile
 from app.models.user import User
-from app.api.bookings import require_admin
+from app.core.deps import get_current_admin_user
 from app.api.auth import get_current_user as get_any_authenticated_user
 from app.schemas.employer_profile import (
     UpdateRecruiterNotes,
@@ -38,6 +38,8 @@ from app.api.employer_pdf_template import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/employer-profiles", tags=["employer-profiles"])
+
+require_admin = get_current_admin_user
 
 
 # ---------------------------------------------------------------------------

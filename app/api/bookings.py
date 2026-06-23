@@ -14,6 +14,7 @@ from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
 from app.core.deps import get_current_admin_tenant
+from app.core.deps import get_current_admin_user
 from app.api.auth import get_current_user
 from app.models.booking import Booking
 from app.models.employer_profile import EmployerProfile
@@ -49,13 +50,7 @@ router = APIRouter(prefix="/api/bookings", tags=["bookings"])
 # ---------------------------------------------------------------------------
 
 
-def require_admin(current_user: User = Depends(get_current_user)):
-    if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required.",
-        )
-    return current_user
+require_admin = get_current_admin_user
 
 
 # ---------------------------------------------------------------------------
