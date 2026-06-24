@@ -98,7 +98,10 @@ def notify_booking_confirmed(
     meeting_url: str,
     notes: str = "",
     ai_brief: dict = None,
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     try:
         send_meeting_confirmed(
             employer_name=employer_name,
@@ -110,14 +113,16 @@ def notify_booking_confirmed(
             phone=phone,
             notes=notes,
             ai_brief=ai_brief or {},
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_booking_confirmed — email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Your call with RYZE.ai is confirmed for {date} at {time_slot} EST. "
+            f"Your call with {branding.brand_name} is confirmed for {date} at {time_slot} EST. "
             f"Your Zoom link has been sent to your email. Reply STOP to opt out."
         ),
     )
@@ -135,7 +140,10 @@ def notify_booking_cancelled(
     company_name: str,
     date: str,
     time_slot: str,
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     try:
         send_cancellation_email(
             employer_name=employer_name,
@@ -143,15 +151,17 @@ def notify_booking_cancelled(
             company_name=company_name,
             date=date,
             time_slot=time_slot,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_booking_cancelled — email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Your RYZE.ai call scheduled for {date} at {time_slot} "
-            f"has been cancelled. Visit ryze.ai to rebook. Reply STOP to opt out."
+            f"Your {branding.brand_name} call scheduled for {date} at {time_slot} "
+            f"has been cancelled. Reply STOP to opt out."
         ),
     )
 
@@ -168,7 +178,11 @@ def notify_reminder(
     date: str,
     time_slot: str,
     meeting_url: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
+
     try:
         send_reminder_email(
             employer_name=employer_name,
@@ -176,25 +190,31 @@ def notify_reminder(
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_reminder — employer email failed: {e}")
 
+    # Admin copy — routed to this tenant's admin inbox (falls back to RYZE's
+    # global ADMIN_EMAIL when the tenant has no admin_email set).
+    admin_to = getattr(branding, "admin_email", settings.ADMIN_EMAIL)
     try:
         send_reminder_email(
             employer_name=employer_name,
-            employer_email=settings.ADMIN_EMAIL,
+            employer_email=admin_to,
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_reminder — admin email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Reminder: Your call with RYZE.ai is in 15 minutes. "
+            f"Reminder: Your call with {branding.brand_name} is in 15 minutes. "
             f"Check your email for the Zoom link. Reply STOP to opt out."
         ),
     )
@@ -216,7 +236,10 @@ def notify_recruiter_invite_sent(
     booking_id: int,
     response_token: str,
     notes: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
 
     try:
@@ -230,6 +253,7 @@ def notify_recruiter_invite_sent(
             booking_id=booking_id,
             response_token=response_token,
             notes=notes,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_recruiter_invite_sent — contact email failed: {e}")
@@ -241,15 +265,17 @@ def notify_recruiter_invite_sent(
             company_name=company_name,
             date=date,
             time_slot=time_slot,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_recruiter_invite_sent — admin copy failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=contact_phone,
         body=(
-            f"Hi {contact_name}, Dane from RYZE.ai sent you a meeting invite "
-            f"for {date} at {time_slot} EST. "
+            f"Hi {contact_name}, {branding.signature_name} from {branding.brand_name} "
+            f"sent you a meeting invite for {date} at {time_slot} EST. "
             f"Check your email to accept or decline. Reply STOP to opt out."
         ),
     )
@@ -269,7 +295,10 @@ def notify_invite_accepted(
     date: str,
     time_slot: str,
     meeting_url: str,
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
 
     try:
@@ -281,14 +310,16 @@ def notify_invite_accepted(
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_invite_accepted — confirmation email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=contact_phone,
         body=(
-            f"Hi {contact_name}, your call with RYZE.ai is confirmed for "
+            f"Hi {contact_name}, your call with {branding.brand_name} is confirmed for "
             f"{date} at {time_slot} EST. "
             f"Zoom: {meeting_url} — Reply STOP to opt out."
         ),
@@ -296,7 +327,7 @@ def notify_invite_accepted(
 
 
 # ---------------------------------------------------------------------------
-# Outbound invite — accepted: notify RECRUITER (new — fixes missing email bug)
+# Outbound invite — accepted: notify RECRUITER (admin email)
 # ---------------------------------------------------------------------------
 
 
@@ -307,11 +338,15 @@ def notify_invite_accepted_admin(
     date: str,
     time_slot: str,
     meeting_url: str,
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
     """
     Fires when an outbound invite is accepted by the contact.
-    Sends a confirmation email to ADMIN_EMAIL so the recruiter knows the call is locked in.
+    Sends a confirmation email to the tenant's admin so the recruiter knows
+    the call is locked in.
     """
+    branding = get_branding(db, tenant_id)
     try:
         send_invite_accepted_admin_notify(
             contact_name=contact_name,
@@ -320,6 +355,7 @@ def notify_invite_accepted_admin(
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_invite_accepted_admin — admin email failed: {e}")
@@ -337,7 +373,10 @@ def notify_invite_declined(
     company_name: str,
     date: str,
     time_slot: str,
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     contact_type = "employer" if invite_type == "outbound_employer" else "candidate"
 
     try:
@@ -347,6 +386,7 @@ def notify_invite_declined(
             company_name=company_name,
             date=date,
             time_slot=time_slot,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_invite_declined — admin email failed: {e}")
@@ -364,7 +404,10 @@ def notify_candidate_booking_received(
     date: str,
     time_slot: str,
     notes: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     try:
         send_candidate_booking_admin_notify(
             candidate_name=candidate_name,
@@ -373,6 +416,7 @@ def notify_candidate_booking_received(
             date=date,
             time_slot=time_slot,
             notes=notes,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_candidate_booking_received — admin email failed: {e}")
@@ -383,14 +427,16 @@ def notify_candidate_booking_received(
             candidate_email=email,
             date=date,
             time_slot=time_slot,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_candidate_booking_received — candidate email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Hi {candidate_name}, RYZE.ai received your call request for "
+            f"Hi {candidate_name}, {branding.brand_name} received your call request for "
             f"{date} at {time_slot} EST. We'll be in touch shortly. Reply STOP to opt out."
         ),
     )
@@ -408,7 +454,10 @@ def notify_candidate_confirmed(
     date: str,
     time_slot: str,
     meeting_url: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     try:
         send_candidate_confirmed_email(
             candidate_name=candidate_name,
@@ -416,14 +465,16 @@ def notify_candidate_confirmed(
             date=date,
             time_slot=time_slot,
             meeting_url=meeting_url,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_candidate_confirmed — email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Hi {candidate_name}, your call with RYZE.ai is confirmed for "
+            f"Hi {candidate_name}, your call with {branding.brand_name} is confirmed for "
             f"{date} at {time_slot} EST. "
             f"Zoom link is in your email. Reply STOP to opt out."
         ),
