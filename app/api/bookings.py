@@ -150,6 +150,8 @@ def create_booking(
             date=str(payload.date),
             time_slot=payload.time_slot,
             notes=payload.notes or "",
+            tenant_id=current_user.tenant_id or "ryze",
+            db=db,
         )
     except Exception as e:
         logger.error(f"Failed to send booking received notifications: {e}")

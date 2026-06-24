@@ -1,5 +1,7 @@
 # app/services/notifications.py
 import logging
+from sqlalchemy.orm import Session
+from app.services.branding import get_branding, TenantBranding
 from app.core.config import settings
 from app.services.email import (
     send_booking_received_email,
@@ -19,17 +21,18 @@ from app.services.email import (
 logger = logging.getLogger(__name__)
 
 
-def _send_sms(to_phone: str, body: str) -> None:
-    """Send SMS via Twilio. Silently skips if phone is blank or Twilio unavailable."""
-    if not to_phone:
+def _send_sms(branding: TenantBranding, to_phone: str, body: str) -> None:
+    """Send SMS via the tenant's Twilio sender. Skips silently if no phone or
+    no Twilio config resolved (null tenant creds with no RYZE fallback)."""
+    if not to_phone or not branding.has_sms:
         return
     try:
         from twilio.rest import Client
 
-        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
+        client = Client(branding.twilio_account_sid, branding.twilio_auth_token)
         client.messages.create(
             body=body,
-            from_=settings.TWILIO_FROM_NUMBER,
+            from_=branding.twilio_from_number,
             to=to_phone,
         )
     except Exception as e:
@@ -50,7 +53,10 @@ def notify_booking_received(
     date: str,
     time_slot: str,
     notes: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
 ) -> None:
+    branding = get_branding(db, tenant_id)
     try:
         send_booking_received_email(
             employer_name=employer_name,
@@ -61,16 +67,18 @@ def notify_booking_received(
             time_slot=time_slot,
             phone=phone,
             notes=notes,
+            branding=branding,
         )
     except Exception as e:
         logger.error(f"notify_booking_received — email failed: {e}")
 
     _send_sms(
+        branding,
         to_phone=phone,
         body=(
-            f"Hi {employer_name}, RYZE.ai received your call request for "
-            f"{date} at {time_slot} EST. "
-            f"We will confirm shortly. Reply STOP to opt out."
+            f"Hi {employer_name}, {branding.brand_name} received your call request "
+            f"for {date} at {time_slot} EST. We will confirm shortly. "
+            f"Reply STOP to opt out."
         ),
     )
 

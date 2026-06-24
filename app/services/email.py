@@ -2,6 +2,7 @@
 import resend
 import logging
 from app.core.config import settings
+from app.services.branding import get_branding, TenantBranding
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +75,21 @@ def send_employer_confirmation(
     company_name: str,
     date: str,
     time_slot: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Send a booking request confirmation email to the employer.
     Zoom link is NOT included yet — sent separately when admin confirms."""
+    branding = branding or get_branding(None, "ryze")
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [employer_email],
-            "subject": "Your call request with RYZE.ai has been received!",
+            "subject": f"Your call request with {branding.brand_name} has been received!",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">We received your call request</h2>
@@ -120,11 +124,11 @@ def send_employer_confirmation(
                 If you have any questions in the meantime, simply reply to this email.
             </p>
 
-            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -143,19 +147,21 @@ def send_admin_notification(
     time_slot: str,
     phone: str,
     notes: str,
+    branding: TenantBranding = None,
 ) -> None:
-    """Send a new booking request notification email to Dane — action required."""
+    """Send a new booking request notification email to the firm — action required."""
+    branding = branding or get_branding(None, "ryze")
 
     admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"New Call Request — {employer_name} on {date} at {time_slot} — Confirmation Required",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">New Call Request 📋</h2>
@@ -213,7 +219,7 @@ def send_admin_notification(
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -233,8 +239,10 @@ def send_meeting_confirmed(
     phone: str = "",
     notes: str = "",
     ai_brief: dict = None,
+    branding: TenantBranding = None,
 ) -> None:
-    """Send confirmed call email with Zoom link to both the employer and the recruiter (Dane)."""
+    """Send confirmed call email with Zoom link to both the employer and the firm."""
+    branding = branding or get_branding(None, "ryze")
 
     if ai_brief is None:
         ai_brief = {}
@@ -242,12 +250,13 @@ def send_meeting_confirmed(
     # --- Employer email ---
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [employer_email],
-            "subject": "Your call with RYZE.ai is confirmed — here's your Zoom link!",
+            "subject": f"Your call with {branding.brand_name} is confirmed — here's your Zoom link!",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">Your call is confirmed! ✅</h2>
@@ -290,11 +299,11 @@ def send_meeting_confirmed(
                 If you have any questions beforehand, simply reply to this email.
             </p>
 
-            <p style="color: #334155; font-size: 15px;">See you soon,<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color: #334155; font-size: 15px;">See you soon,<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -324,12 +333,12 @@ def send_meeting_confirmed(
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"Call Confirmed — {employer_name} ({company_name}) on {date} at {time_slot}",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">Call Confirmed ✅</h2>
@@ -391,7 +400,7 @@ def send_meeting_confirmed(
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -399,7 +408,7 @@ def send_meeting_confirmed(
     )
 
     logger.info(
-        f"Admin confirmation email with Zoom link sent to {settings.ADMIN_EMAIL}"
+        f"Admin confirmation email with Zoom link sent to {branding.admin_email}"
     )
 
 
@@ -409,18 +418,21 @@ def send_cancellation_email(
     company_name: str,
     date: str,
     time_slot: str,
+    branding: TenantBranding = None,
 ) -> None:
-    """Notify both the employer and the recruiter (Dane) that a booking has been cancelled."""
+    """Notify both the employer and the firm that a booking has been cancelled."""
+    branding = branding or get_branding(None, "ryze")
 
     # --- Employer email ---
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [employer_email],
-            "subject": "Your call with RYZE.ai has been cancelled",
+            "subject": f"Your call with {branding.brand_name} has been cancelled",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 16px;">Your call has been cancelled</h2>
@@ -454,11 +466,11 @@ def send_cancellation_email(
                 to schedule a new time.
             </p>
 
-            <p style="color: #334155; font-size: 15px;">Best,<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color: #334155; font-size: 15px;">Best,<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -470,12 +482,12 @@ def send_cancellation_email(
     # --- Admin (recruiter) cancellation email ---
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"Call Cancelled — {employer_name} ({company_name}) on {date} at {time_slot}",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">Call Cancelled ❌</h2>
@@ -512,14 +524,14 @@ def send_cancellation_email(
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
         }
     )
 
-    logger.info(f"Cancellation admin email sent to {settings.ADMIN_EMAIL}")
+    logger.info(f"Cancellation admin email sent to {branding.admin_email}")
 
 
 # ---------------------------------------------------------------------------
@@ -533,21 +545,24 @@ def send_reminder_email(
     date: str,
     time_slot: str,
     meeting_url: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Send a 15-minute reminder email with Zoom link directly to the employer."""
+    branding = branding or get_branding(None, "ryze")
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [employer_email],
             "subject": "⏰ Your call starts in 15 minutes — Zoom link inside",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">Your call starts in 15 minutes</h2>
-            <p style="color: #64748b; font-size: 14px; margin-top: 0;">Get ready — your discovery call with RYZE.ai is coming up.</p>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">Get ready — your discovery call with {branding.brand_name} is coming up.</p>
 
             <p style="color: #334155; font-size: 15px;">Hi {employer_name},</p>
 
@@ -583,11 +598,11 @@ def send_reminder_email(
                 Join Zoom Call →
             </a>
 
-            <p style="color: #334155; font-size: 15px;">See you in a few minutes!<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color: #334155; font-size: 15px;">See you in a few minutes!<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -612,7 +627,10 @@ def send_recruiter_invite(
     meeting_url: str,
     notes: str = "",
     is_admin_copy: bool = False,
+    branding: TenantBranding = None,
 ) -> None:
+    branding = branding or get_branding(None, "ryze")
+
     type_label = "Employer" if contact_type == "employer" else "Candidate"
     company_line = f" ({company_name})" if company_name else ""
 
@@ -623,17 +641,15 @@ def send_recruiter_invite(
         greeting = f"<p style='color:#334155;font-size:15px;'>Contact: <strong>{contact_name}</strong></p>"
         sign_off = ""
     else:
-        subject = (
-            f"You're invited — Discovery call with RYZE.ai on {date} at {time_slot}"
-        )
-        intro_heading = "You're invited to a call with RYZE.ai 📅"
-        intro_sub = "Dane Ahern from RYZE.ai has scheduled time to connect with you."
+        subject = f"You're invited — Discovery call with {branding.brand_name} on {date} at {time_slot}"
+        intro_heading = f"You're invited to a call with {branding.brand_name} 📅"
+        intro_sub = f"{branding.signature_name} from {branding.brand_name} has scheduled time to connect with you."
         greeting = f"<p style='color:#334155;font-size:15px;'>Hi {contact_name},</p>"
         sign_off = f"""
             <p style="color:#334155;font-size:15px;">
                 Looking forward to connecting.<br/>
-                <strong>Dane Ahern</strong><br/>
-                RYZE.ai
+                <strong>{branding.signature_name}</strong><br/>
+                {branding.brand_name}
             </p>
         """
 
@@ -659,14 +675,14 @@ def send_recruiter_invite(
         else ""
     )
 
-    resend.Emails.send(
-        {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [contact_email],
-            "subject": subject,
-            "html": f"""
+    recipient = branding.admin_email if is_admin_copy else contact_email
+    payload = {
+        "from": branding.email_from_line,
+        "to": [recipient],
+        "subject": subject,
+        "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;" />
             <h2 style="color:#111827;margin-bottom:4px;">{intro_heading}</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">{intro_sub}</p>
@@ -698,14 +714,17 @@ def send_recruiter_invite(
             </a>
             {sign_off}
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;" />
-            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE.ai. All rights reserved.</p>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 {branding.brand_name}. All rights reserved.</p>
         </div>
         """,
-        }
-    )
+    }
+    if not is_admin_copy:
+        payload["reply_to"] = branding.reply_to_email
+
+    resend.Emails.send(payload)
 
     logger.info(
-        f"Recruiter invite email sent to {contact_email} "
+        f"Recruiter invite email sent to {recipient} "
         f"({'admin copy' if is_admin_copy else contact_type})"
     )
 
@@ -717,19 +736,21 @@ def send_candidate_booking_received_admin(
     time_slot: str,
     phone: str = "",
     notes: str = "",
+    branding: TenantBranding = None,
 ) -> None:
-    """Notify Dane that a candidate has requested a call."""
+    """Notify the firm that a candidate has requested a call."""
+    branding = branding or get_branding(None, "ryze")
 
     admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"New Candidate Call Request — {candidate_name} on {date} at {time_slot} — Confirmation Required",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">New Candidate Call Request 🧑‍💼</h2>
@@ -777,7 +798,7 @@ def send_candidate_booking_received_admin(
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -792,18 +813,21 @@ def send_candidate_booking_confirmation(
     candidate_email: str,
     date: str,
     time_slot: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Send a booking request confirmation to the candidate.
     Zoom link is NOT included yet — sent separately when admin confirms."""
+    branding = branding or get_branding(None, "ryze")
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [candidate_email],
-            "subject": "Your call request with RYZE.ai has been received!",
+            "subject": f"Your call request with {branding.brand_name} has been received!",
             "html": f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
-            <h1 style="color: #0a66c2; margin-bottom: 8px;">RYZE.ai</h1>
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
 
             <h2 style="color: #111827; margin-bottom: 4px;">We received your call request</h2>
@@ -834,11 +858,11 @@ def send_candidate_booking_confirmation(
                 If you have any questions in the meantime, simply reply to this email.
             </p>
 
-            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color: #334155; font-size: 15px;">Talk soon,<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
 
             <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
             <p style="color: #94a3b8; font-size: 12px; text-align: center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -848,7 +872,6 @@ def send_candidate_booking_confirmation(
     logger.info(f"Candidate booking confirmation sent to {candidate_email}")
 
 
-# ADD THESE FUNCTIONS to app/services/email.py
 # ---------------------------------------------------------------------------
 # Outbound invite email — Accept / Decline buttons (replaces Zoom link)
 # ---------------------------------------------------------------------------
@@ -864,14 +887,14 @@ def send_recruiter_invite_with_response(
     booking_id: int,
     response_token: str,
     notes: str = "",
+    branding: TenantBranding = None,
 ) -> None:
     """
     Outbound invite email sent to the contact.
     Contains Accept and Decline buttons — NO Zoom link yet.
     Zoom link is only sent after they accept.
     """
-    import resend
-    from app.core.config import settings
+    branding = branding or get_branding(None, "ryze")
 
     accept_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=accept"
     decline_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=decline"
@@ -899,17 +922,18 @@ def send_recruiter_invite_with_response(
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [contact_email],
-            "subject": f"Dane Ahern from RYZE.ai wants to connect — {date} at {time_slot}",
+            "subject": f"{branding.signature_name} from {branding.brand_name} wants to connect — {date} at {time_slot}",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
 
             <h2 style="color:#111827;margin-bottom:4px;">You're invited to a call 📅</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">
-                Dane Ahern from RYZE.ai would like to connect with you.
+                {branding.signature_name} from {branding.brand_name} would like to connect with you.
             </p>
 
             <p style="color:#334155;font-size:15px;">Hi {contact_name},</p>
@@ -958,13 +982,13 @@ def send_recruiter_invite_with_response(
 
             <p style="color:#334155;font-size:15px;">
                 Looking forward to connecting.<br/>
-                <strong>Dane Ahern</strong><br/>
-                RYZE.ai
+                <strong>{branding.signature_name}</strong><br/>
+                {branding.brand_name}
             </p>
 
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
             <p style="color:#94a3b8;font-size:12px;text-align:center;">
-                © 2026 RYZE.ai. You received this because someone requested a meeting with you.
+                © 2026 {branding.brand_name}. You received this because someone requested a meeting with you.
             </p>
         </div>
         """,
@@ -981,25 +1005,25 @@ def send_invite_accepted_admin_notify(
     date: str,
     time_slot: str,
     meeting_url: str,
+    branding: TenantBranding = None,
 ) -> None:
     """
-    Notifies the recruiter (ADMIN_EMAIL) that their outbound invite was accepted.
+    Notifies the firm that their outbound invite was accepted.
     Fires immediately when the contact clicks Accept — before AI brief is ready.
     """
-    import resend
-    from app.core.config import settings
+    branding = branding or get_branding(None, "ryze")
 
     company_line = f" ({company_name})" if company_name else ""
     type_label = "Employer" if contact_type == "employer" else "Candidate"
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"✅ Accepted — {contact_name}{company_line} confirmed the call",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
  
             <h2 style="color:#111827;margin-bottom:4px;">Invite Accepted ✅</h2>
@@ -1047,7 +1071,7 @@ def send_invite_accepted_admin_notify(
  
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;" />
             <p style="color:#94a3b8;font-size:12px;text-align:center;">
-                © 2026 RYZE.ai. All rights reserved.
+                © 2026 {branding.brand_name}. All rights reserved.
             </p>
         </div>
         """,
@@ -1063,22 +1087,22 @@ def send_invite_admin_copy(
     company_name: str,
     date: str,
     time_slot: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Admin copy confirming the outbound invite was sent — awaiting response."""
-    import resend
-    from app.core.config import settings
+    branding = branding or get_branding(None, "ryze")
 
     company_line = f" ({company_name})" if company_name else ""
     type_label = "Employer" if contact_type == "employer" else "Candidate"
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"Outbound Invite Sent — {contact_name}{company_line} · Awaiting Response",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
             <h2 style="color:#111827;margin-bottom:4px;">Invite Sent — Awaiting Response ⏳</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">
@@ -1112,7 +1136,7 @@ def send_invite_admin_copy(
                 </table>
             </div>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
-            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE.ai</p>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 {branding.brand_name}</p>
         </div>
         """,
         }
@@ -1128,24 +1152,25 @@ def send_invite_accepted_confirmation(
     date: str,
     time_slot: str,
     meeting_url: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Confirmation email to contact after they accept — includes Zoom link."""
-    import resend
-    from app.core.config import settings
+    branding = branding or get_branding(None, "ryze")
 
     company_line = f" ({company_name})" if company_name else ""
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [contact_email],
-            "subject": f"You're confirmed — Call with RYZE.ai on {date} at {time_slot}",
+            "subject": f"You're confirmed — Call with {branding.brand_name} on {date} at {time_slot}",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
             <h2 style="color:#111827;margin-bottom:4px;">You're confirmed! ✅</h2>
-            <p style="color:#64748b;font-size:14px;margin-top:0;">Your call with Dane at RYZE.ai is all set.</p>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">Your call with {branding.signature_name} at {branding.brand_name} is all set.</p>
             <p style="color:#334155;font-size:15px;">Hi {contact_name},</p>
             <p style="color:#334155;font-size:15px;">Great — looking forward to our conversation. Here are your call details:</p>
 
@@ -1177,10 +1202,10 @@ def send_invite_accepted_confirmation(
             </a>
 
             <p style="color:#334155;font-size:15px;">
-                See you then!<br/><strong>Dane Ahern</strong><br/>RYZE.ai
+                See you then!<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}
             </p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
-            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE.ai</p>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 {branding.brand_name}</p>
         </div>
         """,
         }
@@ -1194,21 +1219,21 @@ def send_invite_declined_admin(
     company_name: str,
     date: str,
     time_slot: str,
+    branding: TenantBranding = None,
 ) -> None:
-    """Notify admin that the contact declined the invite."""
-    import resend
-    from app.core.config import settings
+    """Notify the firm that the contact declined the invite."""
+    branding = branding or get_branding(None, "ryze")
 
     company_line = f" ({company_name})" if company_name else ""
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
-            "to": [settings.ADMIN_EMAIL],
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
             "subject": f"Invite Declined — {contact_name}{company_line}",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
             <h2 style="color:#111827;margin-bottom:4px;">Invite Declined ❌</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">
@@ -1217,7 +1242,7 @@ def send_invite_declined_admin(
                 The booking has been marked as cancelled.
             </p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
-            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE.ai</p>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 {branding.brand_name}</p>
         </div>
         """,
         }
@@ -1239,13 +1264,16 @@ def send_booking_received_email(
     time_slot: str,
     phone: str = "",
     notes: str = "",
+    branding: TenantBranding = None,
 ) -> None:
+    branding = branding or get_branding(None, "ryze")
     send_employer_confirmation(
         employer_name=employer_name,
         employer_email=employer_email,
         company_name=company_name,
         date=date,
         time_slot=time_slot,
+        branding=branding,
     )
     send_admin_notification(
         employer_name=employer_name,
@@ -1256,6 +1284,7 @@ def send_booking_received_email(
         time_slot=time_slot,
         phone=phone,
         notes=notes,
+        branding=branding,
     )
 
 
@@ -1269,8 +1298,11 @@ def send_candidate_confirmed_email(
     date: str,
     time_slot: str,
     meeting_url: str,
+    branding: TenantBranding = None,
 ) -> None:
     """Confirmation email sent to candidate when admin confirms their booking."""
+    branding = branding or get_branding(None, "ryze")
+
     zoom_button = (
         f'<a href="{meeting_url}" style="display:inline-block;background:#0a66c2;'
         f"color:white;text-decoration:none;font-weight:700;padding:12px 24px;"
@@ -1281,15 +1313,16 @@ def send_candidate_confirmed_email(
 
     resend.Emails.send(
         {
-            "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
+            "from": branding.email_from_line,
+            "reply_to": branding.reply_to_email,
             "to": [candidate_email],
-            "subject": f"You're confirmed — Call with RYZE.ai on {date} at {time_slot}",
+            "subject": f"You're confirmed — Call with {branding.brand_name} on {date} at {time_slot}",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
-            <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
+            <h1 style="color:#0a66c2;margin-bottom:8px;">{branding.brand_name}</h1>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-bottom:24px;"/>
             <h2 style="color:#111827;margin-bottom:4px;">You're confirmed! ✅</h2>
-            <p style="color:#64748b;font-size:14px;margin-top:0;">Your screening call with Dane at RYZE.ai is all set.</p>
+            <p style="color:#64748b;font-size:14px;margin-top:0;">Your screening call with {branding.signature_name} at {branding.brand_name} is all set.</p>
             <p style="color:#334155;font-size:15px;">Hi {candidate_name},</p>
             <p style="color:#334155;font-size:15px;">Looking forward to connecting and learning more about your background.</p>
             <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin:24px 0;">
@@ -1305,9 +1338,9 @@ def send_candidate_confirmed_email(
                 </table>
             </div>
             {zoom_button}
-            <p style="color:#334155;font-size:15px;margin-top:24px;">Talk soon,<br/><strong>Dane</strong><br/>RYZE.ai</p>
+            <p style="color:#334155;font-size:15px;margin-top:24px;">Talk soon,<br/><strong>{branding.signature_name}</strong><br/>{branding.brand_name}</p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin-top:32px;"/>
-            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 RYZE.ai. All rights reserved.</p>
+            <p style="color:#94a3b8;font-size:12px;text-align:center;">© 2026 {branding.brand_name}. All rights reserved.</p>
         </div>
         """,
         }
@@ -1315,7 +1348,10 @@ def send_candidate_confirmed_email(
     logger.info(f"Candidate confirmed email sent to {candidate_email}")
 
 
-# ── Paste this function into app/services/email.py ──────────────────────────
+# ---------------------------------------------------------------------------
+# Platform email — sent by RYZE itself when onboarding a new firm.
+# Intentionally NOT tenant-branded: this email speaks AS the platform.
+# ---------------------------------------------------------------------------
 
 
 def send_welcome_invite_email(
