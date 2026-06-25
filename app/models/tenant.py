@@ -32,6 +32,7 @@ class Tenant(Base):
     from_email = Column(String(255), nullable=True)
     reply_to_email = Column(String(255), nullable=True)
     support_email = Column(String(255), nullable=True)
+    admin_email = Column(String(255), nullable=True)
     signature_name = Column(String(100), nullable=True)
 
     # Per-tenant Twilio (future per-number / ISV model). Stubs for now — leave
