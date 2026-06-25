@@ -295,6 +295,7 @@ def notify_invite_accepted(
     date: str,
     time_slot: str,
     meeting_url: str,
+    sms_consent: bool = False,
     tenant_id: str = "ryze",
     db: Session = None,
 ) -> None:
@@ -315,15 +316,22 @@ def notify_invite_accepted(
     except Exception as e:
         logger.error(f"notify_invite_accepted — confirmation email failed: {e}")
 
-    _send_sms(
-        branding,
-        to_phone=contact_phone,
-        body=(
-            f"Hi {contact_name}, your call with {branding.brand_name} is confirmed for "
-            f"{date} at {time_slot} EST. "
-            f"Zoom: {meeting_url} — Reply STOP to opt out."
-        ),
-    )
+    # SMS only goes out if the recipient explicitly opted in on the accept page.
+    # No consent => email confirmation only (carrier/TCPA compliant).
+    if sms_consent:
+        _send_sms(
+            branding,
+            to_phone=contact_phone,
+            body=(
+                f"Hi {contact_name}, your call with {branding.brand_name} is confirmed for "
+                f"{date} at {time_slot} EST. "
+                f"Zoom: {meeting_url} — Reply STOP to opt out."
+            ),
+        )
+    else:
+        logger.info(
+            f"notify_invite_accepted — SMS suppressed (no consent) for {contact_email}"
+        )
 
 
 # ---------------------------------------------------------------------------
