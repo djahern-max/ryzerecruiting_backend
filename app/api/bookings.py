@@ -1,10 +1,11 @@
 # app/api/bookings.py
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 import secrets
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import Form
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List
@@ -223,7 +224,6 @@ def send_recruiter_invite(
 def respond_to_invite(
     token: str = Query(...),
     action: str = Query(...),  # "accept" | "decline"
-    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
 ):
     booking = db.query(Booking).filter(Booking.response_token == token).first()
@@ -246,109 +246,9 @@ def respond_to_invite(
     if action not in ("accept", "decline"):
         raise HTTPException(status_code=400, detail="Invalid action.")
 
-    # ── ACCEPT ──────────────────────────────────────────────────────────
+    # ── ACCEPT → show consent form (does NOT confirm yet) ────────────────
     if action == "accept":
-        # 1. Create Zoom meeting
-        try:
-            zoom = create_meeting(
-                topic=f"RYZE.ai — {booking.company_name or booking.employer_name}",
-                date=str(booking.date),
-                time_slot=booking.time_slot,
-            )
-            booking.meeting_url = zoom["join_url"]
-            logger.info(f"Zoom meeting created on accept: {zoom['meeting_id']}")
-        except Exception as e:
-            logger.error(f"Failed to create Zoom meeting on accept: {e}")
-            return _response_page(
-                "Something Went Wrong",
-                "We couldn't set up the Zoom meeting. Please contact RYZE.ai directly.",
-                success=False,
-            )
-
-        # 2. Create Google Calendar event
-        try:
-            event_id = create_calendar_event(
-                company_name=booking.company_name or "",
-                employer_name=booking.employer_name,
-                employer_email=booking.employer_email,
-                date_str=str(booking.date),
-                time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url,
-            )
-            if event_id:
-                booking.calendar_event_id = event_id
-        except Exception as e:
-            logger.error(f"Failed to create Calendar event on accept: {e}")
-
-        # 3. Commit confirmed status
-        booking.status = "confirmed"
-        booking.response_token = None
-        db.commit()
-        db.refresh(booking)
-
-        # 4. EP17 — Auto-create candidate stub for outbound_candidate accepts
-        # Done after commit so the booking.id is stable. Uses a separate commit.
-        if booking.booking_type == "outbound_candidate":
-            try:
-                from app.services.candidate_stub import find_or_create_candidate_stub
-                from app.services.embedding_service import embed_candidate_background
-
-                tenant_id = booking.tenant_id or "ryze"
-                candidate = find_or_create_candidate_stub(db, booking, tenant_id)
-                db.commit()
-                background_tasks.add_task(embed_candidate_background, candidate.id)
-                logger.info(
-                    f"[EP17] Candidate stub #{candidate.id} linked to booking #{booking.id} "
-                    f"via token accept"
-                )
-            except Exception as e:
-                logger.error(
-                    f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
-                )
-
-        # 5. Queue AI brief for employer bookings
-        if booking.booking_type == "outbound_employer" and booking.website_url:
-            background_tasks.add_task(_generate_brief_background, booking.id)
-            logger.info(f"AI brief queued in background for booking #{booking.id}")
-
-        # 6. Send confirmation email + SMS to contact
-        try:
-            notify_invite_accepted(
-                contact_name=booking.employer_name,
-                contact_email=booking.employer_email,
-                contact_phone=booking.phone or "",
-                invite_type=booking.booking_type,
-                company_name=booking.company_name or "",
-                date=str(booking.date),
-                time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send acceptance notifications: {e}")
-
-        # 7. Notify recruiter that invite was accepted
-        try:
-            notify_invite_accepted_admin(
-                contact_name=booking.employer_name,
-                contact_type=(
-                    "employer"
-                    if booking.booking_type == "outbound_employer"
-                    else "candidate"
-                ),
-                company_name=booking.company_name or "",
-                date=str(booking.date),
-                time_slot=booking.time_slot,
-                meeting_url=booking.meeting_url,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send admin acceptance notification: {e}")
-
-        return _response_page(
-            "You're Confirmed! 🎉",
-            f"Your call with Dane at RYZE.ai is set for {booking.date.strftime('%B %d, %Y')} at {booking.time_slot} EST. Check your email for the Zoom link.",
-            success=True,
-            meeting_url=booking.meeting_url,
-        )
+        return HTMLResponse(_consent_form_page(booking))
 
     # ── DECLINE ─────────────────────────────────────────────────────────
     if action == "decline":
@@ -374,6 +274,143 @@ def respond_to_invite(
             success=False,
             show_site_link=True,
         )
+
+
+@router.post("/respond/confirm", response_class=HTMLResponse)
+def confirm_invite(
+    background_tasks: BackgroundTasks,
+    token: str = Form(...),
+    phone: str = Form(""),
+    sms_consent: str = Form(None),  # "yes" only if the box was checked
+    db: Session = Depends(get_db),
+):
+    booking = db.query(Booking).filter(Booking.response_token == token).first()
+
+    if not booking:
+        return _response_page(
+            "Invalid Link",
+            "This link is no longer valid or has already been used.",
+            success=False,
+        )
+
+    if booking.status != "pending":
+        already = "accepted" if booking.status == "confirmed" else "declined"
+        return _response_page(
+            "Already Responded",
+            f"You've already {already} this meeting request.",
+            success=booking.status == "confirmed",
+        )
+
+    # ── Capture recipient opt-in ────────────────────────────────────────
+    consented = sms_consent == "yes"
+    if phone:
+        booking.phone = phone
+    booking.sms_consent = consented
+    booking.sms_consent_at = datetime.now(timezone.utc) if consented else None
+
+    # 1. Create Zoom meeting
+    try:
+        zoom = create_meeting(
+            topic=f"RYZE.ai — {booking.company_name or booking.employer_name}",
+            date=str(booking.date),
+            time_slot=booking.time_slot,
+        )
+        booking.meeting_url = zoom["join_url"]
+        logger.info(f"Zoom meeting created on accept: {zoom['meeting_id']}")
+    except Exception as e:
+        logger.error(f"Failed to create Zoom meeting on accept: {e}")
+        return _response_page(
+            "Something Went Wrong",
+            "We couldn't set up the Zoom meeting. Please contact RYZE.ai directly.",
+            success=False,
+        )
+
+    # 2. Create Google Calendar event
+    try:
+        event_id = create_calendar_event(
+            company_name=booking.company_name or "",
+            employer_name=booking.employer_name,
+            employer_email=booking.employer_email,
+            date_str=str(booking.date),
+            time_slot=booking.time_slot,
+            meeting_url=booking.meeting_url,
+        )
+        if event_id:
+            booking.calendar_event_id = event_id
+    except Exception as e:
+        logger.error(f"Failed to create Calendar event on accept: {e}")
+
+    # 3. Commit confirmed status
+    booking.status = "confirmed"
+    booking.response_token = None
+    db.commit()
+    db.refresh(booking)
+
+    # 4. EP17 — Auto-create candidate stub for outbound_candidate accepts
+    if booking.booking_type == "outbound_candidate":
+        try:
+            from app.services.candidate_stub import find_or_create_candidate_stub
+            from app.services.embedding_service import embed_candidate_background
+
+            tenant_id = booking.tenant_id or "ryze"
+            candidate = find_or_create_candidate_stub(db, booking, tenant_id)
+            db.commit()
+            background_tasks.add_task(embed_candidate_background, candidate.id)
+            logger.info(
+                f"[EP17] Candidate stub #{candidate.id} linked to booking #{booking.id} "
+                f"via token accept"
+            )
+        except Exception as e:
+            logger.error(
+                f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
+            )
+
+    # 5. Queue AI brief for employer bookings
+    if booking.booking_type == "outbound_employer" and booking.website_url:
+        background_tasks.add_task(_generate_brief_background, booking.id)
+        logger.info(f"AI brief queued in background for booking #{booking.id}")
+
+    # 6. Send confirmation email + (consented) SMS to contact
+    try:
+        notify_invite_accepted(
+            contact_name=booking.employer_name,
+            contact_email=booking.employer_email,
+            contact_phone=booking.phone or "",
+            invite_type=booking.booking_type,
+            company_name=booking.company_name or "",
+            date=str(booking.date),
+            time_slot=booking.time_slot,
+            meeting_url=booking.meeting_url,
+            sms_consent=consented,
+            tenant_id=booking.tenant_id or "ryze",
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send acceptance notifications: {e}")
+
+    # 7. Notify recruiter that invite was accepted
+    try:
+        notify_invite_accepted_admin(
+            contact_name=booking.employer_name,
+            contact_type=(
+                "employer"
+                if booking.booking_type == "outbound_employer"
+                else "candidate"
+            ),
+            company_name=booking.company_name or "",
+            date=str(booking.date),
+            time_slot=booking.time_slot,
+            meeting_url=booking.meeting_url,
+        )
+    except Exception as e:
+        logger.error(f"Failed to send admin acceptance notification: {e}")
+
+    return _response_page(
+        "You're Confirmed! 🎉",
+        f"Your call with Dane at RYZE.ai is set for {booking.date.strftime('%B %d, %Y')} at {booking.time_slot} EST. Check your email for the Zoom link.",
+        success=True,
+        meeting_url=booking.meeting_url,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -672,6 +709,58 @@ def delete_booking(
         raise HTTPException(status_code=404, detail="Booking not found.")
     db.delete(booking)
     db.commit()
+
+
+def _consent_form_page(booking) -> str:
+    phone = booking.phone or ""
+    company = booking.company_name or booking.employer_name
+    date_str = booking.date.strftime("%B %d, %Y")
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Confirm your call — RYZE.ai</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+</head>
+<body style="margin:0;padding:24px;background:#f0f2f5;font-family:'DM Sans',sans-serif;min-height:100vh;
+             display:flex;align-items:center;justify-content:center;box-sizing:border-box;">
+  <div style="background:#fff;border-radius:16px;padding:40px;max-width:480px;width:100%;
+              box-shadow:0 4px 24px rgba(0,0,0,0.08);box-sizing:border-box;">
+    <div style="font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                color:#0a66c2;margin-bottom:8px;text-align:center;">RYZE.ai</div>
+    <h1 style="font-size:1.5rem;color:#1a1a2e;margin:0 0 4px;font-weight:700;text-align:center;">
+      Confirm your call
+    </h1>
+    <p style="font-size:0.95rem;color:#6b7280;margin:0 0 24px;text-align:center;">
+      {company} &middot; {date_str} at {booking.time_slot} EST
+    </p>
+    <form method="POST" action="/api/bookings/respond/confirm">
+      <input type="hidden" name="token" value="{booking.response_token}"/>
+      <label for="phone" style="display:block;font-weight:600;font-size:14px;color:#1a1a2e;margin-bottom:6px;">
+        Mobile number <span style="font-weight:400;color:#6b7280;">(optional — for text reminders)</span>
+      </label>
+      <input id="phone" type="tel" name="phone" value="{phone}" placeholder="(555) 000-0000"
+             style="width:100%;padding:12px;font-size:15px;border:1px solid #cbd5e1;border-radius:8px;
+                    box-sizing:border-box;font-family:'DM Sans',sans-serif;"/>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin-top:20px;font-size:13px;
+                    color:#334155;line-height:1.5;">
+        <input type="checkbox" name="sms_consent" value="yes" style="margin-top:3px;flex-shrink:0;"/>
+        <span>I agree to receive SMS appointment reminders and booking notifications from
+        RYZE GROUP, Inc. (RYZE.ai). Message frequency varies. Message and data rates may apply.
+        Reply STOP to opt out.
+        <a href="https://ryze.ai/privacy" target="_blank" style="color:#0a66c2;">Privacy Policy</a></span>
+      </label>
+      <button type="submit"
+              style="margin-top:24px;width:100%;padding:14px;font-size:16px;font-weight:700;color:#fff;
+                     background:#0a66c2;border:none;border-radius:10px;cursor:pointer;
+                     font-family:'DM Sans',sans-serif;">
+        Confirm Meeting
+      </button>
+    </form>
+  </div>
+</body>
+</html>"""
 
 
 # ---------------------------------------------------------------------------
