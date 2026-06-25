@@ -1,5 +1,14 @@
 # app/models/booking.py
-from sqlalchemy import Column, Integer, String, Date, DateTime, Text, ForeignKey
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Date,
+    DateTime,
+    Text,
+    ForeignKey,
+    Boolean,
+)
 from sqlalchemy.sql import func
 from app.core.database import Base
 from pgvector.sqlalchemy import Vector
@@ -41,6 +50,9 @@ class Booking(Base):
     # Generated on recruiter-invite creation, cleared after use
     response_token = Column(String(100), nullable=True)
 
+    sms_consent = Column(Boolean, nullable=False, server_default="false")
+    sms_consent_at = Column(DateTime(timezone=True), nullable=True)
+
     # ── Meeting & Calendar ────────────────────────────────────────────────
     meeting_url = Column(String(500), nullable=True)
     calendar_event_id = Column(String(255), nullable=True)
@@ -55,7 +67,10 @@ class Booking(Base):
     # Points to the auto-created (or matched) Candidate record so transcripts,
     # summaries, and call data are linked to the right person.
     candidate_id = Column(
-        Integer, ForeignKey("candidates.id", ondelete="SET NULL"), nullable=True, index=True
+        Integer,
+        ForeignKey("candidates.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
 
     # ── Call outcome & notes (recruiter-filled post-call) ─────────────────
