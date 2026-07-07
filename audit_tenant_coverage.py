@@ -24,6 +24,7 @@ Usage:
 
 import ast
 import os
+import re
 import sys
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -60,7 +61,30 @@ AUTH_DEPS = {
     "require_admin",
     "get_current_admin_tenant",
     "get_current_tenant",
+    "get_any_authenticated_user",
+    "get_current_superuser",
 }
+
+# Patterns that indicate a webhook verifies the caller via a provider
+# signature/HMAC check instead of a logged-in user — e.g. billing.py's
+# stripe_webhook (stripe.Webhook.construct_event + SignatureVerificationError)
+# or webhooks.py's Zoom handler (hmac.compare_digest via _verify_zoom_signature).
+# These are infrastructure endpoints: there's no tenant_id to scope by until
+# the signature is verified and the payload is parsed, so they're SAFE rather
+# than REVIEW.
+SIGNATURE_VERIFIED_PATTERNS = [
+    "construct_event",  # stripe.Webhook.construct_event(...)
+    "SignatureVerificationError",
+    "compare_digest",  # hmac.compare_digest(expected, signature)
+    "_verify_zoom_signature",
+    "verify_webhook_signature",
+]
+
+# Regex matched against a `<something>_token == token` comparison, i.e. a
+# lookup keyed on an unguessable per-record token rather than current_user —
+# e.g. bookings.py's /respond and /respond/confirm, which resolve the booking
+# via `Booking.response_token == token` instead of a auth dependency.
+TOKEN_LOOKUP_RE = re.compile(r"\w*_token\s*==\s*token\b")
 
 # Patterns in the function source that indicate tenant scoping is in place
 TENANT_SAFE_PATTERNS = [
@@ -157,10 +181,29 @@ def get_function_source_lines(
     return "\n".join(source_lines[start:end])
 
 
+def has_signature_verification(func_source: str) -> bool:
+    """True if the function verifies a webhook via provider signature/HMAC."""
+    return any(p in func_source for p in SIGNATURE_VERIFIED_PATTERNS)
+
+
+def has_token_lookup_auth(func_node: ast.FunctionDef, func_source: str) -> bool:
+    """
+    True if the endpoint takes a `token` param and resolves the row by
+    comparing a `*_token` column against it — a magic-link auth pattern
+    (see bookings.py's /respond and /respond/confirm) rather than a
+    logged-in-user dependency.
+    """
+    has_token_param = any(arg.arg == "token" for arg in func_node.args.args)
+    if not has_token_param:
+        return False
+    return bool(TOKEN_LOOKUP_RE.search(func_source))
+
+
 def evaluate_endpoint(
     func_name: str,
     func_source: str,
     dep_names: set[str],
+    func_node: ast.FunctionDef,
 ) -> tuple[str, str]:
     """
     Apply tenant-safety rules to an endpoint.
@@ -169,6 +212,18 @@ def evaluate_endpoint(
     # Check if it's a known public endpoint
     if any(pat in func_name.lower() for pat in PUBLIC_PATTERNS):
         return "PUBLIC", "No auth required — intentionally open"
+
+    if has_signature_verification(func_source):
+        return (
+            "SAFE",
+            "Verified by provider signature/HMAC check (webhook) — no tenant scoping needed",
+        )
+
+    if has_token_lookup_auth(func_node, func_source):
+        return (
+            "SAFE",
+            "Token-authenticated — resolves record via unguessable token instead of current_user",
+        )
 
     has_auth = bool(dep_names & AUTH_DEPS)
 
@@ -236,7 +291,7 @@ def audit_file(filepath: Path) -> list[EndpointResult]:
 
             dep_names = get_dep_names(node)
             func_source = get_function_source_lines(node, source_lines)
-            verdict, detail = evaluate_endpoint(node.name, func_source, dep_names)
+            verdict, detail = evaluate_endpoint(node.name, func_source, dep_names, node)
 
             results.append(
                 EndpointResult(
