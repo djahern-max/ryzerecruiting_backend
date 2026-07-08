@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from typing import List
 
 from app.services.ai_brief import generate_pre_call_brief
+from app.services.branding import get_branding
 from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
@@ -69,7 +70,8 @@ def _generate_brief_background(booking_id: int) -> None:
         logger.info(
             f"Background AI brief starting for booking #{booking_id} — {booking.website_url}"
         )
-        brief_dict = generate_pre_call_brief(booking.website_url)
+        branding = get_branding(db, booking.tenant_id)
+        brief_dict = generate_pre_call_brief(booking.website_url, branding.brand_name)
 
         profile = (
             db.query(EmployerProfile)

@@ -2,6 +2,10 @@
 """
 AI Pre-Call Brief Service.
 
+Industry-agnostic and tenant-aware: the prompt frames Claude as researching
+on behalf of the calling tenant's branded firm name, not RYZE.ai specifically,
+and does not assume any particular recruiting vertical (e.g. finance/accounting).
+
 Strategy:
   1. Try to scrape the employer's website and send the content to Claude.
   2. If the website blocks the request (403, timeout, etc.), fall back to
@@ -89,9 +93,10 @@ def _fetch_website_text(url: str) -> str | None:
     return None
 
 
-def _build_prompt_from_website(website_text: str) -> str:
+def _build_prompt_from_website(website_text: str, brand_name: str) -> str:
     return f"""You are an expert recruiting researcher preparing a pre-call brief \
-for a finance and accounting recruiter (CPA background) at RYZE.ai.
+for a recruiter at {brand_name}, who places candidates across a variety of \
+industries and roles.
 
 Based on the website content below, return ONLY a valid JSON object.
 No preamble, no explanation, no markdown fences. Just the JSON.
@@ -110,9 +115,10 @@ Website content:
 {website_text}"""
 
 
-def _build_prompt_from_knowledge(company_name: str, domain: str) -> str:
+def _build_prompt_from_knowledge(company_name: str, domain: str, brand_name: str) -> str:
     return f"""You are an expert recruiting researcher preparing a pre-call brief \
-for a finance and accounting recruiter (CPA background) at RYZE.ai.
+for a recruiter at {brand_name}, who places candidates across a variety of \
+industries and roles.
 
 The employer's website could not be scraped. Use your training knowledge about \
 "{company_name}" (website: {domain}) to generate the brief.
@@ -170,12 +176,16 @@ def _call_claude(prompt: str, website_url: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def generate_pre_call_brief(website_url: str) -> dict:
+def generate_pre_call_brief(website_url: str, brand_name: str) -> dict:
     """
     Generate a structured pre-call brief for an employer.
 
     Attempt 1: Scrape the website → send content to Claude.
     Attempt 2: If scraping fails → ask Claude using company name + domain from training knowledge.
+
+    brand_name identifies the recruiting firm on whose behalf the brief is
+    generated (the tenant's branded name, not RYZE.ai) — resolve it via
+    app.services.branding.get_branding() at the call site.
 
     Returns {} on total failure — never raises.
     """
@@ -197,7 +207,7 @@ def generate_pre_call_brief(website_url: str) -> dict:
 
     if website_text:
         logger.info(f"Generating brief from scraped content: {raw_url}")
-        prompt = _build_prompt_from_website(website_text)
+        prompt = _build_prompt_from_website(website_text, brand_name)
         result = _call_claude(prompt, raw_url)
         if result:
             return result
@@ -209,7 +219,7 @@ def generate_pre_call_brief(website_url: str) -> dict:
 
     # Try to extract a readable company name from the domain
     company_name = domain.split(".")[0].replace("-", " ").replace("_", " ").title()
-    prompt = _build_prompt_from_knowledge(company_name, domain)
+    prompt = _build_prompt_from_knowledge(company_name, domain, brand_name)
     result = _call_claude(prompt, raw_url)
 
     if result:
