@@ -12,10 +12,10 @@ FastAPI backend for RYZE.ai V2 — a multi-tenant ATS for recruiting firms. RYZE
 - **Scheduling:** APScheduler as a systemd service
 
 ## Repo layout
-- `app/api/` — route handlers, one file per resource (`bookings.py`, `candidates.py`, `employer_profiles.py`, `job_orders.py`, `chat.py`, `webhooks.py`, etc.)
+- `app/api/` — route handlers, one file per resource (`bookings.py`, `candidates.py`, `employer_profiles.py`, `job_orders.py`, `chat.py`, `webhooks.py`, `settings.py`, etc.)
 - `app/models/` — SQLAlchemy models
 - `app/core/` — `config.py`, `database.py`, auth/tenant dependencies
-- `app/services/` — external integrations (e.g. `spaces.py` for DO Spaces)
+- `app/services/` — external integrations and shared services (`spaces.py` for DO Spaces, `branding.py` for tenant branding resolution, `notifications.py`, `email.py`)
 - `alembic/` — migrations; `env.py` imports every model explicitly — new models must be added there or Alembic won't detect them
 - `audit_tenant_coverage.py` — static analysis script that walks `app/api/` and flags endpoints missing tenant scoping (SAFE / HARDCODED / REVIEW / PUBLIC / SKIP). Run this after any change touching auth or queries.
 
@@ -24,8 +24,17 @@ This is the single most important rule in this codebase. RYZE Recruiting is tena
 
 - Use `get_current_tenant` / `get_current_admin_tenant` or `current_user.tenant_id` — never a hardcoded `RYZE_TENANT` constant for anything but genuinely RYZE-specific defaults.
 - `chat_sessions` and `chat_messages` were previously found unscoped — treat any table without an obvious `tenant_id` filter as suspect until proven otherwise.
-- Known hardcoded-branding files that still need consolidation onto a per-tenant resolver: `notifications.py`, `ai_brief.py`, `calendar.py`, and the PDF footer templates. A `TenantBranding` dataclass / `get_branding(tenant_id, db)` resolver in `app/core/tenant_branding.py` is the intended fix — check its current state before assuming it's done.
 - Run `python audit_tenant_coverage.py` after touching any endpoint and paste me the new `REVIEW`/`HARDCODED` lines rather than assuming a fix worked.
+
+## Tenant branding — resolver EXISTS, use it
+The per-tenant branding resolver is **implemented** at `app/services/branding.py` — do not re-implement it or go looking for `app/core/tenant_branding.py` (an older doc referenced that path; it never existed).
+
+- `get_branding(db, tenant_id)` returns a frozen `TenantBranding` dataclass. **Every field falls back individually to RYZE's global defaults** (`app.core.config.settings`), so a tenant with all-NULL override columns behaves exactly like RYZE. It is safe to call with `db=None` or an unknown tenant — you get RYZE defaults.
+- Already migrated onto the resolver: `app/services/notifications.py` (all notify functions take `tenant_id` + `db` and resolve branding) and `app/services/email.py` (all senders take a `branding` parameter). Admins can override whitelisted branding fields via `GET/PATCH /api/settings/tenant` in `app/api/settings.py`.
+- **Still hardcoded — remaining migration targets:** the PDF templates (`candidate_pdf_template.py`, `employer_pdf_template.py`, `job_order_pdf_template.py`) bake `RYZE.ai` / `RYZE.AI` into their footers. Verify `ai_brief.py` and `calendar.py` before assuming either way.
+- **Known risk:** the notify functions default to `tenant_id="ryze"`. A call site that forgets to pass `tenant_id` silently sends RYZE-branded messages for another firm's data. When adding or touching a notify call site, always pass the real `tenant_id` and `db` explicitly. (Making the param required is a queued hardening task for before tenant #2 onboards.)
+- **Secret handling:** `tenant.twilio_auth_token` is a credential-column stub for a future per-number model. Do NOT populate it in production until it's encrypted at rest. In the shared-sender model, tenants leave `twilio_*` NULL and ride on RYZE's number.
+- **Resend:** `from_email` must be a Resend-verified domain. Until a firm verifies its own domain, leave its `from_email` NULL — mail sends from RYZE's verified address with the firm's display name and the firm's `reply_to`.
 
 ## Deploy & migration workflow — do NOT run these yourself
 Production is a DigitalOcean droplet (167.71.93.90, user `dane`). The actual deploy always happens manually:
@@ -48,9 +57,10 @@ sudo systemctl start ryze-api     # or restart
 
 ## Conventions
 - **Route ordering matters:** static routes like `/me` must be declared before `/{id}` routes in the same router, or FastAPI treats `me` as a path param.
-- **Resend** only sends from the verified `ryze.ai` domain — `from_email` stays fixed, vary `reply_to` and display name instead.
+- **Resend** only sends from the verified `ryze.ai` domain — `from_email` stays fixed, vary `reply_to` and display name instead (see Tenant branding above).
 - CORS errors in the browser console almost always mean a server-side 500 — check `journalctl -u ryze-api`, not devtools, first.
 - `SKIP_FILES` in `audit_tenant_coverage.py` (webhooks, blog, contact, ai_parser) are intentionally public/infrastructure — don't try to tenant-scope them.
+- **PDF generation:** Playwright (`sync_playwright`) must run in plain `def` endpoints (not `async def`) so FastAPI executes it in a thread pool; use `wait_until="networkidle"` so Google Fonts load.
 
 ## How I want you to work
 - **Audit before you refactor.** For anything beyond a one-line fix: read the relevant files, list what you'd change and why, and don't write code until I confirm.
@@ -65,3 +75,4 @@ At the start of every session, read `context/current-feature.md` — it holds th
 - When you finish a meaningful chunk of work, add a dated line to its History section — earliest to latest.
 - When a task is fully done and verified, tell me — I'll move it to `context/CHANGELOG.md` and reset `current-feature.md` for the next task. Don't do that move yourself; flag it and wait for confirmation.
 - If I ask you to start something not reflected in `current-feature.md`, ask whether to update the file first before writing code, rather than silently working off-script.
+- **Keep this file honest:** when completed work makes any section of this CLAUDE.md inaccurate (a file moved, a "still needs X" item got done, a convention changed), flag it and propose the CLAUDE.md edit in the same session. Stale instructions here mislead every future session.
