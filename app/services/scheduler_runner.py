@@ -9,7 +9,6 @@ their own scheduler instance.
 """
 import logging
 import sys
-import os
 
 logging.basicConfig(
     level=logging.INFO,

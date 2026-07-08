@@ -1,5 +1,4 @@
 # app/api/auth.py - Updated to use Redis for OAuth temp storage
-from time import timezone
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -14,7 +13,6 @@ import json
 
 from app.core.database import get_db
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
-from app.schemas.oauth import OAuthUserComplete
 from app.services.auth import AuthService
 from app.core.security import (
     decode_access_token,

@@ -18,7 +18,7 @@ Verifies that tenant data walls are holding across all data surfaces:
 
 Prerequisites:
   • Server must be running  (uvicorn app.main:app)
-  • migration_ep16.sql must have been run
+  • alembic upgrade head must have been run (includes 11ae0fa76851_ep16_add_tenant_id_to_bookings_backfill_)
   • seed_full.py must have been run   (creates RYZE bookings)
   • seed_tenant_b.py must have been run
   • run_backfill.py should be run     (enables Test 9)
