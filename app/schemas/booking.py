@@ -3,10 +3,30 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, Literal
 from datetime import date, datetime
 
-
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
+
+
+class InstantMeetingCreate(BaseModel):
+    """
+    Admin creates a CONFIRMED meeting immediately and gets the Zoom link back
+    to share manually (e.g. paste into Upwork/Fiverr chat) — for contacts who
+    can't receive an email invite. No contact-facing email or SMS is sent.
+    Mirrors the accept flow minus the token gate and notifications.
+    """
+
+    invite_type: Literal["outbound_employer", "outbound_candidate"] = (
+        "outbound_candidate"
+    )
+    contact_name: str
+    contact_email: Optional[EmailStr] = None  # optional — the whole point
+    contact_phone: Optional[str] = None
+    company_name: Optional[str] = None
+    website_url: Optional[str] = None
+    date: date
+    time_slot: str
+    notes: Optional[str] = None
 
 
 class BookingCreate(BaseModel):

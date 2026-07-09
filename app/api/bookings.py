@@ -26,6 +26,7 @@ from app.schemas.booking import (
     BookingStatusUpdate,
     BookingResponse,
     RecruiterInviteCreate,
+    InstantMeetingCreate,
     CandidateBookingCreate,
 )
 
@@ -818,3 +819,118 @@ def _response_page(
   </div>
 </body>
 </html>"""
+
+
+# ---------------------------------------------------------------------------
+# Admin endpoint — instant confirmed meeting, no email (shareable link)
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/instant-meeting",
+    response_model=BookingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_instant_meeting(
+    payload: InstantMeetingCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    Create a confirmed meeting and return its Zoom join link immediately, with
+    NO invite email. For contacts who can't share an email (Upwork/Fiverr).
+
+    The returned booking has meeting_url populated, so the Zoom webhook will
+    match this booking on recording.completed and attach the transcript,
+    summary, next steps, and keywords — same as an accepted invite.
+    """
+    tenant_id = current_user.tenant_id or "ryze"
+    branding = get_branding(db, tenant_id)
+
+    # 1. Create the Zoom meeting FIRST — no meeting, no booking (avoid orphans).
+    try:
+        zoom = create_meeting(
+            topic=f"{branding.brand_name} — {payload.company_name or payload.contact_name}",
+            date=str(payload.date),
+            time_slot=payload.time_slot,
+        )
+    except Exception as e:
+        logger.error(f"[instant-meeting] Zoom creation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not create the Zoom meeting. Please try again.",
+        )
+
+    # 2. Persist a CONFIRMED booking with the meeting_url — this is the link
+    #    the webhook matches on to attach meeting notes.
+    booking = Booking(
+        booking_type=payload.invite_type,
+        tenant_id=tenant_id,
+        employer_id=None,
+        employer_name=payload.contact_name,
+        employer_email=payload.contact_email or "",  # column is NOT NULL
+        company_name=payload.company_name,
+        website_url=payload.website_url,
+        date=payload.date,
+        time_slot=payload.time_slot,
+        phone=payload.contact_phone,
+        notes=payload.notes,
+        status="confirmed",
+        response_token=None,
+        meeting_url=zoom["join_url"],
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+
+    logger.info(
+        f"[instant-meeting] Booking #{booking.id} confirmed with Zoom link "
+        f"(tenant={tenant_id}, meeting_id={zoom['meeting_id']})"
+    )
+
+    # 3. Best-effort Google Calendar event — only if we have a real email to invite.
+    if payload.contact_email:
+        try:
+            event_id = create_calendar_event(
+                company_name=booking.company_name or "",
+                employer_name=booking.employer_name,
+                employer_email=booking.employer_email,
+                date_str=str(booking.date),
+                time_slot=booking.time_slot,
+                meeting_url=booking.meeting_url,
+            )
+            if event_id:
+                booking.calendar_event_id = event_id
+                db.commit()
+                db.refresh(booking)
+        except Exception as e:
+            logger.error(
+                f"[instant-meeting] Calendar event failed for booking #{booking.id}: {e}"
+            )
+
+    # 4. EP17 — link a candidate stub so the transcript/notes attach to a
+    #    candidate record (matches the accept flow's behavior).
+    if booking.booking_type == "outbound_candidate":
+        try:
+            from app.services.candidate_stub import find_or_create_candidate_stub
+            from app.services.embedding_service import embed_candidate_background
+
+            candidate = find_or_create_candidate_stub(db, booking, tenant_id)
+            db.commit()
+            db.refresh(booking)
+            background_tasks.add_task(embed_candidate_background, candidate.id)
+            logger.info(
+                f"[instant-meeting] Candidate stub #{candidate.id} linked to booking #{booking.id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[instant-meeting] Candidate stub failed for booking #{booking.id}: {e}"
+            )
+
+    # 5. Queue AI pre-call brief for employer bookings with a website.
+    if booking.booking_type == "outbound_employer" and booking.website_url:
+        background_tasks.add_task(_generate_brief_background, booking.id)
+        logger.info(f"[instant-meeting] AI brief queued for booking #{booking.id}")
+
+    return booking
