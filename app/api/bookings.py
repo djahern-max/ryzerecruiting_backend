@@ -74,11 +74,21 @@ def _generate_brief_background(booking_id: int) -> None:
         branding = get_branding(db, booking.tenant_id)
         brief_dict = generate_pre_call_brief(booking.website_url, branding.brand_name)
 
-        profile = (
-            db.query(EmployerProfile)
-            .filter(EmployerProfile.website_url == booking.website_url)
-            .first()
-        )
+        # Prefer the stub already linked synchronously (find_or_create_employer_stub)
+        # so the brief enriches the same row future signups link to by email.
+        profile = None
+        if booking.employer_profile_id:
+            profile = (
+                db.query(EmployerProfile)
+                .filter(EmployerProfile.id == booking.employer_profile_id)
+                .first()
+            )
+        if not profile:
+            profile = (
+                db.query(EmployerProfile)
+                .filter(EmployerProfile.website_url == booking.website_url)
+                .first()
+            )
         if not profile:
             profile = EmployerProfile(
                 website_url=booking.website_url,
@@ -367,6 +377,21 @@ def confirm_invite(
             logger.error(
                 f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
             )
+    elif booking.booking_type == "outbound_employer":
+        try:
+            from app.services.employer_stub import find_or_create_employer_stub
+
+            tenant_id = booking.tenant_id or "ryze"
+            profile = find_or_create_employer_stub(db, booking, tenant_id)
+            db.commit()
+            logger.info(
+                f"Employer profile #{profile.id} linked to booking #{booking.id} "
+                f"via token accept"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to create employer stub for booking #{booking.id}: {e}"
+            )
 
     # 5. Queue AI brief for employer bookings
     if booking.booking_type == "outbound_employer" and booking.website_url:
@@ -492,6 +517,20 @@ def update_booking_status(
             except Exception as e:
                 logger.error(
                     f"[EP17] Failed to create candidate stub for booking #{booking.id}: {e}"
+                )
+        else:
+            try:
+                from app.services.employer_stub import find_or_create_employer_stub
+
+                profile = find_or_create_employer_stub(db, booking, tenant_id)
+                # Don't commit yet — let the main commit below handle everything
+                logger.info(
+                    f"Employer profile #{profile.id} linked to booking #{booking.id} "
+                    f"via admin confirm"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to create employer stub for booking #{booking.id}: {e}"
                 )
 
         # Load existing brief for confirmation email (employer bookings only)
@@ -909,8 +948,9 @@ def create_instant_meeting(
                 f"[instant-meeting] Calendar event failed for booking #{booking.id}: {e}"
             )
 
-    # 4. EP17 — link a candidate stub so the transcript/notes attach to a
-    #    candidate record (matches the accept flow's behavior).
+    # 4. Link a candidate or employer stub so the transcript/notes attach to
+    #    a real record (matches the accept flow's behavior), regardless of
+    #    whether a website or email was captured.
     if booking.booking_type == "outbound_candidate":
         try:
             from app.services.candidate_stub import find_or_create_candidate_stub
@@ -926,6 +966,20 @@ def create_instant_meeting(
         except Exception as e:
             logger.error(
                 f"[instant-meeting] Candidate stub failed for booking #{booking.id}: {e}"
+            )
+    elif booking.booking_type == "outbound_employer":
+        try:
+            from app.services.employer_stub import find_or_create_employer_stub
+
+            profile = find_or_create_employer_stub(db, booking, tenant_id)
+            db.commit()
+            db.refresh(booking)
+            logger.info(
+                f"[instant-meeting] Employer profile #{profile.id} linked to booking #{booking.id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[instant-meeting] Employer stub failed for booking #{booking.id}: {e}"
             )
 
     # 5. Queue AI pre-call brief for employer bookings with a website.
