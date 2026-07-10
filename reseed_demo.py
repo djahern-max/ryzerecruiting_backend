@@ -82,7 +82,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Config — the two demo contacts, keyed by email (the join key across records)
 # ---------------------------------------------------------------------------
-TENANT_ID = "greenpath_recruiting"  # literal tenant_id string from the live bookings
+TENANT_ID = "green_path_recruiting"  # literal tenant_id string from the live bookings
 
 # Speaker relabeling — Zoom attributed speech to the actors' real names.
 SPEAKER_MAP = {
