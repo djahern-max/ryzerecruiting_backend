@@ -38,6 +38,21 @@ from datetime import date
 
 sys.path.insert(0, os.getcwd())
 
+# Register EVERY model first so SQLAlchemy can resolve all FK targets during
+# flush (e.g. bookings.employer_id -> users). Importing only Booking/Candidate
+# leaves `users` unregistered and raises NoReferencedTableError on commit.
+import app.models.user  # noqa: F401
+import app.models.tenant  # noqa: F401
+import app.models.booking  # noqa: F401
+import app.models.candidate  # noqa: F401
+import app.models.employer_profile  # noqa: F401
+import app.models.job_order  # noqa: F401
+import app.models.chat_session  # noqa: F401
+import app.models.chat_message  # noqa: F401
+import app.models.contact  # noqa: F401
+import app.models.waitlist  # noqa: F401
+import app.models.webhook_log  # noqa: F401
+
 from app.core.database import SessionLocal
 from app.models.booking import Booking
 from app.models.candidate import Candidate
@@ -82,8 +97,11 @@ SPEAKER_MAP = {
 #                substring is dropped (use it to cut the glitchy setup chatter;
 #                paste the first real scripted line here once you've read the JSON)
 TRANSCRIPT_CHOICE = {
-    "renata.voss.design@gmail.com": {"take": "refetched", "trim_before": None},  # 15,381 take
-    "hello@greenscene.io":          {"take": "stored",    "trim_before": None},  # 8,678 take
+    "renata.voss.design@gmail.com": {
+        "take": "refetched",
+        "trim_before": None,
+    },  # 15,381 take
+    "hello@greenscene.io": {"take": "stored", "trim_before": None},  # 8,678 take
 }
 
 # Renata's structured profile, lifted from her resume so the candidate card is
@@ -119,9 +137,14 @@ CANDIDATE_ENRICH = {
             "OSHA 10-Hour Construction Safety"
         ),
         "ai_skills": [
-            "AutoCAD", "SketchUp", "Site grading & drainage design",
-            "Planting design", "Hardscape layout", "Construction documentation",
-            "Client presentations", "Budget & proposal development",
+            "AutoCAD",
+            "SketchUp",
+            "Site grading & drainage design",
+            "Planting design",
+            "Hardscape layout",
+            "Construction documentation",
+            "Client presentations",
+            "Budget & proposal development",
         ],
     }
 }
@@ -187,8 +210,12 @@ def purge_existing(db, meeting_url: str | None) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--snapshot", default="webhook_snapshot.json")
-    ap.add_argument("--no-summary", action="store_true", help="Skip the Claude summary step")
-    ap.add_argument("--date", default=None, help="Booking date YYYY-MM-DD (default: today)")
+    ap.add_argument(
+        "--no-summary", action="store_true", help="Skip the Claude summary step"
+    )
+    ap.add_argument(
+        "--date", default=None, help="Booking date YYYY-MM-DD (default: today)"
+    )
     args = ap.parse_args()
 
     with open(args.snapshot, encoding="utf-8") as fh:
@@ -208,12 +235,16 @@ def main() -> None:
             btype = b.get("booking_type")
             meeting_url = b.get("meeting_url")
 
-            choice = TRANSCRIPT_CHOICE.get(email, {"take": "longest", "trim_before": None})
+            choice = TRANSCRIPT_CHOICE.get(
+                email, {"take": "longest", "trim_before": None}
+            )
             raw = choose_transcript(meeting, choice["take"])
             transcript = clean_transcript(raw, choice["trim_before"])
 
             print(f"\n▶ {b.get('employer_name')} ({btype}) — {email}")
-            print(f"  take={choice['take']}  transcript_chars={len(transcript) if transcript else 0}")
+            print(
+                f"  take={choice['take']}  transcript_chars={len(transcript) if transcript else 0}"
+            )
 
             purge_existing(db, meeting_url)
 
@@ -223,10 +254,14 @@ def main() -> None:
                 employer_id=None,
                 employer_name=b.get("employer_name"),
                 employer_email=b.get("employer_email") or "",  # column is NOT NULL
-                company_name=(EMPLOYER_ENRICH.get(email, {}).get("company_name")
-                              or b.get("company_name")),
-                website_url=(EMPLOYER_ENRICH.get(email, {}).get("website_url")
-                             or b.get("website_url")),
+                company_name=(
+                    EMPLOYER_ENRICH.get(email, {}).get("company_name")
+                    or b.get("company_name")
+                ),
+                website_url=(
+                    EMPLOYER_ENRICH.get(email, {}).get("website_url")
+                    or b.get("website_url")
+                ),
                 date=booking_date,
                 time_slot=b.get("time_slot") or "10:00 AM",
                 phone=(CANDIDATE_ENRICH.get(email, {}).get("phone") or b.get("phone")),
@@ -249,8 +284,10 @@ def main() -> None:
                     db.refresh(booking)
                 else:  # fallback: create a minimal candidate directly
                     cand = Candidate(
-                        tenant_id=TENANT_ID, name=booking.employer_name,
-                        email=booking.employer_email or None, source="booking",
+                        tenant_id=TENANT_ID,
+                        name=booking.employer_name,
+                        email=booking.employer_email or None,
+                        source="booking",
                         booking_id=booking.id,
                     )
                     db.add(cand)
@@ -276,7 +313,9 @@ def main() -> None:
                         profile = find_or_create_employer_stub(db, booking, TENANT_ID)
                         db.commit()
                         db.refresh(booking)
-                        print(f"  employer profile #{getattr(profile, 'id', '?')} linked")
+                        print(
+                            f"  employer profile #{getattr(profile, 'id', '?')} linked"
+                        )
                     except Exception as e:
                         print(f"  employer stub skipped: {e}")
 
