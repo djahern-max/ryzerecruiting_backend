@@ -61,6 +61,7 @@ TOOL_STATUS_MESSAGES = {
     "match_candidates_to_job": "Matching candidates to role...",
     "search_meeting_notes": "Searching meeting notes...",
     "get_candidate_calls": "Looking up call history...",
+    "get_call_transcript": "Reading the call transcript...",
 }
 
 
@@ -76,7 +77,10 @@ TOOLS = [
             "Look up all calls and meetings associated with a specific candidate by name. "
             "Use when asked about a call with a candidate, what was discussed with a candidate, "
             "meeting notes for a candidate, or any question about a specific person's call history. "
-            "Returns bookings linked to the candidate including meeting summary, transcript, and call notes."
+            "Returns bookings linked to the candidate with the AI meeting summary, keywords, and "
+            "call notes. Each call carries a has_transcript flag — if the recruiter needs the "
+            "detail of what was actually said, follow up with get_call_transcript using that "
+            "call's id."
         ),
         "input_schema": {
             "type": "object",
@@ -267,6 +271,26 @@ TOOLS = [
                 },
             },
             "required": ["query"],
+        },
+    },
+    {
+        "name": "get_call_transcript",
+        "description": (
+            "Fetch the full transcript of one specific call, as speaker turns. "
+            "Only call this when the recruiter asks about the detail of what was "
+            "actually said — the meeting summary is usually enough. Requires a "
+            "booking_id from get_candidate_calls or get_meetings_by_date. "
+            "The transcript is raw source material: synthesize it, never quote it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "booking_id": {
+                    "type": "integer",
+                    "description": "The booking/call id whose transcript to fetch",
+                },
+            },
+            "required": ["booking_id"],
         },
     },
 ]
@@ -517,7 +541,7 @@ def tool_get_candidate_by_name(
                 "ai_career_level": c.ai_career_level,
                 "ai_certifications": c.ai_certifications,
                 "ai_years_experience": c.ai_years_experience,
-                "meeting_transcript": c.meeting_transcript,  # ADD THIS
+                "has_transcript": bool(c.meeting_transcript),
             }
         )
 
@@ -682,11 +706,37 @@ def tool_get_candidate_calls(
                 "call_notes": b.call_notes,
                 "meeting_summary": b.meeting_summary,
                 "meeting_next_steps": b.meeting_next_steps,
-                "meeting_transcript": b.meeting_transcript,
+                "meeting_keywords": b.meeting_keywords,
+                "has_transcript": bool(b.meeting_transcript),
             }
         )
 
     return {"meetings": results, "count": len(results)}
+
+
+def tool_get_call_transcript(
+    db: Session, booking_id: int, tenant_id: str = RYZE_TENANT
+) -> dict:
+    from app.services.transcript import parse_transcript
+
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+        .first()
+    )
+    if not booking:
+        return {"error": f"No call found with id {booking_id}."}
+
+    turns = parse_transcript(booking.meeting_transcript)
+    if not turns:
+        return {"error": "No transcript on record for that call."}
+
+    return {
+        "booking_id": booking.id,
+        "name": booking.employer_name,
+        "date": str(booking.date),
+        "turns": turns,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +773,9 @@ def make_tool_dispatch(tenant_id: str) -> dict:
         ),
         "get_candidate_calls": lambda db, inp: tool_get_candidate_calls(
             db, inp["name"], tenant_id
+        ),
+        "get_call_transcript": lambda db, inp: tool_get_call_transcript(
+            db, inp["booking_id"], tenant_id
         ),
     }
 

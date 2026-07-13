@@ -42,6 +42,7 @@ from app.services.notifications import (
     notify_invite_declined,
 )
 from app.services.zoom import create_meeting
+from app.services.transcript import parse_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +859,39 @@ def _response_page(
   </div>
 </body>
 </html>"""
+
+
+@router.get("/{booking_id}/transcript")
+def get_booking_transcript(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
+):
+    """Return a formatted call transcript for one booking, as speaker turns."""
+    booking = (
+        db.query(Booking)
+        .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+
+    turns = parse_transcript(booking.meeting_transcript)
+    if not turns:
+        raise HTTPException(
+            status_code=404, detail="No transcript on record for this call."
+        )
+
+    return {
+        "booking_id": booking.id,
+        "name": booking.employer_name,
+        "company_name": booking.company_name,
+        "date": str(booking.date),
+        "time_slot": booking.time_slot,
+        "meeting_summary": booking.meeting_summary,
+        "turns": turns,
+    }
 
 
 # ---------------------------------------------------------------------------
