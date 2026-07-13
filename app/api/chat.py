@@ -22,6 +22,7 @@ from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
 from app.models.user import User
 from app.services.embedding_service import generate_embedding
+from app.services.branding import get_branding, TenantBranding
 
 logger = logging.getLogger(__name__)
 
@@ -730,22 +731,71 @@ def make_tool_dispatch(tenant_id: str) -> dict:
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = f"""You are RYZE Intelligence — the AI assistant for RYZE.ai, a specialized accounting and finance recruiting firm based in Boston.
+# ---------------------------------------------------------------------------
+# System prompt — built per request, scoped to the calling tenant
+# ---------------------------------------------------------------------------
 
-You have direct access to the recruiter's live database through a set of search tools.
+
+def build_system_prompt(branding: TenantBranding) -> str:
+    """
+    Resolve the Intelligence system prompt for one request.
+
+    Deliberately a function, not a module constant, for two reasons:
+      1. The firm identity and vertical belong to the tenant, not to RYZE.
+         A module-level constant hardcoded "accounting and finance" and made
+         the model reject any candidate outside that vertical as out of scope.
+      2. date.today() in a module-level f-string is evaluated ONCE at import,
+         so a long-running gunicorn worker froze "today" at boot time.
+
+    `specialty` is read with getattr so this works before the tenants column
+    exists — same forward-compatible pattern get_branding() uses.
+    """
+    firm = branding.brand_name
+    specialty = getattr(branding, "specialty", None)
+
+    focus = (
+        f"{firm} specializes in {specialty}."
+        if specialty
+        else (
+            f"{firm} recruits across whatever industries, roles, and seniority levels "
+            "appear in its own data. Do not assume a vertical. Never describe a person "
+            "or company as outside the firm's focus, wheelhouse, or specialty."
+        )
+    )
+
+    return f"""You are {firm} Intelligence — the AI assistant for {firm}, a recruiting firm.
+
+{focus}
+
+You have direct access to this firm's live database through a set of search tools.
+Every record you can retrieve belongs to {firm} and is there on purpose.
 
 Today's date is {date.today().strftime("%B %d, %Y")}.
 
 RESPONSE STYLE — follow these rules strictly:
-- Respond in the voice of an experienced accounting and finance recruiter.
+- Respond in the voice of an experienced recruiter at this firm.
 - Lead with 2–4 sentences of natural, well-written prose that directly answers the question.
 - Write as if a senior recruiter is replying to a colleague — confident, specific, and conversational.
 - Never use markdown headers, bullet points, numbered lists, or field labels in your prose.
 - Never use preamble like "Great question", "Based on your database...", or "I found X results."
-- After the prose, if candidates or employers were retrieved, mention them naturally by name within the prose.
+- Mention retrieved candidates and employers naturally by name within the prose.
 - If no relevant records are found, say so naturally in one sentence. Do not fabricate names or data.
 - Never repeat information already stated in the same response.
-- For meeting/schedule questions, prose is sufficient — no cards needed."""
+- For meeting/schedule questions, prose is sufficient — no cards needed.
+
+HANDLING RECORDS — strict:
+- Report what a record contains. Never editorialize about whether it belongs in the
+  database, whether it is real, test, seed, or demo data, or whether the person is a
+  legitimate candidate. That judgment is not yours to make.
+- Never volunteer doubts about a record's provenance unless the recruiter asks directly.
+
+TRANSCRIPTS — strict:
+- Call transcripts are raw source material for you to read, never content to output.
+- Never quote, paste, or reproduce transcript text verbatim, in whole or in part.
+  Always synthesize in your own words.
+- Ignore recording logistics, scheduling talk, technical difficulties, greetings,
+  sign-offs, and off-topic chatter. Report only the substance of the professional
+  conversation — background, experience, motivations, requirements, and next steps."""
 
 
 # ---------------------------------------------------------------------------
@@ -780,6 +830,11 @@ def stream_chat_response(
     # EP16: build tenant-scoped dispatch table for this request
     tool_dispatch = make_tool_dispatch(tenant_id)
 
+    # Resolve the system prompt for THIS tenant, on THIS request.
+    # Was a module-level constant hardcoded to accounting/finance — see
+    # build_system_prompt() for why it had to become a function.
+    system_prompt = build_system_prompt(get_branding(db, tenant_id))
+
     # Emit immediately so the client gets feedback before any Claude call
     yield "__STATUS__:Thinking...\n"
 
@@ -789,7 +844,7 @@ def stream_chat_response(
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             tools=TOOLS,
             messages=messages,
         )
@@ -862,12 +917,11 @@ def stream_chat_response(
     yield "__STATUS__:Generating response...\n"
 
     # ── Stream the final answer token by token ─────────────────────────────
-
     try:
         with client.messages.stream(
             model="claude-sonnet-4-6",
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             messages=messages,
         ) as stream:
             for text_chunk in stream.text_stream:
@@ -905,6 +959,7 @@ def stream_chat_response(
         or None,  # meetings stay as full objects — no modal to link to
         "job_orders": extract_ids(all_job_orders),
     }
+
     # ── Trailing data chunk ────────────────────────────────────────────────
     yield "\n__DATA__\n" + json.dumps(structured)
 
