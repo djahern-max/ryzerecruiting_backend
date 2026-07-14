@@ -25,6 +25,7 @@ from app.core.deps import get_current_admin_user, RYZE_TENANT
 from app.api.auth import get_current_user as get_any_authenticated_user
 from app.models.user import User
 from app.models.candidate import Candidate
+from app.models.booking import Booking
 from app.models.job_order import JobOrder
 from app.schemas.candidate import (
     CandidateCreate,
@@ -341,6 +342,47 @@ def check_duplicate(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _attach_call_intelligence(
+    db: Session, candidate: Candidate, tenant_id: str
+) -> CandidateResponse:
+    """
+    Admin-only. Do NOT call this from GET /api/candidates/me — meeting_summary,
+    meeting_next_steps, and meeting_keywords are recruiter-owned (same boundary
+    CandidateSelfUpdate draws on write); a candidate should not see their own
+    call summary or the recruiter's internal follow-up plan.
+
+    Populates call_* on the response from the candidate's most recent linked
+    booking that has a completed meeting_summary. Query is on
+    Booking.candidate_id (forward reference, set on every link) rather than
+    candidate.booking_id (only set when the stub was newly created) —
+    see app/services/candidate_stub.py.
+    """
+    response = CandidateResponse.model_validate(candidate)
+
+    booking = (
+        db.query(Booking)
+        .filter(
+            Booking.candidate_id == candidate.id,
+            Booking.tenant_id == tenant_id,
+            Booking.meeting_summary.isnot(None),
+        )
+        .order_by(Booking.date.desc(), Booking.id.desc())
+        .first()
+    )
+    if not booking:
+        return response
+
+    return response.model_copy(
+        update={
+            "call_summary": booking.meeting_summary,
+            "call_next_steps": booking.meeting_next_steps,
+            "call_keywords": booking.meeting_keywords,
+            "call_date": booking.date,
+            "call_booking_id": booking.id,
+        }
+    )
+
+
 @router.get("/{candidate_id}", response_model=CandidateResponse)
 def get_candidate(
     candidate_id: int,
@@ -355,7 +397,7 @@ def get_candidate(
     )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found.")
-    return candidate
+    return _attach_call_intelligence(db, candidate, tenant_id)
 
 
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)

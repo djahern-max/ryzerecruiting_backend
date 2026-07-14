@@ -1,7 +1,7 @@
 # app/schemas/candidate.py
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime
+from datetime import date, datetime
 
 
 class CandidateCreate(BaseModel):
@@ -73,6 +73,13 @@ class CandidateResponse(BaseModel):
     meeting_transcript: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Call intelligence — derived, read-only, sourced from the linked booking.
+    # Admin-only: populated by get_candidate(), never by GET /api/candidates/me.
+    call_summary: Optional[str] = None
+    call_next_steps: Optional[str] = None
+    call_keywords: Optional[str] = None
+    call_date: Optional[date] = None
+    call_booking_id: Optional[int] = None
 
     class Config:
         from_attributes = True
