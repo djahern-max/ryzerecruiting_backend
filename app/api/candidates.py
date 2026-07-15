@@ -42,6 +42,7 @@ from app.services.embedding_service import (
     generate_embedding,
 )
 from app.services.ai_parser import parse_candidate_profile
+from app.services.branding import get_branding
 
 # ── PDF template: HTML/CSS + pure helpers live in their own module ────────────
 from app.api.candidate_pdf_template import (
@@ -719,6 +720,7 @@ def download_candidate_pdf(
         raise HTTPException(status_code=404, detail="Candidate not found.")
 
     today_str = datetime.utcnow().strftime("%B %d, %Y")
+    branding = get_branding(db, tenant_id)
 
     # ── Banner style ──────────────────────────────────────────────────────
     if candidate.banner_url:
@@ -853,6 +855,8 @@ def download_candidate_pdf(
         certs_section=certs_section,
         details_section=details_section,
         today=today_str,
+        footer_brand=pdf_e(branding.brand_name),
+        footer_tagline="Prepared by your recruiter",
     )
 
     # ── Render ────────────────────────────────────────────────────────────

@@ -440,9 +440,9 @@ PDF_HTML = """<!DOCTYPE html>
 <!-- FOOTER -->
 <div class="footer">
   <div class="footer-left">
-    <span class="footer-brand">RYZE.ai</span>
+    <span class="footer-brand">{footer_brand}</span>
     <span class="footer-sep"></span>
-    <span class="footer-tagline">Prepared by your RYZE recruiter</span>
+    <span class="footer-tagline">{footer_tagline}</span>
   </div>
   <div class="footer-date">Generated {today}</div>
 </div>
