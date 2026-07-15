@@ -73,6 +73,6 @@ sudo systemctl start ryze-api     # or restart
 At the start of every session, read `context/current-feature.md` — it holds the active task's Status, Goals, Related Files, and Verification steps. Work from it, don't start unrelated work without checking it first.
 
 - When you finish a meaningful chunk of work, add a dated line to its History section — earliest to latest.
-- When a task is fully done and verified, tell me — I'll move it to `context/CHANGELOG.md` and reset `current-feature.md` for the next task. Don't do that move yourself; flag it and wait for confirmation.
+- When a task is fully done and verified, tell me first and wait for my explicit confirmation. **Once I confirm**, archive it yourself: copy its final Goals summary + full History into `context/CHANGELOG.md` as a new entry at the **top**, matching the format of the existing entries, then reset `current-feature.md` — to the blank template, or to the next task's content if I've handed it to you in the same message. **Never archive unprompted or before I confirm.** The confirmation is the gate; nothing moves until I say the word.
 - If I ask you to start something not reflected in `current-feature.md`, ask whether to update the file first before writing code, rather than silently working off-script.
 - **Keep this file honest:** when completed work makes any section of this CLAUDE.md inaccurate (a file moved, a "still needs X" item got done, a convention changed), flag it and propose the CLAUDE.md edit in the same session. Stale instructions here mislead every future session.
