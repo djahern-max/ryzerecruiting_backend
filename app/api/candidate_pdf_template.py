@@ -368,19 +368,6 @@ body {{
     text-transform: uppercase;
 }}
 
-.footer-sep {{
-    display: inline-block;
-    width: 1px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.3);
-    margin: 0 10px;
-}}
-
-.footer-tagline {{
-    font-size: 8px;
-    color: rgba(255, 255, 255, 0.55);
-}}
-
 .footer-date {{
     font-size: 8px;
     color: rgba(255, 255, 255, 0.55);
@@ -441,8 +428,6 @@ PDF_HTML = """<!DOCTYPE html>
 <div class="footer">
   <div class="footer-left">
     <span class="footer-brand">{footer_brand}</span>
-    <span class="footer-sep"></span>
-    <span class="footer-tagline">{footer_tagline}</span>
   </div>
   <div class="footer-date">Generated {today}</div>
 </div>

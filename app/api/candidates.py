@@ -856,7 +856,6 @@ def download_candidate_pdf(
         details_section=details_section,
         today=today_str,
         footer_brand=pdf_e(branding.brand_name),
-        footer_tagline="Prepared by your recruiter",
     )
 
     # ── Render ────────────────────────────────────────────────────────────
