@@ -4,6 +4,17 @@ Completed features/fixes move here from `current-feature.md` once Status = Compl
 
 This file doubles as source material for the Build in Public series — each entry is close to script-ready: what the problem was, what changed, and the dated sequence of how it got fixed.
 
+## Tenant-branded candidate PDF footer (completed 2026-07-15)
+The candidate profile PDF footer was hardcoded to "RYZE.ai" / "Prepared by your RYZE recruiter" as literal strings in `PDF_HTML` — `.format()` never touched them, so every tenant's exported candidate PDF carried RYZE's brand regardless of who actually owned the candidate.
+
+Turned the footer brand into a `{footer_brand}` placeholder fed by the existing `get_branding(db, tenant_id)` resolver in `download_candidate_pdf`, so each tenant's PDF now carries their own `brand_name` (RYZE's own PDFs unchanged via the resolver's per-field fallback). The tagline ("Prepared by your recruiter") was added during implementation, then removed after user review as unnecessary noise — footer now shows only the brand name, with the now-unused `.footer-sep` / `.footer-tagline` CSS rules cleaned up alongside it.
+
+History:
+- 2026-07-15 — Task created. Origin: recording the Renata Voss demo on the `green_path_recruiting` tenant and noticed the downloaded candidate PDF footer reads "RYZE.ai" instead of the owning firm's brand. Root cause: the footer strings are hardcoded literals in `PDF_HTML`, predating the `get_branding` resolver. Also surfaced the "Added" row (`created_at`) as a possible product-noise item — parked as a separate decision, not touched.
+- 2026-07-15 — Audited footer block and `.format()` call, confirmed tenant/db plumbing already present (`_tenant(current_user)`), proposed plan with generic tagline wording, user confirmed.
+- 2026-07-15 — Implemented: `{footer_brand}`/`{footer_tagline}` placeholders in `candidate_pdf_template.py`, `get_branding(db, tenant_id)` call + kwargs in `candidates.py`. App-import check clean (96 routes). Committed as `72b6500`.
+- 2026-07-15 — User requested removal of the tagline as unnecessary. Removed `{footer_tagline}` placeholder and its kwarg, plus the now-orphaned `.footer-sep`/`.footer-tagline` CSS rules. Committed as `158645d`.
+
 ## Call intelligence on the candidate profile (completed 2026-07-15)
 When a Zoom call ends, `_generate_summary_from_transcript` writes `meeting_summary`, `meeting_next_steps`, and `meeting_keywords` to the **booking** record, but the webhook only ever copied `meeting_transcript` onto the **candidate** record. Result: a recruiter looking at `/admin/candidates/:id` saw a raw transcript and no summary — the AI output from the call was invisible anywhere except the Admin Dashboard booking row and the Intelligence chat.
 

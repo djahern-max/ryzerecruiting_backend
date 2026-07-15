@@ -1,4 +1,6 @@
 # app/services/auth.py - Authentication service with user_type support
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import Optional
@@ -28,11 +30,22 @@ class AuthService:
 
         hashed_password = get_password_hash(user.password)
 
+        # Lazy import: app.core.deps imports AuthService before defining
+        # RYZE_TENANT, so importing tenant_resolution (which imports
+        # RYZE_TENANT from deps) at module load time would cycle back here.
+        from app.services.tenant_resolution import resolve_signup_tenant
+
+        # user.user_type is PublicUserType (schema enum), compared inside
+        # resolve_signup_tenant against models.user.UserType — both mix in
+        # str so cross-class equality works by value. Intentional, not a bug.
+        tenant_id = resolve_signup_tenant(db, user.email, user.user_type)
+
         db_user = User(
             email=user.email,
             hashed_password=hashed_password,
             full_name=user.full_name,
             user_type=user.user_type,
+            tenant_id=tenant_id,
         )
 
         db.add(db_user)
@@ -129,6 +142,12 @@ class AuthService:
                 detail="Admin accounts cannot be created via OAuth.",
             )
 
+        # Lazy import — see create_user() above for why this can't be a
+        # module-level import.
+        from app.services.tenant_resolution import resolve_signup_tenant
+
+        tenant_id = resolve_signup_tenant(db, email, user_type)
+
         # Create new OAuth user
         new_user = User(
             email=email,
@@ -138,6 +157,8 @@ class AuthService:
             oauth_provider_id=oauth_provider_id,
             user_type=user_type,
             hashed_password=None,
+            tenant_id=tenant_id,
+            first_login_at=datetime.now(timezone.utc),
         )
         db.add(new_user)
         db.commit()

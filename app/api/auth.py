@@ -363,19 +363,17 @@ async def complete_oauth_signup(
             db.refresh(existing_user)
             user = existing_user
         else:
-            user = User(
+            # New-user creation delegates to AuthService.get_or_create_oauth_user
+            # so tenant stamping + first_login_at live in one place, not two.
+            user, _ = AuthService.get_or_create_oauth_user(
+                db=db,
                 email=oauth_data["email"],
-                full_name=oauth_data.get("full_name"),
                 oauth_provider=oauth_data["oauth_provider"],
                 oauth_provider_id=oauth_data["oauth_provider_id"],
+                full_name=oauth_data.get("full_name"),
                 avatar_url=oauth_data.get("avatar_url"),
                 user_type=user_type,
-                hashed_password=None,
-                first_login_at=datetime.now(timezone.utc),  # ← add this
             )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
             logger.info(f"✓ Created new OAuth user: {user.email}")
 
         delete_oauth_temp_data(temp_token)
