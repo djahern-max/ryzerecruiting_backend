@@ -50,6 +50,8 @@ class UserResponse(BaseModel):
     is_superuser: bool
     created_at: datetime
     updated_at: datetime
+    tenant_id: Optional[str] = None
+    tenant_brand_name: Optional[str] = None
 
     class Config:
         from_attributes = True

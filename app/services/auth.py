@@ -7,6 +7,7 @@ from typing import Optional
 from app.models.user import User, UserType
 from app.schemas.user import UserCreate, UserLogin
 from app.core.security import get_password_hash, verify_password, create_access_token
+from app.services.branding import get_branding
 
 
 class AuthService:
@@ -55,6 +56,24 @@ class AuthService:
         return db_user
 
     @staticmethod
+    def _auth_user_payload(db: Session, user: User) -> dict:
+        """
+        Shared shape for the `user` key returned by login and OAuth signup
+        completion, so the two sites can't drift. Resolves tenant branding
+        via the existing resolver (app/services/branding.py) — no new
+        branding logic here.
+        """
+        return {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "user_type": user.user_type.value,
+            "is_superuser": user.is_superuser,
+            "tenant_id": user.tenant_id,
+            "tenant_brand_name": get_branding(db, user.tenant_id).brand_name,
+        }
+
+    @staticmethod
     def authenticate_user(db: Session, user: UserLogin):
         db_user = db.query(User).filter(User.email == user.email).first()
 
@@ -70,13 +89,7 @@ class AuthService:
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user": {
-                "id": db_user.id,
-                "email": db_user.email,
-                "full_name": db_user.full_name,
-                "user_type": db_user.user_type.value,  # Will be "admin", "employer", or "candidate"
-                "is_superuser": db_user.is_superuser,
-            },
+            "user": AuthService._auth_user_payload(db, db_user),
         }
 
     @staticmethod

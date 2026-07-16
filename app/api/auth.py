@@ -21,6 +21,7 @@ from app.core.security import (
 from app.core.oauth import oauth
 from app.core.config import settings
 from app.models.user import User, UserType
+from app.services.branding import get_branding
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -60,7 +61,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     Register a new user.
     """
     try:
-        return AuthService.create_user(db, user)
+        db_user = AuthService.create_user(db, user)
+        return UserResponse.model_validate(db_user).model_copy(
+            update={"tenant_brand_name": get_branding(db, db_user.tenant_id).brand_name}
+        )
     except HTTPException as e:
         raise e
     except Exception as e:
@@ -120,7 +124,9 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    return user
+    return UserResponse.model_validate(user).model_copy(
+        update={"tenant_brand_name": get_branding(db, user.tenant_id).brand_name}
+    )
 
 
 # Google OAuth Routes
@@ -383,12 +389,8 @@ async def complete_oauth_signup(
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-                "user_type": user.user_type.value,
+                **AuthService._auth_user_payload(db, user),
                 "oauth_provider": user.oauth_provider,
-                "is_superuser": user.is_superuser,  # ← added
             },
         }
 
