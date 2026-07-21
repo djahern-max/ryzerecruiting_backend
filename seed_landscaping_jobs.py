@@ -15,10 +15,18 @@
 #   - Intelligence chat: "Show me matches for Renata Voss" surfaces it
 #
 # Usage (from the backend repo root, with your venv active):
-#     python seed_landscaping_jobs.py
+#     python seed_landscaping_jobs.py --tenant <tenant_id>
 #
-# To wipe job orders and re-seed (does NOT delete employer profiles):
-#     python seed_landscaping_jobs.py --reset
+# IMPORTANT: jobs are only visible to candidates in the SAME tenant.
+# Renata's user belongs to the Green Path Recruiting tenant, so seed with
+# that tenant id (run `python diagnose_intelligence.py` to see it), e.g.:
+#     python seed_landscaping_jobs.py --tenant greenpath
+#
+# Default tenant is 'ryze' if --tenant is omitted.
+#
+# To wipe that tenant's job orders and re-seed (never touches employer
+# profiles):
+#     python seed_landscaping_jobs.py --tenant greenpath --reset
 # ---------------------------------------------------------------------------
 
 import sys
@@ -28,7 +36,6 @@ from sqlalchemy import or_
 from app.core.database import SessionLocal
 from app.models.job_order import JobOrder, RYZE_TENANT
 from app.models.employer_profile import EmployerProfile
-from app.models.user import User  # noqa: F401 — registers `users` table for EmployerProfile.user_id FK
 from app.services.embedding_service import (
     embed_job_order_background,
     embed_employer_background,
@@ -131,7 +138,7 @@ OTHER_JOBS = [
 ]
 
 
-def get_or_create_greenscene(db):
+def get_or_create_greenscene(db, tenant: str):
     """
     Reuse the Greenscene EmployerProfile if the booking flow already created
     one (Walt's discovery call auto-creates a stub matched by email/website).
@@ -140,7 +147,7 @@ def get_or_create_greenscene(db):
     profile = (
         db.query(EmployerProfile)
         .filter(
-            EmployerProfile.tenant_id == RYZE_TENANT,
+            EmployerProfile.tenant_id == tenant,
             or_(
                 EmployerProfile.company_name.ilike("%greenscene%"),
                 EmployerProfile.website_url.ilike("%greenscene.io%"),
@@ -156,7 +163,7 @@ def get_or_create_greenscene(db):
         return profile, False
 
     profile = EmployerProfile(
-        tenant_id=RYZE_TENANT,
+        tenant_id=tenant,
         company_name=GREENSCENE_NAME,
         website_url=GREENSCENE_URL,
         ai_industry="Landscaping & Outdoor Design",
@@ -174,26 +181,38 @@ def get_or_create_greenscene(db):
     return profile, True
 
 
+def parse_tenant() -> str:
+    if "--tenant" in sys.argv:
+        i = sys.argv.index("--tenant")
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        print("ERROR: --tenant flag given without a value.")
+        sys.exit(1)
+    return RYZE_TENANT
+
+
 def main() -> None:
     reset = "--reset" in sys.argv
+    tenant = parse_tenant()
+    print(f"Seeding into tenant: {tenant!r}\n")
     db = SessionLocal()
     try:
         if reset:
             deleted = (
                 db.query(JobOrder)
-                .filter(JobOrder.tenant_id == RYZE_TENANT)
+                .filter(JobOrder.tenant_id == tenant)
                 .delete(synchronize_session=False)
             )
             db.commit()
-            print(f"Deleted {deleted} existing job order(s) for tenant '{RYZE_TENANT}'.")
+            print(f"Deleted {deleted} existing job order(s) for tenant '{tenant}'.")
 
         # ── Greenscene: employer profile + flagship job order ──────────────
-        greenscene, created = get_or_create_greenscene(db)
+        greenscene, created = get_or_create_greenscene(db, tenant)
 
         created_job_ids = []
 
         flagship = JobOrder(
-            tenant_id=RYZE_TENANT,
+            tenant_id=tenant,
             status="open",
             employer_profile_id=greenscene.id,
             **GREENSCENE_JOB,
@@ -209,7 +228,7 @@ def main() -> None:
 
         # ── Supporting job orders (no employer link) ───────────────────────
         for spec in OTHER_JOBS:
-            job = JobOrder(tenant_id=RYZE_TENANT, status="open", **spec)
+            job = JobOrder(tenant_id=tenant, status="open", **spec)
             db.add(job)
             db.commit()
             db.refresh(job)
