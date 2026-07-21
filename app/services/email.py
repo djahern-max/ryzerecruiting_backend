@@ -1,6 +1,7 @@
 # app/services/email.py
 import resend
 import logging
+import html
 from app.core.config import settings
 from app.services.branding import get_branding, TenantBranding
 
@@ -1434,3 +1435,91 @@ def send_welcome_invite_email(
         }
     )
     logger.info(f"Welcome email sent to {email} ({company_name})")
+
+
+# ---------------------------------------------------------------------------
+# Candidate "I'm Interested" — notify the firm's recruiter
+# ---------------------------------------------------------------------------
+
+
+def send_candidate_interest_notification(
+    candidate_name: str,
+    candidate_email: str,
+    candidate_title: str,
+    job_title: str,
+    job_location: str,
+    note: str,
+    branding: TenantBranding = None,
+) -> None:
+    """Notify the firm's admin inbox that a candidate expressed interest in
+    an open job order. reply_to is the candidate's own email so the
+    recruiter can hit reply and talk to them directly."""
+    branding = branding or get_branding(None, "ryze")
+
+    note_html = (
+        f"""
+        <tr>
+            <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Note</td>
+            <td style="padding: 8px 0; color: #111827; font-size: 14px;">{html.escape(note)}</td>
+        </tr>
+        """
+        if note
+        else ""
+    )
+
+    resend.Emails.send(
+        {
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
+            "reply_to": candidate_email,
+            "subject": f"Candidate Interest — {candidate_name} → {job_title}",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">A candidate is interested 🙋</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                Reply to this email to reach {candidate_name} directly.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Candidate</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{html.escape(candidate_name)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            <a href="mailto:{candidate_email}" style="color: #0a66c2;">{candidate_email}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Title</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{html.escape(candidate_title or "—")}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Job</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{html.escape(job_title)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Location</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{html.escape(job_location or "—")}</td>
+                    </tr>
+                    {note_html}
+                </table>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 {branding.brand_name}. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(
+        f"Candidate interest notification sent for {candidate_email} → {job_title}"
+    )

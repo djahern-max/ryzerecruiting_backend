@@ -16,6 +16,7 @@ from app.services.email import (
     send_candidate_booking_confirmation,
     send_candidate_confirmed_email,
     send_candidate_booking_admin_notify,
+    send_candidate_interest_notification,
 )
 
 logger = logging.getLogger(__name__)
@@ -487,3 +488,35 @@ def notify_candidate_confirmed(
             f"Zoom link is in your email. Reply STOP to opt out."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Candidate — expressed interest in a job order (email only, no SMS)
+# ---------------------------------------------------------------------------
+
+
+def notify_candidate_interest(
+    candidate_name: str,
+    candidate_email: str,
+    candidate_title: str,
+    job_title: str,
+    job_location: str,
+    note: str = "",
+    tenant_id: str = "ryze",
+    db: Session = None,
+) -> None:
+    """Notify the firm's admin inbox that a candidate expressed interest in
+    a job order. Email only — SMS is out of scope (Twilio A2P pending)."""
+    branding = get_branding(db, tenant_id)
+    try:
+        send_candidate_interest_notification(
+            candidate_name=candidate_name,
+            candidate_email=candidate_email,
+            candidate_title=candidate_title,
+            job_title=job_title,
+            job_location=job_location,
+            note=note,
+            branding=branding,
+        )
+    except Exception as e:
+        logger.error(f"notify_candidate_interest — email failed: {e}")
