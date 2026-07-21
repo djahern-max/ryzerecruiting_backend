@@ -5,14 +5,18 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, s
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from fastapi import Response
 
 from app.core.database import get_db
 from app.models.job_order import JobOrder
 from app.models.candidate import Candidate
+from app.models.job_interest import JobInterest
 from app.core.deps import get_current_admin_user
 from app.core.deps import get_current_user
+from app.api.auth import get_current_user as get_any_authenticated_user
+from app.api.candidates import _resolve_candidate_for_user
 from app.models.user import User, UserType
 from app.schemas.job_order import (
     JobOrderCreate,
@@ -21,9 +25,11 @@ from app.schemas.job_order import (
     JobOrderParseRequest,
     JobOrderParseResponse,
 )
+from app.schemas.job_interest import JobInterestCreate, JobInterestResponse
 from app.services.ai_parser import parse_job_description
 from app.services.embedding_service import embed_job_order_background
 from app.services.matching import compute_match_score
+from app.services.notifications import notify_candidate_interest
 from app.models.employer_profile import EmployerProfile
 from app.api.job_order_pdf_template import (
     PDF_STYLE,
@@ -202,6 +208,85 @@ def get_candidate_matches_for_job(
         f"(top score: {results[0].match_score if results else 'n/a'})"
     )
     return results
+
+
+# ---------------------------------------------------------------------------
+# Candidate-facing — express interest in an open job order
+# IMPORTANT: defined before /{job_order_id} so FastAPI doesn't swallow it.
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/{job_order_id}/express-interest",
+    response_model=JobInterestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def express_interest_in_job_order(
+    job_order_id: int,
+    payload: JobInterestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_any_authenticated_user),
+):
+    """
+    Let an authenticated candidate express interest in an open job order,
+    with an optional short note. Notifies the firm's recruiter by email
+    (reply_to = candidate's own email) — no SMS, no employer-facing surface.
+    """
+    candidate = _resolve_candidate_for_user(db, current_user)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="No candidate profile found.")
+
+    tenant_id = current_user.tenant_id or "ryze"
+
+    job = (
+        db.query(JobOrder)
+        .filter(
+            JobOrder.id == job_order_id,
+            JobOrder.tenant_id == tenant_id,
+            JobOrder.status == "open",
+        )
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job order not found.")
+
+    existing = (
+        db.query(JobInterest)
+        .filter(
+            JobInterest.job_order_id == job.id,
+            JobInterest.candidate_id == candidate.id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Interest already expressed.")
+
+    interest = JobInterest(
+        tenant_id=tenant_id,
+        job_order_id=job.id,
+        candidate_id=candidate.id,
+        note=payload.note,
+    )
+    db.add(interest)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Interest already expressed.")
+    db.refresh(interest)
+
+    notify_candidate_interest(
+        candidate_name=candidate.name,
+        candidate_email=candidate.email,
+        candidate_title=candidate.current_title,
+        job_title=job.title,
+        job_location=job.location,
+        note=payload.note or "",
+        tenant_id=tenant_id,
+        db=db,
+    )
+
+    return interest
 
 
 # ---------------------------------------------------------------------------

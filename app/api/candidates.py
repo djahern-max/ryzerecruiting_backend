@@ -28,6 +28,7 @@ from app.models.user import User
 from app.models.candidate import Candidate
 from app.models.booking import Booking
 from app.models.job_order import JobOrder
+from app.models.job_interest import JobInterest
 from app.schemas.candidate import (
     CandidateCreate,
     CandidateUpdate,
@@ -37,6 +38,7 @@ from app.schemas.candidate import (
     CandidateSelfUpdate,
 )
 from app.schemas.job_order import JobMatchResult
+from app.schemas.job_interest import JobInterestResponse
 from app.services.embedding_service import (
     embed_candidate_background,
     build_candidate_text,
@@ -203,6 +205,26 @@ def get_my_job_matches(
         for cid in ids
         if cid in job_map
     ]
+
+
+@router.get("/me/interests", response_model=List[JobInterestResponse])
+def get_my_job_interests(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_any_authenticated_user),
+):
+    candidate = _resolve_candidate_for_user(db, current_user)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="No candidate profile found.")
+
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+    return (
+        db.query(JobInterest)
+        .filter(
+            JobInterest.candidate_id == candidate.id,
+            JobInterest.tenant_id == tenant_id,
+        )
+        .all()
+    )
 
 
 @router.patch("/me", response_model=CandidateResponse)
