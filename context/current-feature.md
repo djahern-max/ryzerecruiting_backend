@@ -2,7 +2,7 @@
 
 ## Feature: Candidate "I'm Interested" — quick email note to recruiter (backend)
 
-**Status:** Not Started
+**Status:** Implemented — awaiting migration on server + manual verification
 **Repo:** ryzerecruiting_backend
 **Depends on:** Nothing new. Uses existing Resend + `get_branding()` (app/services/branding.py) and the `_resolve_candidate_for_user` pattern in app/api/candidates.py.
 
@@ -110,3 +110,28 @@ REVIEW/HARDCODED lines.
   (matching job_order.py's style instead of `server_default=func.now()`),
   and added an IntegrityError→409 fallback around the create/commit for the
   double-click race, on top of the pre-check.
+- 2026-07-21: Commit 1 (`f93926f`) — `app/models/job_interest.py` (JobInterest,
+  UniqueConstraint on job_order_id+candidate_id, created_at via
+  `default=datetime.utcnow`), added to `alembic/env.py`, migration generated
+  locally (`alembic/versions/ad0e898204e5_add_job_interests_table.py`) —
+  autogenerate detected only the new table, no unrelated diffs. Migration
+  NOT run anywhere; commands to follow separately (stop `ryze-api` first).
+- 2026-07-21: Commit 2 (`510ebdf`) — `send_candidate_interest_notification()`
+  in `app/services/email.py` (reply_to=candidate email, note HTML-escaped
+  via `html.escape`) and `notify_candidate_interest()` wrapper in
+  `app/services/notifications.py` (email-only, resolves `get_branding`,
+  try/except like every other notify_*). Inert — nothing called it yet.
+  App-import check clean.
+- 2026-07-21: Commit 3 (`24b5708`) — wired
+  `POST /api/job-orders/{id}/express-interest` (tenant+status-scoped job
+  lookup, `_resolve_candidate_for_user` imported from candidates.py,
+  `get_any_authenticated_user` imported with the exact line candidates.py
+  uses, pre-check + IntegrityError fallback for 409, synchronous
+  `notify_candidate_interest` call) and
+  `GET /api/candidates/me/interests` (new `app/schemas/job_interest.py`).
+  App-import check clean (98 routes, up from 96).
+  `audit_tenant_coverage.py`: both new endpoints SAFE; no new
+  REVIEW/HARDCODED lines (2 pre-existing REVIEW lines unchanged —
+  candidates.py `/me/photo`, `/me/banner`, unrelated to this work). Not yet
+  manually verified against the Verification checklist (migration not run,
+  Renata/Greenscene end-to-end flow not yet exercised).
