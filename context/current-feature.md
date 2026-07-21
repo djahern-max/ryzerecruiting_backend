@@ -1,137 +1,67 @@
 # current-feature.md
 
-## Feature: Candidate "I'm Interested" — quick email note to recruiter (backend)
+## Feature: notifications@ sender + lock down from_email (backend)
 
-**Status:** Implemented — awaiting migration on server + manual verification
+**Status:** Not Started
 **Repo:** ryzerecruiting_backend
-**Depends on:** Nothing new. Uses existing Resend + `get_branding()` (app/services/branding.py) and the `_resolve_candidate_for_user` pattern in app/api/candidates.py.
+**Depends on:** notifications@ryze.ai exists as a forwarding alias in the
+ryze.ai mail setup (I'm creating it). ryze.ai is already Resend-verified, so
+any local-part sends without re-verification.
 
 ### Goal
-Let an authenticated candidate express interest in an open job order with one
-click plus an optional short note. The firm's recruiter (branding.admin_email
-for the candidate's tenant) receives a branded Resend email with reply_to set
-to the candidate's own email so they can reply directly. Email only — NO SMS
-(Twilio A2P still pending approval; do not touch notifications SMS paths).
+Outbound mail should come from a neutral infrastructure address
+(notifications@ryze.ai) instead of dane@ryze.ai, WITHOUT moving ryze-tenant
+reply-to/support routing away from my real inbox — and tenant admins should
+no longer be able to set from_email at all (an unverified domain there kills
+all their outbound mail; we just hit this live with Green Path).
 
-Three concerns, three commits. Audited 2026-07-21 — plan confirmed with
-adjustments (see History). Email fires SYNCHRONOUSLY in the request (not
-BackgroundTasks) — matches every existing `notify_*` call in this codebase
-(bookings.py); only slow AI calls (embeddings, briefs) use BackgroundTasks
-here. Commit order is model→email→endpoints so every commit is runnable
-standalone.
+Two concerns, two commits:
 
-### Concern 1 — model + migration → commit 1
-New `app/models/job_interest.py`:
-- `JobInterest`: id, tenant_id (String(100), default RYZE_TENANT, indexed),
-  job_order_id FK → job_orders, candidate_id FK → candidates,
-  note (Text, nullable), created_at (default=datetime.utcnow, matching
-  job_order.py's style, not server_default=func.now()).
-- `UniqueConstraint("job_order_id", "candidate_id")` — one interest per
-  candidate per role, dedupe at the DB level.
-- Add the model import to `alembic/env.py` or autogenerate won't see it.
-- Migration commands come to me — remember to stop `ryze-api` first.
+### Concern 1 — split sender config from reply config → commit 1
+- `app/core/config.py`: add `REPLY_TO_EMAIL` setting. Default it to
+  FROM_EMAIL's current value pattern so a missing env var changes nothing.
+- `app/services/branding.py` `_ryze_defaults`: `from_email` stays
+  `settings.FROM_EMAIL`; `reply_to_email` and `support_email` become
+  `settings.REPLY_TO_EMAIL`. `admin_email` stays `settings.ADMIN_EMAIL`.
+- No change to per-tenant override resolution (`pick(...)`) — tenant
+  overrides still win field-by-field.
+- Env change is mine to run: give me the exact lines for the server env file
+  (`FROM_EMAIL=notifications@ryze.ai`, `REPLY_TO_EMAIL=dane@ryze.ai`) and
+  the restart command. Do not run them.
 
-### Concern 2 — email → commit 2
-New function in `app/services/email.py` following the
-`send_admin_notification` pattern:
-- `send_candidate_interest_notification(candidate_name, candidate_email,
-  candidate_title, job_title, job_location, note, branding)`.
-- `to: [branding.admin_email]`, `reply_to: candidate_email` (so the recruiter
-  hits reply and talks to the candidate directly).
-- Subject: `Candidate Interest — {candidate_name} → {job_title}`.
-- HTML-escape the candidate note before interpolating into the email body.
-- Wrapper `notify_candidate_interest(...)` in `app/services/notifications.py`
-  (email-only, no `_send_sms` call) that resolves `get_branding(db,
-  tenant_id)`. Inert but importable — nothing calls it yet in this commit.
-
-### Concern 3 — endpoints → commit 3
-In `app/api/job_orders.py`:
-- `POST /api/job-orders/{job_order_id}/express-interest` —
-  auth via `get_any_authenticated_user`, imported with the EXACT line
-  candidates.py uses (`from app.api.auth import get_current_user as
-  get_any_authenticated_user`) — confirmed this is a distinct function
-  object from the `app.core.deps.get_current_user` job_orders.py already
-  imports for `/open` and `/candidate-matches`; add the new import
-  alongside, don't touch the existing one.
-  Resolve candidate via `_resolve_candidate_for_user`, imported from
-  `app.api.candidates` (confirmed no circular import: candidates.py only
-  imports the JobOrder model/schema, never the job_orders router module).
-  404 if no candidate profile.
-  Job lookup MUST filter `tenant_id == current_user.tenant_id or "ryze"`
-  AND `status == "open"` — the tenant filter is the isolation guarantee.
-  Pre-check 409 if a JobInterest already exists for (job, candidate), AND
-  wrap the create+commit in try/except IntegrityError → rollback → 409, so
-  a double-click race on the unique constraint still returns 409, not 500.
-  Payload: `{ note: Optional[str] }`, max_length=500 via Pydantic
-  (`app/schemas/job_interest.py`: JobInterestCreate, JobInterestResponse).
-  On success: persist JobInterest, call `notify_candidate_interest(...)`
-  synchronously (request's db session), return 201.
-In `app/api/candidates.py`:
-- `GET /api/candidates/me/interests` → list of `{ job_order_id, created_at }`
-  for the resolved candidate (frontend uses this to render "Interest sent"
-  state on load). Declare in the /me block, before `/{id}` routes per the
-  route-ordering rule.
-Run `python audit_tenant_coverage.py` after — paste me any new
-REVIEW/HARDCODED lines.
+### Concern 2 — remove from_email from tenant settings → commit 2
+- `app/api/settings.py`: remove `from_email` from `TenantBrandingUpdate`.
+  IMPORTANT deploy-safety: the deployed frontend sends all fields including
+  from_email, and the model has extra="forbid" — a hard removal 422s every
+  branding save until the frontend ships. So: accept-and-ignore it during
+  transition (keep the field on the update model but skip it in the
+  setattr loop, with a comment saying it's removable after the frontend
+  deploy), OR flip extra to "ignore" for this model. Propose which in the
+  audit; either is fine, silent-drop is not allowed to persist the value.
+- Remove `from_email` from `TenantBrandingResponse` and
+  `_build_tenant_branding_response`.
+- Data cleanup command for me to run: `UPDATE tenants SET from_email = NULL;`
+  (Green Path's is already cleared; this catches future rows seeded before
+  the frontend ships).
+- `get_branding` keeps reading `tenant.from_email` — harmless with the
+  column NULL everywhere, and preserves the future verified-domain model.
+  Do NOT drop the column or write a migration.
 
 ### Explicitly OUT of scope
-- SMS (Twilio pending).
-- Any admin UI for viewing interests — the email + DB rows are enough for now.
-- Employer-facing anything. Candidate contact info must not leak toward
-  employers; this email goes to the firm's admin_email only.
-- Rate limiting beyond the unique constraint.
+- No migration, no model changes.
+- No changes to email.py senders or notifications.py.
+- The from_email column stays in the DB for the future per-domain model.
 
 ## Verification
-1. `python audit_tenant_coverage.py` — no new REVIEW/HARDCODED lines.
-2. As Renata (tenant green_path_recruiting): POST express-interest on the
-   Greenscene job → 201, JobInterest row has tenant_id
-   'green_path_recruiting', email arrives at Green Path's admin_email
-   (NOT RYZE's) with reply_to = Renata's email.
-3. Second POST on the same job → 409.
-4. POST against a job order belonging to a different tenant → 404.
-5. GET /api/candidates/me/interests returns the Greenscene job_order_id.
+1. `python audit_tenant_coverage.py` — no new lines.
+2. After env change + restart: trigger a candidate-interest email as Renata
+   (clear her job_interests row first) → arrives at
+   dane@greenpathrecruiting.com FROM "Green Path Recruiting
+   <notifications@ryze.ai>", reply-to renata.voss.design@gmail.com.
+3. PATCH /api/settings/tenant with a from_email in the payload → succeeds
+   (transition tolerance) but the DB value stays NULL.
+4. A ryze-tenant booking email's reply-to still resolves to dane@ryze.ai
+   (REPLY_TO_EMAIL), not notifications@.
 
 ## History
 <!-- Keep this updated. Earliest to latest -->
-- 2026-07-21: Audited plan against the actual codebase before writing code.
-  Confirmed `_resolve_candidate_for_user` is safely importable from
-  `app.api.candidates` into `app.api.job_orders` (no circular import —
-  candidates.py never imports the job_orders router module). Confirmed
-  candidates.py's `get_any_authenticated_user` is `app.api.auth.get_current_user`
-  under an alias, a distinct function object from the
-  `app.core.deps.get_current_user` job_orders.py already imports — the new
-  endpoint needs its own mirrored import, not reuse of the existing one.
-  Found the codebase's actual email-dispatch convention diverges from the
-  original spec: every existing `notify_*` call (bookings.py) fires
-  synchronously in-request; only slow AI calls (embeddings, AI briefs) use
-  BackgroundTasks. User confirmed: go synchronous, not BackgroundTasks.
-  User also reordered commits (model → email → endpoints, so each commit is
-  independently runnable), fixed `created_at` to `default=datetime.utcnow`
-  (matching job_order.py's style instead of `server_default=func.now()`),
-  and added an IntegrityError→409 fallback around the create/commit for the
-  double-click race, on top of the pre-check.
-- 2026-07-21: Commit 1 (`f93926f`) — `app/models/job_interest.py` (JobInterest,
-  UniqueConstraint on job_order_id+candidate_id, created_at via
-  `default=datetime.utcnow`), added to `alembic/env.py`, migration generated
-  locally (`alembic/versions/ad0e898204e5_add_job_interests_table.py`) —
-  autogenerate detected only the new table, no unrelated diffs. Migration
-  NOT run anywhere; commands to follow separately (stop `ryze-api` first).
-- 2026-07-21: Commit 2 (`510ebdf`) — `send_candidate_interest_notification()`
-  in `app/services/email.py` (reply_to=candidate email, note HTML-escaped
-  via `html.escape`) and `notify_candidate_interest()` wrapper in
-  `app/services/notifications.py` (email-only, resolves `get_branding`,
-  try/except like every other notify_*). Inert — nothing called it yet.
-  App-import check clean.
-- 2026-07-21: Commit 3 (`24b5708`) — wired
-  `POST /api/job-orders/{id}/express-interest` (tenant+status-scoped job
-  lookup, `_resolve_candidate_for_user` imported from candidates.py,
-  `get_any_authenticated_user` imported with the exact line candidates.py
-  uses, pre-check + IntegrityError fallback for 409, synchronous
-  `notify_candidate_interest` call) and
-  `GET /api/candidates/me/interests` (new `app/schemas/job_interest.py`).
-  App-import check clean (98 routes, up from 96).
-  `audit_tenant_coverage.py`: both new endpoints SAFE; no new
-  REVIEW/HARDCODED lines (2 pre-existing REVIEW lines unchanged —
-  candidates.py `/me/photo`, `/me/banner`, unrelated to this work). Not yet
-  manually verified against the Verification checklist (migration not run,
-  Renata/Greenscene end-to-end flow not yet exercised).
