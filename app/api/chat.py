@@ -62,6 +62,7 @@ TOOL_STATUS_MESSAGES = {
     "search_meeting_notes": "Searching meeting notes...",
     "get_candidate_calls": "Looking up call history...",
     "get_call_transcript": "Reading the call transcript...",
+    "match_jobs_to_candidate": "Matching open roles to candidate...",
 }
 
 
@@ -291,6 +292,31 @@ TOOLS = [
                 },
             },
             "required": ["booking_id"],
+        },
+    },
+    {
+        "name": "match_jobs_to_candidate",
+        "description": (
+            "Find open job orders ranked against one specific candidate's stored "
+            "profile embedding. Use for queries like 'show me matches for <name>', "
+            "'what roles fit <name>', or 'which open jobs should we pitch to <name>'. "
+            "This ranks jobs for a named candidate — for the reverse (ranking "
+            "candidates for a job), use match_candidates_to_job instead."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The candidate's name or partial name",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 5)",
+                    "default": 5,
+                },
+            },
+            "required": ["name"],
         },
     },
 ]
@@ -739,6 +765,95 @@ def tool_get_call_transcript(
     }
 
 
+def tool_match_jobs_to_candidate(
+    db: Session, name: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+) -> dict:
+    """
+    Rank open job orders against ONE candidate's stored profile embedding.
+    Deliberately inline rather than shared with app.api.candidates.get_my_job_matches —
+    see the deferred-refactor note in context/current-feature.md history.
+    """
+    candidates = (
+        db.query(Candidate)
+        .filter(Candidate.name.ilike(f"%{name}%"), Candidate.tenant_id == tenant_id)
+        .order_by(Candidate.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    if not candidates:
+        return {"error": f"No candidate found matching '{name}'."}
+
+    candidate = candidates[0]
+
+    note = None
+    if len(candidates) > 1:
+        note = (
+            f"'{name}' matched {len(candidates)} candidates; used {candidate.name} "
+            f"(id {candidate.id}), the most recently added match."
+        )
+
+    if candidate.embedding is None:
+        return {
+            "error": (
+                f"{candidate.name} does not have a profile embedding yet, "
+                "so job matches can't be ranked for them."
+            )
+        }
+
+    vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
+    sql = text(f"""
+        SELECT id, (embedding <-> '{vector_str}'::vector) AS distance
+        FROM job_orders
+        WHERE tenant_id = :tenant
+        AND status = 'open'
+        AND embedding IS NOT NULL
+        ORDER BY distance
+        LIMIT :lim
+        """)
+    try:
+        rows = db.execute(sql, {"tenant": tenant_id, "lim": limit}).fetchall()
+    except Exception:
+        db.rollback()
+        return {"error": "Job matching failed due to a database error."}
+
+    ids = [r[0] for r in rows]
+    distances = {r[0]: float(r[1]) for r in rows}
+    jobs = (
+        db.query(JobOrder)
+        .filter(JobOrder.id.in_(ids), JobOrder.tenant_id == tenant_id)
+        .all()
+    )
+    job_map = {j.id: j for j in jobs}
+
+    results = []
+    for jid in ids:
+        if jid not in job_map:
+            continue
+        j = job_map[jid]
+        results.append(
+            {
+                "id": j.id,
+                "title": j.title,
+                "location": j.location,
+                "salary_min": j.salary_min,
+                "salary_max": j.salary_max,
+                "requirements": j.requirements,
+                "status": j.status,
+                "match_score": round(max(0.0, 1.0 - distances[jid]), 4),
+            }
+        )
+
+    result = {
+        "job_orders": results,
+        "count": len(results),
+        "candidate_name": candidate.name,
+    }
+    if note:
+        result["note"] = note
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Tool dispatch — EP16: tenant_id threaded through every tool call
 # ---------------------------------------------------------------------------
@@ -776,6 +891,9 @@ def make_tool_dispatch(tenant_id: str) -> dict:
         ),
         "get_call_transcript": lambda db, inp: tool_get_call_transcript(
             db, inp["booking_id"], tenant_id
+        ),
+        "match_jobs_to_candidate": lambda db, inp: tool_match_jobs_to_candidate(
+            db, inp["name"], inp.get("limit", 5), tenant_id
         ),
     }
 
