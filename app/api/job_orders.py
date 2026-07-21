@@ -23,6 +23,7 @@ from app.schemas.job_order import (
 )
 from app.services.ai_parser import parse_job_description
 from app.services.embedding_service import embed_job_order_background
+from app.services.matching import compute_match_score
 from app.models.employer_profile import EmployerProfile
 from app.api.job_order_pdf_template import (
     PDF_STYLE,
@@ -192,7 +193,7 @@ def get_candidate_matches_for_job(
                 ai_career_level=c.ai_career_level,
                 ai_certifications=c.ai_certifications,
                 ai_years_experience=c.ai_years_experience,
-                match_score=round(max(0.0, 1.0 - distances[cid]), 4),
+                match_score=compute_match_score(distances[cid]),
             )
         )
 

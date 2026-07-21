@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.services.spaces import upload_file, make_unique_filename, delete_file
+from app.services.matching import compute_match_score
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_admin_user, RYZE_TENANT
@@ -162,7 +163,7 @@ def get_my_job_matches(
     try:
         vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
         sql = text(f"""
-            SELECT id, (embedding <-> '{vector_str}'::vector) AS distance
+            SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
             FROM job_orders
             WHERE tenant_id = :tenant
             AND status = 'open'
@@ -197,7 +198,7 @@ def get_my_job_matches(
             requirements=job_map[cid].requirements,
             status=job_map[cid].status,
             employer_profile_id=job_map[cid].employer_profile_id,
-            match_score=round(max(0.0, 1.0 - distances[cid]), 4),
+            match_score=compute_match_score(distances[cid]),
         )
         for cid in ids
         if cid in job_map

@@ -1,137 +1,98 @@
 # Current Feature
 
-Intelligence chat tool: `match_jobs_to_candidate` (candidate → jobs matching)
+Match score calibration & distance-operator unification
 
 ## Status
-Not Started
+Implemented — awaiting manual verification (dashboard, chat, employer side per Verification steps below)
 
 ## Goals
-Add a new tool to RYZE Intelligence (`app/api/chat.py`) so a recruiter can ask
-"Show me matches for Renata Voss" and get open job orders ranked by the
-candidate's **stored profile embedding** — the same pgvector math as
-`GET /api/candidates/me/job-matches` — not a text-query search.
+Match *ranking* is correct everywhere, but displayed scores are misleadingly
+low on the candidate side (a strong match shows 12%). Root cause: candidate-
+side paths compute `score = 1 - L2_distance` (`<->`), and L2 between unit-
+norm OpenAI embeddings runs ~0.85-1.0 even for strong matches, crushing all
+scores toward 0. The employer-side path uses cosine (`<=>`), so the two
+sides also disagree on the same pairing. This task unifies the operator and
+calibrates the displayed score. This implements the deferred refactor logged
+in CHANGELOG/History (shared helper + `<->`/`<=>` unification).
 
 Requirements:
-1. New tool schema `match_jobs_to_candidate` in the `TOOLS` list.
-   - Inputs: `name` (required, candidate name or partial name), `limit`
-     (optional, default 5).
-   - Description should tell Claude to use it for queries like "show me
-     matches for <name>", "what roles fit <name>", "which open jobs should
-     we pitch to <name>".
-2. New tool function `tool_match_jobs_to_candidate(db, name, limit, tenant_id)`:
-   - Look up candidate via `Candidate.name.ilike(f"%{name}%")` scoped to
-     `tenant_id` (mirror `tool_get_candidate_by_name`).
-   - If no candidate: return `{"error": "No candidate found matching '<name>'."}`.
-   - If `candidate.embedding is None`: return an error saying the candidate
-     has no embedding yet.
-   - Otherwise run the same raw SQL pattern as `get_my_job_matches` in
-     `app/api/candidates.py`: `embedding <-> '<vector>'::vector` distance
-     against `job_orders` WHERE `tenant_id = :tenant AND status = 'open'
-     AND embedding IS NOT NULL`, ordered by distance, limited.
-   - Return a dict with key **`"job_orders"`** (list of dicts: id, title,
-     location, salary_min, salary_max, requirements, status, match_score
-     where match_score = `round(max(0.0, 1.0 - distance), 4)`), plus
-     `"count"` and `"candidate_name"`.
-   - The `"job_orders"` key is required so the existing streaming loop
-     collects it and ChatPage.jsx renders inline job order cards — do NOT
-     invent a new key.
-3. Register the tool in `make_tool_dispatch()`, threading the `tenant_id`
-   param exactly like the existing entries — no hardcoded `RYZE_TENANT`.
-4. If `TOOL_STATUS_MESSAGES` exists, add:
-   `"match_jobs_to_candidate": "Matching open roles to candidate..."`.
+1. Create ONE shared scoring helper (suggested: `app/services/matching.py`)
+   used by all three match paths:
+   - `GET /api/candidates/me/job-matches` (`app/api/candidates.py`)
+   - `GET /api/job-orders/{id}/candidate-matches` (`app/api/job_orders.py`)
+   - `tool_match_jobs_to_candidate` (`app/api/chat.py`)
+2. All three use cosine distance (`<=>`) in their raw SQL. ORDER BY stays
+   distance ascending — ranking must not change.
+3. Score formula, in the shared helper:
+   - `cos_sim = 1.0 - cos_distance`
+   - Calibrated display score:
+     `score = clamp((cos_sim - SIM_FLOOR) / (SIM_CEIL - SIM_FLOOR), 0.0, 1.0)`
+   - `SIM_FLOOR = 0.25`, `SIM_CEIL = 0.75` as module-level constants with a
+     comment explaining they're empirical calibration bounds for
+     text-embedding-3-small profile-vs-job text, tunable in one place.
+   - Round to 4 decimals as today. Response field names unchanged
+     (`match_score`) — no schema or frontend changes.
+4. The transform is monotonic, so ordering is provably identical to today.
+   Do not re-rank, re-embed, or touch embeddings.
+5. Remove the now-dead `round(max(0.0, 1.0 - distance), 4)` pattern from all
+   three call sites in favor of the helper.
 
-Out of scope (do NOT bundle):
-- Do not modify `tool_match_candidates_to_job` (known to be a text-search
-  alias — separate task later if wanted).
-- No frontend changes — ChatPage.jsx already renders `job_orders`.
-- No schema/model changes, no Alembic migration needed.
+Out of scope:
+- No frontend changes (UI already renders `match_score` as a percent).
+- No migration, no model changes.
+- No changes to embedding generation or `_vector_search` in chat.py (query-
+  text search is a different concern from stored-embedding matching).
 
 ## Related Files
-- `app/api/chat.py` — all changes live here (TOOLS list, new tool function,
-  `make_tool_dispatch`, optionally TOOL_STATUS_MESSAGES)
-- `app/api/candidates.py` — reference only: `get_my_job_matches` is the SQL
-  pattern to mirror
-- `app/models/candidate.py`, `app/models/job_order.py` — reference only
-- `src/pages/ChatPage.jsx` (frontend repo) — reference only: confirms
-  `job_orders` key renders inline cards
+- `app/services/matching.py` — NEW shared helper (constants + score fn)
+- `app/api/candidates.py` — `get_my_job_matches`: switch `<->` to `<=>`,
+  use helper
+- `app/api/job_orders.py` — `get_candidate_matches_for_job`: already `<=>`,
+  switch score computation to helper
+- `app/api/chat.py` — `tool_match_jobs_to_candidate`: switch `<->` to `<=>`,
+  use helper
 
 ## Verification
-1. `python audit_tenant_coverage.py` — no new REVIEW/HARDCODED lines from
-   this change.
-2. Restart API locally, log in as admin, open `/admin/chat`.
-3. Ask: "Show me matches for Renata Voss."
-   - Claude calls `match_jobs_to_candidate` (visible in server logs:
-     `Chat tool call: match_jobs_to_candidate(...)`).
-   - Response includes ranked landscaping job orders with match scores and
-     inline job order cards render under the answer.
-4. Cross-check: scores/ordering agree with Renata's candidate dashboard
-   ("Open Opportunities" section), since both use her embedding with the
-   `<->` operator against the same open job orders.
-5. Negative test: "Show me matches for Bob Fakename" returns a clean
-   "no candidate found" style answer, no traceback.
+1. `python audit_tenant_coverage.py` — no new REVIEW/HARDCODED lines.
+2. Renata's dashboard (tenant `green_path_recruiting`, jobs already seeded):
+   - Ordering identical to before: Greenscene Landscape Designer #1,
+     Irrigation Technician last.
+   - Greenscene shows a plausible strong score (expect roughly 60-85%);
+     Garden Center / Irrigation show clearly weak scores; spread is visible.
+3. Intelligence chat as dane@greenpathrecruiting.com: "Show me matches for
+   Renata Voss" returns the same scores as the dashboard (cross-side
+   consistency, which previously did NOT hold).
+4. Employer side: Greenscene job's candidate-matches still ranks Renata
+   first with a sensible score.
+5. Grep check: no remaining `1.0 - distance` score computations against
+   `<->` for match display anywhere in app/api/.
 
 ## Notes
-- Purpose: demo video shot — recruiter asks Intelligence for a candidate's
-  matches and gets visual ranked job cards.
-- Depends on seeded data: run `seed_landscaping_jobs.py` first so open,
-  embedded landscaping job orders exist (script inserts + embeds them).
-- Renata's candidate record must have a non-NULL embedding or the tool will
-  return the "no embedding" error — re-save her profile if needed.
-- `get_my_job_matches` uses `<->` (L2) while the employer-side
-  candidate-matches endpoint uses `<=>` (cosine). Mirror `<->` here so chat
-  scores match the candidate dashboard exactly.
+- Rationale: `1 - L2` mislabels the scale (L2 range 0-2 on unit vectors);
+  cosine similarity + empirical floor/ceiling calibration is the honest,
+  standard fix. Ranking semantics unchanged.
+- If observed scores cluster oddly after the switch, tune SIM_FLOOR/SIM_CEIL
+  only — do not reintroduce per-endpoint formulas.
+- Demo context: scores appear on camera; verify on production before
+  filming.
 
 ## History
 <!-- Keep this updated. Earliest to latest -->
-- 2026-07-21 — Audit confirmed: `app/api/chat.py` tool conventions and
-  `get_my_job_matches` (`app/api/candidates.py`) SQL pattern both match the
-  spec exactly. Two calls made and confirmed before implementation: (1)
-  multi-match tie-break for `match_jobs_to_candidate` is
-  `.order_by(Candidate.id.desc()).first()`, with a `"note"` field on the
-  result dict disclosing which candidate was picked when the name matched
-  more than one; (2) the raw-SQL block is copied inline into `chat.py` rather
-  than extracted to a shared helper — `candidates.py` is untouched.
-  Implemented: `TOOL_STATUS_MESSAGES` entry, `match_jobs_to_candidate` tool
-  schema in `TOOLS`, `tool_match_jobs_to_candidate()` function, and its
-  registration in `make_tool_dispatch()`. `python audit_tenant_coverage.py`
-  shows no new REVIEW/HARDCODED lines (same 2 pre-existing, unrelated
-  `candidates.py` findings as before).
-  **Deferred refactor (not done here):** `tool_match_jobs_to_candidate`
-  duplicates `get_my_job_matches`'s raw-SQL job-ranking block verbatim, and
-  the codebase now has two different vector operators for conceptually
-  similar matches — `get_my_job_matches`/this new tool use `<->` (L2) while
-  the employer-side candidate-matches endpoint and `chat.py`'s
-  `_vector_search` helper use `<=>` (cosine). A future pass could extract
-  the L2 ranking-by-stored-embedding logic into one shared helper and decide
-  whether L2 vs. cosine should be unified platform-wide, or is intentionally
-  different per use case — worth deciding deliberately rather than by
-  accretion.
-- 2026-07-21 — Verification (steps 2–5). Reviewed `seed_landscaping_jobs.py`
-  against models/embedding service before running it: found a real bug —
-  missing `from app.models.user import User` import, so `EmployerProfile.user_id`'s
-  FK to `users` failed to resolve at flush time (same class of issue as the
-  `test_signup_tenant_resolution.py` FK note in `CHANGELOG.md`). Fixed with a
-  one-line import (unrelated to this feature, but blocking). Ran the script
-  locally: created Greenscene employer profile #4, 6 open job orders (ids
-  1–6), all embedded. Confirmed local dev DB has 0 real candidates and 0
-  users (no Renata locally) — used the fallback the user authorized: created
-  a throwaway synthetic candidate with a landscape-designer profile, embedded
-  it, and called `tool_match_jobs_to_candidate()` directly. Its `job_orders`
-  order and `match_score` values were byte-for-byte identical to an
-  independently run copy of `get_my_job_matches`'s raw SQL against the same
-  embedding — confirms the two are mathematically equivalent, which is the
-  actual property step 4 cared about (Renata's real dashboard couldn't be
-  used directly since she doesn't exist in the local DB). Also exercised the
-  multi-match tie-break with two synthetic same-prefix candidates — picked
-  the higher id and returned the `"note"` field as designed. Went further
-  than the direct-call fallback: started the local API (`uvicorn`), created a
-  throwaway admin user + JWT, and hit the live streaming `/api/chat` endpoint
-  for real. Server log confirms `Chat tool call: match_jobs_to_candidate(...)
-  tenant=ryze`, response included the `"Matching open roles to
-  candidate..."` status line, and the trailing `__DATA__` chunk carried
-  ranked `job_orders` ids. Negative test ("Show me matches for Bob
-  Fakename") returned a clean "no record" prose answer, `job_orders: null`,
-  HTTP 200, no traceback. All scratch rows (admin user, synthetic
-  candidates) deleted after; the 6 seeded landscaping job orders and the
-  Greenscene employer profile were left in place as the intended persistent
-  demo data. Local verification passes — not deployed.
+- 2026-07-21: Created `app/services/matching.py` with `SIM_FLOOR`/`SIM_CEIL`
+  constants and `compute_match_score(cos_distance)`. Switched `<->` to `<=>`
+  in candidates.py (`get_my_job_matches`) and chat.py
+  (`tool_match_jobs_to_candidate`); job_orders.py already used `<=>`. All
+  three now call the shared helper instead of the inline
+  `round(max(0.0, 1.0 - distance), 4)` pattern. Removed the stale
+  "deliberately inline" docstring note on `tool_match_jobs_to_candidate`.
+  `audit_tenant_coverage.py` shows the same 2 pre-existing REVIEW lines
+  (candidates.py `/me/photo`, `/me/banner` — unrelated, unchanged by this
+  work) both before and after the diff; no new REVIEW/HARDCODED lines.
+  Deferred: `tool_search_candidates`/`tool_search_employers`/
+  `tool_search_job_orders`/`_vector_search` in chat.py still use the old
+  uncalibrated `1.0 - distance` formula over `<=>` — left untouched per
+  scope, but they'd need their own floor/ceiling constants since
+  query-text-vs-profile similarity has a different natural range than
+  profile-vs-job similarity. Not yet manually verified against the
+  Verification checklist (Renata/Greenscene ordering and scores, chat
+  cross-check, employer side).

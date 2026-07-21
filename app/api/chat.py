@@ -23,6 +23,7 @@ from app.models.job_order import JobOrder
 from app.models.user import User
 from app.services.embedding_service import generate_embedding
 from app.services.branding import get_branding, TenantBranding
+from app.services.matching import compute_match_score
 
 logger = logging.getLogger(__name__)
 
@@ -770,8 +771,6 @@ def tool_match_jobs_to_candidate(
 ) -> dict:
     """
     Rank open job orders against ONE candidate's stored profile embedding.
-    Deliberately inline rather than shared with app.api.candidates.get_my_job_matches —
-    see the deferred-refactor note in context/current-feature.md history.
     """
     candidates = (
         db.query(Candidate)
@@ -803,7 +802,7 @@ def tool_match_jobs_to_candidate(
 
     vector_str = "[" + ",".join(str(v) for v in candidate.embedding) + "]"
     sql = text(f"""
-        SELECT id, (embedding <-> '{vector_str}'::vector) AS distance
+        SELECT id, (embedding <=> '{vector_str}'::vector) AS distance
         FROM job_orders
         WHERE tenant_id = :tenant
         AND status = 'open'
@@ -840,7 +839,7 @@ def tool_match_jobs_to_candidate(
                 "salary_max": j.salary_max,
                 "requirements": j.requirements,
                 "status": j.status,
-                "match_score": round(max(0.0, 1.0 - distances[jid]), 4),
+                "match_score": compute_match_score(distances[jid]),
             }
         )
 
