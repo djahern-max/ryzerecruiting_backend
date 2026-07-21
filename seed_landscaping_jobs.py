@@ -29,6 +29,18 @@
 #     python seed_landscaping_jobs.py --tenant greenpath --reset
 # ---------------------------------------------------------------------------
 
+import app.models.user  # noqa: F401
+import app.models.tenant  # noqa: F401
+import app.models.booking  # noqa: F401
+import app.models.candidate  # noqa: F401
+import app.models.employer_profile  # noqa: F401
+import app.models.job_order  # noqa: F401
+import app.models.chat_session  # noqa: F401
+import app.models.chat_message  # noqa: F401
+import app.models.contact  # noqa: F401
+import app.models.waitlist  # noqa: F401
+import app.models.webhook_log  # noqa: F401
+
 import sys
 
 from sqlalchemy import or_
