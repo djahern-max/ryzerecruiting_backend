@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # Email (Resend)
     RESEND_API_KEY: str = ""
     FROM_EMAIL: str = "dane@ryze.ai"
+    REPLY_TO_EMAIL: str = ""
     ADMIN_EMAIL: str = ""
 
     # Zoom
