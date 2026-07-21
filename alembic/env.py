@@ -19,6 +19,7 @@ from app.models.booking import Booking
 from app.models.waitlist import Waitlist
 from app.models.job_order import JobOrder
 from app.models.candidate import Candidate
+from app.models.job_interest import JobInterest
 from app.models.webhook_log import WebhookLog
 from app.models.tenant import Tenant
 from app.models.chat_session import ChatSession
