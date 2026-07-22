@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.deps import get_current_superuser
+from app.core.deps import get_current_superuser, RYZE_TENANT
 
 router = APIRouter(prefix="/admin", tags=["db-explorer"])
 
@@ -348,6 +348,13 @@ TABLES_WITH_UPDATED_AT = {
 
 def _tenant(user) -> str:
     return user.tenant_id or "ryze"
+
+
+def _is_platform_owner(user) -> bool:
+    """RYZE's own superadmin (tenant_id == 'ryze') gets a global, unscoped view
+    across every table. Any other user — including a firm-level superuser, should
+    one ever exist — stays scoped to their own tenant, preserving isolation."""
+    return (user.tenant_id or RYZE_TENANT) == RYZE_TENANT
 
 
 # ---------------------------------------------------------------------------
