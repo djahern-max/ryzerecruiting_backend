@@ -15,9 +15,11 @@ router = APIRouter(prefix="/admin", tags=["db-explorer"])
 
 # ---------------------------------------------------------------------------
 # Tables that have a tenant_id column — all queries on these tables are
-# scoped to the authenticated admin's tenant. Tables NOT in this set are
-# either global (waitlist, contacts, webhook_logs) or scoped by a different
-# key (chat_sessions → user_id).
+# scoped to the authenticated admin's tenant, EXCEPT for the platform owner
+# (RYZE's own superadmin, _is_platform_owner()), who gets an unscoped, global
+# view across every table. Tables NOT in this set are either global
+# (waitlist, contacts, webhook_logs) or scoped by a different key
+# (chat_sessions → user_id).
 # ---------------------------------------------------------------------------
 
 TENANT_SCOPED_TABLES = {
@@ -37,6 +39,7 @@ TENANT_SCOPED_TABLES = {
 TABLE_COLS: dict[str, list[str]] = {
     "bookings": [
         "id",
+        "tenant_id",
         "booking_type",
         "status",
         "employer_id",
@@ -372,27 +375,24 @@ async def get_all_counts(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_superuser),
 ):
-    """Row count for every table — scoped to tenant where applicable."""
+    """Row count for every table — scoped to tenant where applicable, except
+    for the platform owner (_is_platform_owner()), who sees unscoped global
+    counts across every table."""
     tenant_id = _tenant(current_user)
+    unscoped = _is_platform_owner(current_user)
     counts = {}
     for table in TABLE_COLS:
         try:
-            if table in TENANT_SCOPED_TABLES:
-                if table == "users" and current_user.is_superuser:
-                    counts[table] = (
-                        db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar()
-                        or 0
-                    )
-                else:
-                    counts[table] = (
-                        db.execute(
-                            text(
-                                f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'
-                            ),
-                            {"tid": tenant_id},
-                        ).scalar()
-                        or 0
-                    )
+            if table in TENANT_SCOPED_TABLES and not unscoped:
+                counts[table] = (
+                    db.execute(
+                        text(
+                            f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'
+                        ),
+                        {"tid": tenant_id},
+                    ).scalar()
+                    or 0
+                )
             else:
                 counts[table] = (
                     db.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar() or 0
@@ -421,6 +421,7 @@ async def browse_table(
         )
 
     tenant_id = _tenant(current_user)
+    unscoped = _is_platform_owner(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)
@@ -428,11 +429,11 @@ async def browse_table(
     conditions = []
     params: dict = {"limit": limit, "offset": offset}
 
-    # Tenant filter — applied first so it anchors every query on scoped tables
-    if table in TENANT_SCOPED_TABLES:
-        if not (table == "users" and current_user.is_superuser):
-            conditions.append("tenant_id = :tenant_id")
-            params["tenant_id"] = tenant_id
+    # Tenant filter — applied first so it anchors every query on scoped
+    # tables, except for the platform owner, who gets an unscoped global view
+    if table in TENANT_SCOPED_TABLES and not unscoped:
+        conditions.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)
@@ -493,7 +494,8 @@ async def update_record(
 ):
     """Patch editable fields on a record. Only EDITABLE_COLS are accepted.
     On tenant-scoped tables the WHERE clause includes tenant_id so cross-tenant
-    writes silently 404 — same pattern as the REST endpoints."""
+    writes silently 404 — same pattern as the REST endpoints. Exception: the
+    platform owner (_is_platform_owner()) edits unscoped, by id alone."""
     if table not in EDITABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' is not editable.")
 
@@ -509,8 +511,9 @@ async def update_record(
     if table in TABLES_WITH_UPDATED_AT:
         set_parts.append("updated_at = NOW()")
 
-    # Tenant-scoped tables require a matching tenant_id in the WHERE clause
-    if table in TENANT_SCOPED_TABLES:
+    # Tenant-scoped tables require a matching tenant_id in the WHERE clause,
+    # except for the platform owner, who edits unscoped by id alone
+    if table in TENANT_SCOPED_TABLES and not _is_platform_owner(current_user):
         tenant_id = _tenant(current_user)
         result = db.execute(
             text(
@@ -541,11 +544,12 @@ async def delete_record(
     current_user=Depends(get_current_superuser),
 ):
     """Hard delete a record by ID. On tenant-scoped tables the WHERE clause
-    includes tenant_id — cross-tenant deletes return 404."""
+    includes tenant_id — cross-tenant deletes return 404. Exception: the
+    platform owner (_is_platform_owner()) deletes unscoped, by id alone."""
     if table not in TABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' not found.")
 
-    if table in TENANT_SCOPED_TABLES:
+    if table in TENANT_SCOPED_TABLES and not _is_platform_owner(current_user):
         tenant_id = _tenant(current_user)
         result = db.execute(
             text(f'DELETE FROM "{table}" WHERE id = :id AND tenant_id = :tenant_id'),
@@ -575,11 +579,14 @@ async def export_table_csv(
     current_user=Depends(get_current_superuser),
 ):
     """Export the current filtered view as a CSV file download.
-    Tenant-scoped tables are filtered to the requesting admin's tenant."""
+    Tenant-scoped tables are filtered to the requesting admin's tenant,
+    except for the platform owner (_is_platform_owner()), who exports
+    unscoped, global data."""
     if table not in TABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' not available.")
 
     tenant_id = _tenant(current_user)
+    unscoped = _is_platform_owner(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)
@@ -587,10 +594,9 @@ async def export_table_csv(
     conditions = []
     params: dict = {}
 
-    if table in TENANT_SCOPED_TABLES:
-        if not (table == "users" and current_user.is_superuser):
-            conditions.append("tenant_id = :tenant_id")
-            params["tenant_id"] = tenant_id
+    if table in TENANT_SCOPED_TABLES and not unscoped:
+        conditions.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
 
     if search and search.strip() and searchable:
         sc = " OR ".join(f'"{c}"::text ILIKE :search' for c in searchable)

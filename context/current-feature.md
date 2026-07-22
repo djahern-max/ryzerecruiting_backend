@@ -1,233 +1,279 @@
 # current-feature.md
 
-# DB Explorer — surface all current tables (`job_interests`, `tenants`)
+# DB Explorer — platform-owner global visibility (unscope superadmin queries)
 
-**Status:** In Progress
+**Status:** Not started
+**Repo:** ryzerecruiting_backend (primary), ryzerecruiting_frontend (minor)
+**File:** `app/api/db_explorer.py`, `src/pages/admin/DBExplorer.jsx`
 
-## Context
-The DB Explorer was built when the schema was smaller and hardcodes its table
-list in two places (backend `TABLE_COLS`/config dicts and a frontend `TABLES`
-constant). The live DB now has 13 tables (`\dt`), but the explorer surfaces only
-10. Two real tables are missing from the UI:
+## Problem
 
-- **`job_interests`** — added 2026-07-21 (candidate "I'm Interested" feature).
-- **`tenants`** — added 2026-04-01 (migration `d68448a26b3b`), never wired into
-  the explorer.
+The DB Explorer is the superadmin's window into the entire database, but it is
+currently showing only rows whose `tenant_id` matches the superadmin's own
+tenant. Live symptom (2026-07-22): the database contains **6 `job_orders` and
+2 `bookings`** (verified via psql `SELECT COUNT(*)`), but the explorer shows
+**zero** for both.
 
-`alembic_version` is intentionally **excluded** and stays that way: its only
-column is `version_num` (a string PK); it has no `id` column, so it is
-incompatible with the explorer's `ORDER BY id DESC` browse fallback and its
-`WHERE id = :id` edit/delete logic. It's a migration marker, not application
-data.
+### Root cause (confirmed by repo audit)
 
-No DB migration is required — both tables already exist in the database. This is
-purely surfacing existing tables in the admin UI.
+Every endpoint in `app/api/db_explorer.py` applies a tenant filter to tables in
+`TENANT_SCOPED_TABLES` using `_tenant(current_user)` — i.e. the superadmin's
+own tenant — with exactly one ad-hoc bypass, for the `users` table:
+
+```python
+if table in TENANT_SCOPED_TABLES:
+    if not (table == "users" and current_user.is_superuser):
+        conditions.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
+```
+
+Any row in `job_orders`, `bookings`, `candidates`, `employer_profiles`, or
+`job_interests` whose `tenant_id` differs from the superadmin's resolved tenant
+(`user.tenant_id or "ryze"`) is invisible — including rows with a different
+tenant slug AND rows with a mismatched/legacy value.
+
+**Critically:** the file already contains the intended fix as dead code. The
+helper `_is_platform_owner()` exists with a docstring describing exactly the
+desired behavior, but it is never called by any endpoint:
+
+```python
+def _is_platform_owner(user) -> bool:
+    """RYZE's own superadmin (tenant_id == 'ryze') gets a global, unscoped view
+    across every table. Any other user — including a firm-level superuser, should
+    one ever exist — stays scoped to their own tenant, preserving isolation."""
+    return (user.tenant_id or RYZE_TENANT) == RYZE_TENANT
+```
 
 ## Goals
-1. Add `job_interests` to the DB Explorer (browse, count, search, CSV export,
-   edit the `note` field, delete). Tenant-scoped (it has a `tenant_id` column).
-2. Add `tenants` to the DB Explorer as a **read-only, superuser-global** view
-   (the `tenants` table has no `tenant_id` column — its `slug` *is* the tenant
-   identity — so it must NOT be tenant-scoped). Exclude the `twilio_auth_token`
-   secret column, following the same principle already used to exclude
-   `hashed_password` and `embedding`.
-3. Keep `alembic_version` excluded (documented above).
+
+1. **Platform owner sees everything.** When the requesting user passes
+   `get_current_superuser` AND `_is_platform_owner(user)` is true, drop the
+   `tenant_id` filter on every tenant-scoped table in every DB Explorer
+   endpoint: counts, browse, export, PATCH, DELETE.
+2. **Everyone else stays strictly scoped.** A hypothetical firm-level superuser
+   (is_superuser but tenant != "ryze") keeps the existing tenant-filtered
+   behavior on every endpoint. No behavior change anywhere else in the app —
+   all REST/data endpoints continue to use `get_current_tenant` /
+   `get_current_admin_tenant` scoping untouched.
+3. **Tenant attribution is visible.** The platform owner must be able to see
+   *which* tenant each row belongs to, so surface `tenant_id` in the frontend
+   summary columns for tenant-scoped tables.
+
+## Non-goals
+
+- Do NOT touch tenant scoping anywhere outside `app/api/db_explorer.py`.
+- Do NOT change `get_current_tenant`, `get_current_admin_tenant`, or
+  `_check_tenant_access` in `app/core/deps.py`.
+- Do NOT add a tenant-picker UI (a later enhancement; global view is enough).
 
 ---
 
-## Backend — `app/api/db_explorer.py`
+## Backend changes — `app/api/db_explorer.py`
 
-### 1. `TENANT_SCOPED_TABLES` — add `job_interests` only
-`job_interests` has a `tenant_id` column and must be tenant-filtered.
-`tenants` must NOT be added here (no `tenant_id` column).
+### 1. Introduce a single unscoped-decision point
 
-```python
-TENANT_SCOPED_TABLES = {
-    "candidates",
-    "employer_profiles",
-    "job_orders",
-    "bookings",
-    "users",
-    "job_interests",
-}
-```
-
-### 2. `TABLE_COLS` — add two entries
-Column order matches each model's logical display order. For `tenants`,
-`twilio_auth_token` is deliberately omitted (secret stub).
+At the top of each endpoint that queries data, compute once:
 
 ```python
-    "job_interests": [
-        "id",
-        "tenant_id",
-        "job_order_id",
-        "candidate_id",
-        "note",
-        "created_at",
-    ],
-    "tenants": [
-        "id",
-        "slug",
-        "company_name",
-        "status",
-        "trial_starts_at",
-        "trial_ends_at",
-        "stripe_customer_id",
-        "stripe_subscription_id",
-        "from_email",
-        "reply_to_email",
-        "support_email",
-        "admin_email",
-        "signature_name",
-        "twilio_account_sid",
-        "twilio_from_number",
-        "created_at",
-        "updated_at",
-    ],
+unscoped = _is_platform_owner(current_user)
 ```
 
-### 3. `SEARCHABLE_COLS` — add two entries
+(`get_current_superuser` is already the route dependency, so `is_superuser` is
+guaranteed; `_is_platform_owner` adds the tenant check. Both conditions are
+required — keep it that way.)
+
+### 2. `/db/counts`
+
+Replace the `users`-only special case with the general rule:
 
 ```python
-    "job_interests": ["note"],
-    "tenants": ["slug", "company_name", "status", "admin_email"],
+for table in TABLE_COLS:
+    try:
+        if table in TENANT_SCOPED_TABLES and not unscoped:
+            counts[table] = db.execute(
+                text(f'SELECT COUNT(*) FROM "{table}" WHERE tenant_id = :tid'),
+                {"tid": tenant_id},
+            ).scalar() or 0
+        else:
+            counts[table] = db.execute(
+                text(f'SELECT COUNT(*) FROM "{table}"')
+            ).scalar() or 0
+    except Exception:
+        counts[table] = 0
 ```
 
-### 4. `EDITABLE_COLS` — add two entries
-`note` is the only sensibly-editable field on a `job_interests` row. `tenants`
-is read-only in the explorer (branding/billing edits go through the dedicated
-`/api/settings/tenant` endpoint, not here) — use an empty list, matching the
-existing read-only tables (`chat_sessions`, `contacts`, `webhook_logs`, ...).
+Note: the old special case (`table == "users" and current_user.is_superuser`)
+is now subsumed and should be deleted — a firm-level superuser will correctly
+see only their own users, which is stricter (and correct) compared to today.
+
+### 3. `/db/explorer` (browse) and `/db/export`
+
+Both build the same conditions list. Change the tenant filter in each to:
 
 ```python
-    "job_interests": ["note"],
-    "tenants": [],
+if table in TENANT_SCOPED_TABLES and not unscoped:
+    conditions.append("tenant_id = :tenant_id")
+    params["tenant_id"] = tenant_id
 ```
 
-### 5. `TABLES_WITH_UPDATED_AT` — add `tenants` only
-`tenants` has an `updated_at` column; `job_interests` does **not** (it has only
-`created_at`), so do NOT add `job_interests` here.
+Delete the `users` special case in both places.
+
+### 4. PATCH `/db/records/{table}/{record_id}` and DELETE
+
+Same rule: the platform owner edits/deletes globally (`WHERE id = :id` only);
+anyone else keeps `AND tenant_id = :tenant_id`:
 
 ```python
-TABLES_WITH_UPDATED_AT = {
-    "bookings",
-    "candidates",
-    "employer_profiles",
-    "job_orders",
-    "users",
-    "chat_sessions",
-    "tenants",
-}
+if table in TENANT_SCOPED_TABLES and not _is_platform_owner(current_user):
+    # existing tenant-scoped UPDATE/DELETE
+else:
+    # unscoped UPDATE/DELETE (existing non-scoped branch)
 ```
 
-**No endpoint code changes.** Every endpoint (`/db/counts`, `/db/explorer`,
-`/db/export`, PATCH, DELETE, `/db/explorer/tables`) iterates these config dicts
-generically, so the four dict additions above are sufficient on the backend.
-`/db/explorer/tables` returns `list(TABLE_COLS.keys())`, so it picks up both new
-tables automatically.
+### 5. Update stale comments
+
+- The module-level comment above `TENANT_SCOPED_TABLES` and the endpoint
+  docstrings say queries are "scoped to the authenticated admin's tenant" —
+  amend to note the platform-owner exception.
+- The docstring on `_is_platform_owner` is already correct; it becomes live
+  code, not dead code.
+
+### 6. Audit `bookings` for a `tenant_id` column (verify, then act)
+
+`bookings` is in `TENANT_SCOPED_TABLES`, but `TABLE_COLS["bookings"]` does NOT
+list `tenant_id`, unlike every other scoped table. Check the model
+(`app/models/booking.py`) and/or run `\d bookings`:
+
+- If the column exists: add `"tenant_id"` to `TABLE_COLS["bookings"]` (after
+  `"id"`) so the platform owner can see attribution.
+- If the column does NOT exist: `bookings` must be REMOVED from
+  `TENANT_SCOPED_TABLES` (the current filter would be erroring and the counts
+  endpoint's bare `except` silently reports 0 — which may be a second,
+  masked contributor to the empty view). Document whichever is found in the
+  History section below.
+
+### 7. Optional but recommended — diagnose the mismatch
+
+The fix makes visibility unconditional for the platform owner, but it's worth
+one query to understand why the scoping failed in the first place:
+
+```sql
+SELECT tenant_id, COUNT(*) FROM job_orders GROUP BY tenant_id;
+SELECT id, email, tenant_id, is_superuser FROM users WHERE is_superuser = true;
+```
+
+If the superadmin's `users.tenant_id` is NULL or a value other than the slug
+on the job_orders rows, that's the mismatch. Record the finding in History —
+if superadmin rows should canonically carry `tenant_id = 'ryze'`, fix the data
+too (`UPDATE users SET tenant_id = 'ryze' WHERE is_superuser = true;`), since
+`_is_platform_owner` treats NULL as "ryze" already but explicit is better.
 
 ---
 
-## Frontend — `src/pages/admin/DBExplorer.jsx`
-The frontend does not read the backend's `/db/explorer/tables` list — it uses
-its own hardcoded `TABLES` constant, so it must be updated in parallel.
+## Frontend changes — `src/pages/admin/DBExplorer.jsx`
 
-### 1. `TABLES` — add both tables
+Minimal. The API response shape is unchanged; the frontend just renders more
+rows. One improvement:
 
-```js
-const TABLES = [
-    "bookings", "candidates", "employer_profiles",
-    "job_orders", "job_interests", "chat_sessions", "chat_messages",
-    "users", "waitlist", "contacts", "tenants", "webhook_logs",
-];
-```
+### `SUMMARY_COLS` — surface `tenant_id` on scoped tables
 
-### 2. `SUMMARY_COLS` — add two entries
+Add `"tenant_id"` (right after `"id"`) to the summary columns for:
+`candidates`, `employer_profiles`, `job_orders`, `job_interests`, and
+`bookings` (only if step 6 confirms the column exists). `users` already shows
+it. This lets the global view answer "whose row is this?" at a glance.
 
-```js
-    job_interests: ["id", "job_order_id", "candidate_id", "note", "created_at"],
-    tenants: ["id", "slug", "company_name", "status", "admin_email", "created_at"],
-```
+No changes to `TABLES`, `EDITABLE_COLS`, or `FK_MAP`.
 
-### 3. `EDITABLE_COLS` (frontend copy) — add two entries
-Keep in lockstep with the backend `EDITABLE_COLS`.
+---
 
-```js
-    job_interests: ["note"],
-    tenants: [],
-```
+## Security invariants (do not violate)
 
-### 4. `FK_MAP` — add `job_order_id`
-Makes the `job_order_id` foreign key clickable (jumps to the `job_orders`
-table), matching how `candidate_id`, `user_id`, etc. already behave. This is a
-global column→table map, so it also benefits any other view showing
-`job_order_id`.
-
-```js
-const FK_MAP = {
-    employer_profile_id: "employer_profiles",
-    candidate_id: "candidates",
-    job_order_id: "job_orders",
-    user_id: "users",
-    session_id: "chat_sessions",
-    employer_id: "users",
-};
-```
+1. Unscoped access requires BOTH `is_superuser` (route dependency) AND
+   `tenant_id == 'ryze'` (`_is_platform_owner`). Never relax to is_superuser
+   alone.
+2. All table and column names remain whitelist-validated against the config
+   dicts (`TABLE_COLS`, `SEARCHABLE_COLS`, `EDITABLE_COLS`) — no change to
+   the injection-safety posture.
+3. `hashed_password`, `embedding`, and `twilio_auth_token` stay excluded from
+   `TABLE_COLS` regardless of who is asking.
+4. Zero changes outside `db_explorer.py` / `DBExplorer.jsx`. Run
+   `audit_tenant_coverage.py` after the change and confirm no new
+   REVIEW/HARDCODED lines.
 
 ---
 
 ## Verification checklist
-- [ ] Backend restarts cleanly; `GET /admin/db/explorer/tables` now lists
-      `job_interests` and `tenants` (and still omits `alembic_version`).
-- [ ] `GET /admin/db/counts` returns counts for both new tables; `job_interests`
-      count is tenant-scoped, `tenants` count is the raw total.
-- [ ] Sidebar in the DB Explorer shows both new tables with correct row counts.
-- [ ] `job_interests`: browse, search on `note`, date filter on `created_at`,
-      CSV export, edit `note` (persists), and delete all work. Editing is
-      tenant-scoped (cross-tenant edit/delete → 404).
-- [ ] `tenants`: browse + CSV export work; `twilio_auth_token` is absent from
-      the column set; no edit affordance (read-only).
-- [ ] `job_order_id` renders as a clickable FK that navigates to `job_orders`.
+
+Run as the RYZE superadmin (tenant "ryze" or NULL):
+
+- [ ] Sidebar counts match psql exactly: bookings 2, candidates 1,
+      chat_messages 2, chat_sessions 1, employer_profiles 2, job_interests 1,
+      job_orders 6, tenants 1, users 7, webhook_logs 13, waitlist 0,
+      contacts 0.
+- [ ] Browsing `job_orders` lists all 6 rows with their `tenant_id` visible.
+- [ ] Browsing `bookings` lists both rows.
+- [ ] Search, date filters, sort, and CSV export on `job_orders` operate over
+      all 6 rows (export file contains 6 data rows).
+- [ ] PATCH an editable field on a job_order belonging to a non-ryze tenant →
+      succeeds (200), persists.
+- [ ] DELETE works globally (test on a disposable row only).
+
+Regression (simulate a firm-scoped superuser, e.g. temporarily set a test
+user's `is_superuser = true` with `tenant_id = 'sometenant'`):
+
+- [ ] That user's counts/browse/export on scoped tables show ONLY
+      `tenant_id = 'sometenant'` rows.
+- [ ] That user's PATCH/DELETE against a ryze-tenant row → 404.
+- [ ] Non-superuser admin still gets 403 on every `/admin/db/*` route.
+- [ ] All non-explorer endpoints unchanged (spot-check `/api/search/*` and one
+      REST list endpoint — still tenant-filtered).
+- [ ] `audit_tenant_coverage.py` output identical to before the change.
 
 ## History
-- 2026-07-21: Spec written. Confirmed via repo audit that the explorer hardcodes
-  its table list in `app/api/db_explorer.py` (four config dicts) and
-  `src/pages/admin/DBExplorer.jsx` (`TABLES` + `SUMMARY_COLS` +
-  `EDITABLE_COLS` + `FK_MAP`); both were 10 tables. `job_interests` and
-  `tenants` were both absent. `alembic_version` deliberately kept out (no `id`
-  PK). No migration needed — both tables already live in the DB.
-- 2026-07-21: Audit-first step done before writing code — read
-  `app/api/db_explorer.py`, `frontend/src/pages/admin/DBExplorer.jsx`,
-  `app/models/job_interest.py`, and `app/models/tenant.py`. Confirmed every
-  db_explorer endpoint is generic over the config dicts (no per-table branches
-  needed) and already gated by `get_current_superuser`, so the `tenants`
-  global view needs no extra plumbing. Confirmed column lists against the
-  actual models: `JobInterest` has no `updated_at` (matches spec excluding it
-  from `TABLES_WITH_UPDATED_AT`); `Tenant` has 18 columns, 17 after excluding
-  `twilio_auth_token`, matching the spec's `TABLE_COLS["tenants"]` exactly.
-  Plan confirmed by user with three guards: (1) `tenants` `EDITABLE_COLS` must
-  exclude `slug` (identity key, no FK — editing it would orphan a firm's
-  data) and keep `status`/`trial_*`/`stripe_*` read-only too — already true,
-  spec had `tenants: []`; (2) `job_interests` editable = `note` only, FKs and
-  `tenant_id` read-only — already true; (3) document that DELETE on a
-  `tenants` row does not cascade (plain-string `tenant_id` references, no FK
-  constraint) — orphaned rows silently fall back to RYZE branding via
-  `get_branding()`.
-- 2026-07-21: Backend implemented — 5 dict edits in `app/api/db_explorer.py`
-  (`TENANT_SCOPED_TABLES` +`job_interests`; `TABLE_COLS`, `SEARCHABLE_COLS`,
-  `EDITABLE_COLS` +both tables; `TABLES_WITH_UPDATED_AT` +`tenants`), plus the
-  no-cascade-DELETE warning as a comment above `TABLE_COLS["tenants"]` and the
-  read-only rationale as a comment above `EDITABLE_COLS["tenants"]`. No
-  endpoint code changes. App-import check clean (98 routes).
-  `audit_tenant_coverage.py`: same 2 pre-existing REVIEW lines
-  (`candidates.py` `/me/photo`, `/me/banner`, unrelated), no new
-  REVIEW/HARDCODED. Committed as `4b60776`.
-- 2026-07-21: Frontend implemented (sibling `frontend` repo) — 4 edits to
-  `src/pages/admin/DBExplorer.jsx` mirroring the backend: `TABLES`,
-  `SUMMARY_COLS`, `EDITABLE_COLS` (`job_interests: ["note"]`,
-  `tenants: []`), and `FK_MAP` (+`job_order_id` → `job_orders`, the first
-  table to expose that column). Committed separately as `0a510a0` in the
-  frontend repo, per "one concern per change" / separate-repo convention.
-- Remaining: manual verification against the checklist above (browse/search/
-  export/edit/delete for `job_interests`, browse/export/no-edit for
-  `tenants`, FK click-through, sidebar counts) — not yet run.
+
+- 2026-07-22: Spec written. Root cause confirmed by repo audit: every
+  db_explorer endpoint tenant-filters via `_tenant(current_user)` with only a
+  `users` special case; the purpose-built `_is_platform_owner()` helper exists
+  but was never wired into any endpoint (dead code). Live DB shows 6
+  job_orders / 2 bookings invisible in the explorer. Also flagged:
+  `bookings` is in `TENANT_SCOPED_TABLES` but `TABLE_COLS["bookings"]` lacks
+  `tenant_id` — must verify the column exists (step 6) since the counts
+  endpoint's bare `except → 0` could be silently masking an error there.
+- 2026-07-22: Audit-first step done before writing code — confirmed
+  `RYZE_TENANT` is exported from `app/core/deps.py` (module-level constant,
+  already imported into `db_explorer.py`), no import changes needed.
+  Confirmed `app/models/booking.py` has `tenant_id = Column(String(100),
+  nullable=True, index=True)` — **Path A** taken for step 6: added
+  `"tenant_id"` to `TABLE_COLS["bookings"]` (after `"id"`) rather than
+  removing `bookings` from `TENANT_SCOPED_TABLES`. Captured baseline
+  `audit_tenant_coverage.py` output before any edits: `db_explorer.py` 6/6
+  SAFE, 0 hardcoded (all detected via the literal `_tenant(current_user)`
+  string in each function body, which every endpoint retains post-change);
+  the only REVIEW lines anywhere are the 2 pre-existing, unrelated
+  `candidates.py` (`/me/photo`, `/me/banner`) findings. Plan confirmed by
+  user with two additions: also amend the `/db/counts` and `/db/export`
+  docstrings (not just PATCH/DELETE/module comment) with the platform-owner
+  exception, and record here that dropping the `users` special case
+  intentionally tightens a hypothetical firm-level superuser's behavior
+  (they now see only their own tenant's `users` rows, stricter than today's
+  blanket unscoped-users bypass — correct per Goal 2).
+- 2026-07-22: Backend implemented — introduced `unscoped =
+  _is_platform_owner(current_user)` in `/db/counts`, `/db/explorer` (browse),
+  and `/db/export`; PATCH/DELETE use `_is_platform_owner(current_user)`
+  inline in the branch condition per the spec's literal per-site wording.
+  Deleted the `users`-only special case in all three GET-family endpoints —
+  subsumed by the general rule, and intentionally stricter for any future
+  firm-level superuser (is_superuser but tenant != "ryze"): they now see only
+  their own tenant's `users` rows instead of every tenant's. Updated the
+  `TENANT_SCOPED_TABLES` module comment and all five endpoint
+  docstrings/inline comments (counts, browse, export, PATCH, DELETE) to note
+  the platform-owner exception. Added `"tenant_id"` to
+  `TABLE_COLS["bookings"]` after `"id"` (Path A, confirmed above). App-import
+  check clean (98 routes, unchanged). `audit_tenant_coverage.py`: identical
+  to the pre-change baseline — `db_explorer.py` still 6/6 SAFE, 0 hardcoded;
+  same 2 pre-existing unrelated REVIEW lines in `candidates.py`, no new
+  REVIEW/HARDCODED anywhere.
+- Remaining: commit backend; user runs the item-7 diagnostic SQL
+  (`job_orders` tenant_id distribution, superuser `users` rows) and pastes
+  results back; frontend `SUMMARY_COLS` changes (5 tables +`tenant_id` after
+  `"id"`) in the sibling `frontend` repo; full verification checklist.
