@@ -26,6 +26,7 @@ TENANT_SCOPED_TABLES = {
     "job_orders",
     "bookings",
     "users",
+    "job_interests",
 }
 
 # ---------------------------------------------------------------------------
@@ -180,6 +181,40 @@ TABLE_COLS: dict[str, list[str]] = {
         "raw_payload",
         "received_at",
     ],
+    "job_interests": [
+        "id",
+        "tenant_id",
+        "job_order_id",
+        "candidate_id",
+        "note",
+        "created_at",
+    ],
+    # tenants is a global, superuser-only view — no tenant_id column, so it's
+    # deliberately excluded from TENANT_SCOPED_TABLES. twilio_auth_token is
+    # omitted (secret stub), same principle as hashed_password/embedding above.
+    # DELETE has no cascade: other tables reference tenant_id as a plain
+    # string with no FK constraint, so deleting a tenants row here does NOT
+    # remove or reassign its dependents — their rows silently fall back to
+    # RYZE branding via get_branding()'s per-field default. Superuser beware.
+    "tenants": [
+        "id",
+        "slug",
+        "company_name",
+        "status",
+        "trial_starts_at",
+        "trial_ends_at",
+        "stripe_customer_id",
+        "stripe_subscription_id",
+        "from_email",
+        "reply_to_email",
+        "support_email",
+        "admin_email",
+        "signature_name",
+        "twilio_account_sid",
+        "twilio_from_number",
+        "created_at",
+        "updated_at",
+    ],
 }
 
 SEARCHABLE_COLS: dict[str, list[str]] = {
@@ -218,6 +253,8 @@ SEARCHABLE_COLS: dict[str, list[str]] = {
     "waitlist": ["email", "intent", "source"],
     "contacts": ["name", "email"],
     "webhook_logs": ["event", "meeting_id", "result", "booking_found"],
+    "job_interests": ["note"],
+    "tenants": ["slug", "company_name", "status", "admin_email"],
 }
 
 # Fields editable via PATCH — never includes id, timestamps, embedding, hashed_password
@@ -282,6 +319,15 @@ EDITABLE_COLS: dict[str, list[str]] = {
     "chat_messages": [],
     "contacts": [],
     "webhook_logs": [],
+    "job_interests": ["note"],
+    # Read-only: slug is the tenant identity (referenced by plain-string
+    # tenant_id everywhere, no FK) and must never be edited here — do that
+    # through a dedicated migration/tool, not this generic PATCH. status,
+    # trial_*, and stripe_* are platform-owned billing/lifecycle state, not
+    # branding — same boundary already drawn in TenantBrandingUpdate
+    # (app/api/settings.py), which is the correct place for tenant-editable
+    # fields, not the DB explorer.
+    "tenants": [],
 }
 
 TABLES_WITH_UPDATED_AT = {
@@ -291,6 +337,7 @@ TABLES_WITH_UPDATED_AT = {
     "job_orders",
     "users",
     "chat_sessions",
+    "tenants",
 }
 
 
