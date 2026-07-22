@@ -63,7 +63,6 @@ def change_password(
 class TenantBrandingResponse(BaseModel):
     slug: str
     company_name: str
-    from_email: Optional[str] = None
     reply_to_email: Optional[str] = None
     support_email: Optional[str] = None
     admin_email: Optional[str] = None
@@ -98,7 +97,6 @@ def _build_tenant_branding_response(tenant: Tenant) -> TenantBrandingResponse:
     return TenantBrandingResponse(
         slug=tenant.slug,
         company_name=tenant.company_name,
-        from_email=tenant.from_email,
         reply_to_email=tenant.reply_to_email,
         support_email=tenant.support_email,
         admin_email=getattr(tenant, "admin_email", None),
@@ -150,6 +148,16 @@ def update_my_tenant_branding(
 
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
+        # from_email is deliberately locked down: only a Resend-verified
+        # domain may be a sender address, and tenants can't self-verify one
+        # today. Kept on the request model (not a 422) so the still-deployed
+        # frontend doesn't break; drop this skip once it stops sending the
+        # field. Logged so journalctl surfaces any lingering attempts.
+        if field == "from_email":
+            logger.info(
+                f"[settings] Ignored from_email in branding PATCH — slug={tenant.slug}"
+            )
+            continue
         # Normalize blank strings to NULL so clearing a field restores the
         # RYZE fallback rather than sending an empty "from" address.
         if isinstance(value, str):
