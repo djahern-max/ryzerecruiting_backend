@@ -273,7 +273,17 @@ user's `is_superuser = true` with `tenant_id = 'sometenant'`):
   to the pre-change baseline — `db_explorer.py` still 6/6 SAFE, 0 hardcoded;
   same 2 pre-existing unrelated REVIEW lines in `candidates.py`, no new
   REVIEW/HARDCODED anywhere.
-- Remaining: commit backend; user runs the item-7 diagnostic SQL
-  (`job_orders` tenant_id distribution, superuser `users` rows) and pastes
-  results back; frontend `SUMMARY_COLS` changes (5 tables +`tenant_id` after
-  `"id"`) in the sibling `frontend` repo; full verification checklist.
+- 2026-07-22: Backend committed as `a0bc938`.
+- 2026-07-22: Frontend implemented (sibling `frontend` repo) — added
+  `"tenant_id"` right after `"id"` in `SUMMARY_COLS` for `bookings`,
+  `candidates`, `employer_profiles`, `job_orders`, and `job_interests`.
+  `tenants` untouched (not tenant-scoped, no `tenant_id` column). No changes
+  to `TABLES`, `EDITABLE_COLS`, or `FK_MAP`. Committed separately as
+  `c19bf57` in the frontend repo, per "one concern per change" /
+  separate-repo convention.
+- Remaining: user runs the item-7 diagnostic SQL (`job_orders` tenant_id
+  distribution, superuser `users` rows) and pastes results back; full manual
+  verification checklist (sidebar counts, browse/search/export/PATCH/DELETE
+  as platform owner, regression as a simulated firm-scoped superuser,
+  non-superuser 403, non-explorer endpoints unchanged, final
+  `audit_tenant_coverage.py` re-check).
