@@ -67,9 +67,10 @@ Rules:
 
 def parse_job_description(text: str) -> dict:
     """
-    Parse a job description or job posting into structured job order fields.
+    Parse a job description or job posting from any industry into
+    structured job order fields.
     """
-    prompt = """You are an expert recruiter reviewing a job description or job posting.
+    prompt = """You are an expert recruiter reviewing a job description or job posting from any industry.
     Extract the following information and return ONLY valid JSON with no preamble or markdown.
 
     Required JSON keys:
@@ -77,14 +78,30 @@ def parse_job_description(text: str) -> dict:
     - location (string or null) — city, state, remote status
     - salary_min (integer or null) — annual minimum salary as integer, no symbols or commas
     - salary_max (integer or null) — annual maximum salary as integer, no symbols or commas
+    - hourly_min (number or null) — hourly minimum rate, no symbols or commas
+    - hourly_max (number or null) — hourly maximum rate, no symbols or commas
+    - employment_type (string or null) — one of: "contract", "contract_to_hire", "direct_hire"
     - requirements (string or null) — key requirements and qualifications as a concise summary
     - company_name (string or null) — hiring company name if present
     - notes (string or null) — any other relevant details worth capturing
 
+    employment_type mapping rules:
+    - "contract" — temp, temporary, contractor, W2 contract, 1099
+    - "contract_to_hire" — temp-to-hire, temp-to-perm, contract-to-hire
+    - "direct_hire" — permanent, full-time employee, direct placement
+    - If none of these are indicated, return null
+
+    Pay rules:
+    - salary_min/salary_max are ANNUAL figures only. hourly_min/hourly_max are HOURLY figures only.
+      Never convert between them.
+    - If pay is stated as an hourly rate, fill hourly_min/hourly_max and leave salary_min/salary_max null.
+    - If pay is stated as an annual salary, fill salary_min/salary_max and leave hourly_min/hourly_max null.
+    - If pay is not mentioned at all, return null for all four pay fields.
+
     Rules:
     - Return ONLY the JSON object, nothing else
     - salary_min and salary_max must be integers (e.g. 150000 not "$150,000")
-    - If salary is not mentioned return null for both salary fields
+    - hourly_min and hourly_max must be numbers (e.g. 32.50 not "$32.50")
     - If a field cannot be determined return null"""
 
     return _call_claude(prompt, text)
