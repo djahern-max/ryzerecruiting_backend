@@ -167,3 +167,23 @@ fed with `pdf_e(branding.brand_name)`. Do NOT re-implement the resolver.
   `/me/banner`), no new REVIEW/HARDCODED. Awaiting manual verification against the
   checklist (banner crop parity, non-RYZE footer brand, RYZE-tenant regression check,
   no-employer/no-banner gradient fallback, no `.format()` KeyError).
+- 2026-07-23 — User deployed and tested against production. Footer branding confirmed
+  correct. Banner: reported the bottom of the image still cut off on the job order PDF at
+  140px, worse than before, while the employer PDF's own 140px crop of a *different* image
+  looked fine to them. Confirmed the CSS was byte-identical between the two templates at
+  this point (re-diffed both `.banner`/`.banner-strip` blocks side by side) — height,
+  background-size/position, and overlap all matched. Since the two PDFs render different
+  banner images (job order pulls `employer.banner_url` off the linked `EmployerProfile`,
+  which for this test case is presumably a wider/taller-content image than whatever was
+  used on the employer PDF test), identical CSS produces different visual crop outcomes
+  per image — this was a real-world case the "180px was undocumented drift" git-history
+  read didn't anticipate: strict 140px parity is demonstrably wrong for this image.
+  **Reversing part of Path A per explicit user decision**: banner height set to 220px
+  (deliberately taller than both the original 180px and the employer's 140px) to show
+  more of the image and reduce the bottom-crop; `-42px` overlap and 2-stop gradient
+  fallback from the parity fix are kept unchanged. Job order and employer banners are
+  **no longer height-matched** — this is an intentional, confirmed departure from the
+  Path A parity goal in the original Goals section, driven by production testing of a
+  real image, not a silent revert. `PDF_STYLE`/`.format()` plumbing unaffected (still 1
+  runtime arg). Awaiting user re-test against production before this can be marked
+  Completed.

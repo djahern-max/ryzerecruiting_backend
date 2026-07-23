@@ -119,7 +119,7 @@ body {{
 /* ── Banner ── */
 .banner {{
     width: 100%;
-    height: 140px;
+    height: 220px;
     background: {banner_style};
     background-size: cover;
     background-position: center;
