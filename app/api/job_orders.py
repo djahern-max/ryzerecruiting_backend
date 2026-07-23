@@ -30,6 +30,7 @@ from app.services.ai_parser import parse_job_description
 from app.services.embedding_service import embed_job_order_background
 from app.services.matching import compute_match_score
 from app.services.notifications import notify_candidate_interest
+from app.services.branding import get_branding
 from app.models.employer_profile import EmployerProfile
 from app.api.job_order_pdf_template import (
     PDF_STYLE,
@@ -413,6 +414,8 @@ def download_job_order_pdf(
     if not job:
         raise HTTPException(status_code=404, detail="Job order not found.")
 
+    branding = get_branding(db, tenant_id)
+
     # Fetch linked employer profile
     employer = None
     if job.employer_profile_id:
@@ -427,7 +430,7 @@ def download_job_order_pdf(
     banner_style = (
         f"url('{banner_url}') center/cover no-repeat"
         if banner_url
-        else "linear-gradient(135deg, #1e3a5f 0%, #2563eb 60%, #1e3a5f 100%)"
+        else "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)"
     )
 
     # ── Logo tag ──
@@ -519,6 +522,7 @@ def download_job_order_pdf(
         about_section=about_section,
         details_section=details_section,
         today=date.today().strftime("%B %d, %Y"),
+        footer_brand=pdf_e(branding.brand_name),
     )
 
     pdf_bytes = render_pdf(html_str)

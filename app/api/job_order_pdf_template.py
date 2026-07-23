@@ -119,7 +119,7 @@ body {{
 /* ── Banner ── */
 .banner {{
     width: 100%;
-    height: 180px;
+    height: 140px;
     background: {banner_style};
     background-size: cover;
     background-position: center;
@@ -132,7 +132,7 @@ body {{
 .identity-zone {{
     background: #fff;
     padding: 0 32px 12px;
-    margin-top: -44px;
+    margin-top: -42px;
     position: relative;
     z-index: 2;
     display: flex;
@@ -350,20 +350,6 @@ body {{
     text-transform: uppercase;
 }}
 
-.footer-sep {{
-    display: inline-block;
-    width: 1px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.3);
-    margin: 0 10px;
-    vertical-align: middle;
-}}
-
-.footer-tagline {{
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.5);
-}}
-
 .footer-date {{
     font-size: 10px;
     color: rgba(255, 255, 255, 0.5);
@@ -426,9 +412,7 @@ PDF_HTML = """<!DOCTYPE html>
 <!-- Footer -->
 <div class="footer">
     <div>
-        <span class="footer-brand">RYZE.AI</span>
-        <span class="footer-sep"></span>
-        <span class="footer-tagline">Job Order Brief</span>
+        <span class="footer-brand">{footer_brand}</span>
     </div>
     <div class="footer-date">Generated {today}</div>
 </div>
