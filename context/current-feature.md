@@ -1,107 +1,65 @@
 # Current Feature
 
-Employer Profile PDF — tenant branding + remove Red Flags from export
+Job Orders — hourly rate range + employment type + industry-agnostic parser (backend)
 
 ## Status
 Not Started
 
 ## Goals
-The employer profile PDF is a client-facing marketing artifact (sent to
-prospective clients alongside the eventual Job Order), but it currently leaks
-two internal things:
+Extend the job order model and pipeline to support any industry and any engagement type:
 
-- The footer is hardcoded to "RYZE.ai" — the same bug fixed on the candidate
-  PDF on 2026-07-15 (see CHANGELOG: "{footer_brand} placeholder fed by
-  get_branding(db, tenant_id)"). Any non-RYZE tenant exporting this PDF ships
-  RYZE branding to their client.
-- The "⚠ Red Flags" section (recruiter-internal risk assessment from the AI
-  brief) is rendered in the export. It must stay visible in the admin UI but
-  never appear in the PDF — same boundary the job order PDF already draws for
-  Recruiter Notes ("intentionally NOT exported" comment pattern in
-  job_orders.py).
+1. Add **hourly_min / hourly_max** alongside the existing annual salary_min / salary_max — a job order can carry either, both, or neither.
+2. Add **employment_type** with the standard recruiting values: `contract`, `contract_to_hire`, `direct_hire` (Direct Hire = permanent placement).
+3. Make the AI job-description parser **industry-agnostic** and teach it to extract the new fields (hourly rates and employment type), mapping common phrasings (temp-to-hire → contract_to_hire, permanent/full-time → direct_hire, etc.).
+4. Flow the new fields through the **embedding text** (so RYZE Intelligence can match on them) and the **PDF export** chips.
 
-Numbered edit sites:
+Companion frontend task exists in the frontend repo's `context/current-feature.md`. **This repo ships first** — run the migration, deploy backend, then frontend. Pydantic tolerates missing fields in either direction, so there is no breaking window.
 
-1. **app/api/employer_pdf_template.py — footer brand placeholder.**
-   Replace the hardcoded `<span class="footer-brand">RYZE.ai</span>` with
-   `{footer_brand}`, mirroring the candidate PDF fix in
-   candidate_pdf_template.py (commit 72b6500). Keep the footer-date span
-   unchanged.
-
-2. **app/api/employer_pdf_template.py — footer tagline decision.**
-   The footer also hardcodes the tagline "Recruiter Intelligence Brief". On
-   the candidate PDF the tagline was removed entirely as noise (commit
-   158645d, orphaned .footer-sep/.footer-tagline CSS cleaned up).
-   DECISION — pick one and state it in the plan:
-   - Path A: remove the tagline + .footer-sep (and orphaned CSS), matching
-     the candidate PDF exactly (footer shows brand name only).
-   - Path B: keep a tagline but make it neutral/client-facing (e.g.
-     "Company Profile") — "Recruiter Intelligence Brief" reads internal on a
-     marketing document either way, so the current string does not survive.
-
-3. **app/api/employer_profiles.py (PDF route) — wire branding.**
-   Call get_branding(db, tenant_id) (resolver already used in bookings.py
-   and candidates.py — audit whether employer_profiles.py already imports it)
-   and pass footer_brand=branding.brand_name (escaped via pdf_e) into the
-   PDF_HTML.format(...) kwargs. RYZE's own PDFs must render unchanged via
-   the resolver's per-field fallback, same as the candidate fix.
-
-4. **app/api/employer_profiles.py (PDF route) — remove Red Flags from
-   export.** Delete the red_flags_section builder block and its
-   red_flags_section= kwarg. Add the boundary comment following the
-   job_orders.py precedent:
-   `# ── Red Flags — intentionally NOT exported ──` (client-facing artifact;
-   red flags stay internal — still visible on the admin detail page and
-   EmployerRoster brief panel, never in the PDF).
-
-5. **app/api/employer_pdf_template.py — template cleanup for site 4.**
-   Remove the {red_flags_section} placeholder from PDF_HTML and the
-   now-orphaned .red-flag-box CSS rule from PDF_STYLE (confirm nothing
-   else uses it in this template before deleting).
-
-Out of scope — do NOT touch: the admin UI display of red flags (detail page,
-EmployerRoster brief panel), the ai_red_flags field/model/API responses, the
-candidate or job order PDFs, the AI brief generation, or the meta chips /
-Details sidebar contents (see Notes for parked items).
+### Numbered edit sites
+1. **`app/models/job_order.py`** — add columns to `JobOrder`:
+   - `hourly_min`, `hourly_max` — see Decision (Path A/B) below
+   - `employment_type = Column(String(50), nullable=True)` — values: `contract | contract_to_hire | direct_hire` (comment them, matching the existing `status` comment style)
+2. **Alembic migration** — new revision adding the three columns, all nullable, with a working `downgrade()`. No data backfill.
+3. **`app/schemas/job_order.py`** — add `hourly_min: Optional[float] = None`, `hourly_max: Optional[float] = None`, `employment_type: Optional[str] = None` to **all five** classes: `JobOrderCreate`, `JobOrderUpdate`, `JobOrderResponse`, `JobOrderParseResponse`, `JobMatchResult`.
+4. **`app/services/ai_parser.py`** → `parse_job_description` — replace the prompt:
+   - open with "job description or job posting **from any industry**"
+   - add JSON keys `hourly_min` (number or null), `hourly_max` (number or null), `employment_type` (string or null, one of the three values) with mapping rules: temp/temporary/contractor/W2 contract/1099 → `contract`; temp-to-hire/temp-to-perm/contract-to-hire → `contract_to_hire`; permanent/full-time employee/direct placement → `direct_hire`
+   - rules: salary fields are annual only, hourly fields are hourly only, **never convert between them**; if pay is stated hourly fill hourly and leave salary null (and vice versa); null all four if pay unstated
+5. **`app/services/embedding_service.py`** → `build_job_order_text` — after the salary block, append hourly range (formatted `$32.50 - $45.00/hr`) and employment type using human labels (`Contract`, `Contract-to-Hire`, `Direct Hire (Permanent)`), so engagement type becomes semantically searchable.
+6. **`app/api/job_order_pdf_template.py`** — add `fmt_hourly(min_val, max_val)` next to `fmt_salary` (same shape: `$25.00/hr – $40.00/hr`, `+`, `up to`), and an `EMPLOYMENT_TYPE_LABELS` dict (`contract` → Contract, `contract_to_hire` → Contract-to-Hire, `direct_hire` → Direct Hire).
+7. **`app/api/job_orders.py`** → `download_job_order_pdf` chips block — after the salary chip, add an hourly chip (if any hourly value) and an employment-type chip (if set), reusing the helpers from edit site 6.
+8. **(In scope, small) `app/api/candidates.py`** — both explicit `JobMatchResult(...)` constructions (`get_my_job_matches` ranked + `_unranked_fallback`): add `hourly_min`, `hourly_max`, `employment_type` from the job. Not strictly required (schema defaults to None) but candidate-facing matches should show engagement type.
+9. **(Out of scope unless I say otherwise) `seed_full.py`** — seed data stays finance-flavored for now. Do not touch.
 
 ## Related Files
-- app/api/employer_pdf_template.py
-- app/api/employer_profiles.py
-- Reference (read-only, for the established patterns):
-  app/api/candidate_pdf_template.py, app/api/candidates.py
-  (download_candidate_pdf), app/api/job_orders.py (Recruiter Notes exclusion
-  comment), app/services/branding.py
+- `app/models/job_order.py`
+- `alembic/versions/` (new migration)
+- `app/schemas/job_order.py`
+- `app/services/ai_parser.py`
+- `app/services/embedding_service.py`
+- `app/api/job_order_pdf_template.py`
+- `app/api/job_orders.py`
+- `app/api/candidates.py`
+
+## Decisions to flag in the audit
+- **Hourly column type — Path A (preferred): `Numeric(8, 2)`** because hourly rates commonly carry cents ($32.50). Pydantic side is `Optional[float]`. **Path B: `Integer`** for symmetry with salary columns — only take this if you find a serialization/JSON issue with Numeric in the existing response patterns. State which path you're taking and why in the plan.
+- **Embedding backfill:** existing job orders re-embed automatically on their next PATCH (the background task already fires on every update). Confirm in the plan whether you'll also propose a one-off backfill script as a follow-up, but do **not** write or run one as part of this task.
 
 ## Verification
-- App import check clean (route count unchanged).
-- Export the PDF for a RYZE-tenant employer: footer shows RYZE branding
-  exactly as before (fallback path), no Red Flags section anywhere in the
-  document, layout intact with no empty gap where the section was.
-- Export for a non-RYZE tenant (e.g. green_path_recruiting, the tenant that
-  surfaced the candidate-PDF version of this bug): footer shows that tenant's
-  brand_name, not RYZE.ai.
-- An employer profile with ai_red_flags populated exports with no trace of
-  the content; admin UI still shows red flags unchanged on the detail page
-  and roster brief panel.
-- Grep confirms no orphaned references: red_flags_section, red-flag-box
-  in the two edited files (admin UI CSS with the same visual style is
-  separate and untouched).
+- [ ] Migration runs cleanly (`alembic upgrade head`), and `\d job_orders` shows `hourly_min numeric(8,2)`, `hourly_max numeric(8,2)`, `employment_type varchar(50)` (adjust if Path B); `alembic downgrade -1` then re-upgrade also clean on local
+- [ ] POST `/api/job-orders` with hourly + employment_type only (no salary) → 201, response echoes the new fields
+- [ ] PATCH updating just `employment_type` → persists, other fields untouched
+- [ ] POST `/api/job-orders/parse` with a pasted **hourly contract** posting from a non-finance industry (e.g. a warehouse or nursing role, "$28–$35/hr, temp-to-hire") → returns hourly_min/max filled, salary null, `employment_type: "contract_to_hire"`
+- [ ] Same with a salaried permanent posting → salary filled, hourly null, `direct_hire`
+- [ ] After creating a job order with the new fields, check logs for successful embed, and confirm `build_job_order_text` output includes the hourly range and employment-type label (log or quick shell check)
+- [ ] GET `/api/job-orders/{id}/pdf` for an hourly contract order → chips show hourly range + "Contract" alongside status; a salary-only order still renders exactly as before
+- [ ] Existing orders (all salary-only, no employment_type) list and render with zero visual/API change
 
 ## Notes
-Origin: GreenScene Landscaping demo PDF (2026-07-23) showed "RYZE.AI —
-Recruiter Intelligence Brief" footer and a "⚠ Red Flags" card on a document
-intended as client-facing marketing collateral.
-
-Parked observations — separate decisions, NOT part of this task:
-- The relationship_status meta chip (e.g. "Prospect") is internal CRM state
-  rendered on a client-facing PDF — candidate for removal in a future pass.
-- "Key Talking Points" is recruiter prep material; whether it belongs on a
-  document sent TO the prospect is a product decision worth revisiting.
-- The "Added <date>" Details row was already parked as possible product noise
-  during the candidate PDF task (2026-07-15) — same question applies here.
+- All three columns nullable, no defaults — old rows and old clients remain valid.
+- Employment-type values are stored lowercase snake_case; display labels live in the PDF template dict (backend) and in the frontend. Don't invent a fourth value.
+- One concern per commit: model+migration+schemas can be one commit; parser prompt another; embedding+PDF another — propose a split in the plan.
+- Deploy order: migration → backend deploy → then the frontend task ships.
 
 ## History
 <!-- Keep this updated. Earliest to latest -->
-- 2026-07-23: Audit-first step done before writing code. Confirmed `RYZE_TENANT` still exported from `app/core/deps.py` and already imported/used in `employer_profiles.py`'s PDF route; `get_branding` was not yet imported there. Found a real divergence between the two cited precedents: job_orders.py's Recruiter Notes exclusion keeps an always-empty `{notes_section}` placeholder wired through, while this spec's sites 4-5 call for full deletion of the placeholder/kwarg — confirmed with user that full deletion is intentional, borrowing only job_orders.py's comment wording, not its keep-the-placeholder mechanism. Plan confirmed by user; Path A approved for the footer tagline (remove entirely, matching the candidate PDF's already-shipped end state — verified via grep that `candidate_pdf_template.py` has zero remaining `.footer-sep`/`.footer-tagline` trace).
-- 2026-07-23: Pre-implementation verification (per user's added check) — traced `get_branding` (`app/services/branding.py:89`) and confirmed it short-circuits `if tid == RYZE_TENANT: return defaults` for the `ryze` tenant, never querying the `tenants` table, returning the literal `brand_name="RYZE.ai"` — byte-identical to the old hardcoded string. Combined with `pdf_e()` escaping (no-op on this string) and the pre-existing `text-transform: uppercase` CSS rule (applied to both old and new values equally), confirmed the RYZE-tenant PDF footer is guaranteed to render identically. No divergence to report.
-- 2026-07-23: Implemented all 5 edit sites as a single commit-ready change. `employer_pdf_template.py`: deleted `.red-flag-box` CSS rule, deleted `.footer-sep`/`.footer-tagline` CSS rules, removed `{red_flags_section}` from `PDF_HTML`, replaced hardcoded footer brand/tagline spans with `{footer_brand}` only (no separator, no tagline). `employer_profiles.py`: added `get_branding` import, added `branding = get_branding(db, tenant_id)` call, deleted the `red_flags_section` builder block in favor of an "intentionally NOT exported" boundary comment (matching job_orders.py's wording, not its empty-placeholder mechanism), removed the `red_flags_section` kwarg, added `footer_brand=pdf_e(branding.brand_name)` kwarg. Grep confirmed zero remaining references to `red_flags_section`/`red-flag-box`/`footer-sep`/`footer-tagline` in either file. App-import check clean: 98 routes (unchanged). Awaiting user's manual PDF export verification (RYZE tenant, green_path_recruiting tenant, red-flags-populated profile) before commit/archive.
