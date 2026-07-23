@@ -1,6 +1,6 @@
 # app/models/job_order.py
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Numeric, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -24,12 +24,15 @@ class JobOrder(Base):
     location = Column(String, nullable=True)
     salary_min = Column(Integer, nullable=True)
     salary_max = Column(Integer, nullable=True)
+    hourly_min = Column(Numeric(8, 2), nullable=True)
+    hourly_max = Column(Numeric(8, 2), nullable=True)
     requirements = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     raw_text = Column(Text, nullable=True)
 
     # Status
     status = Column(String, default="open")  # open | filled | on_hold
+    employment_type = Column(String(50), nullable=True)  # contract | contract_to_hire | direct_hire
 
     # RAG / PGVector
     embedding = Column(Vector(1536), nullable=True)

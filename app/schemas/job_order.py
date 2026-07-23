@@ -10,6 +10,9 @@ class JobOrderCreate(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    hourly_min: Optional[float] = None
+    hourly_max: Optional[float] = None
+    employment_type: Optional[str] = None
     requirements: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = "open"
@@ -21,6 +24,9 @@ class JobOrderUpdate(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    hourly_min: Optional[float] = None
+    hourly_max: Optional[float] = None
+    employment_type: Optional[str] = None
     requirements: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[str] = None
@@ -35,6 +41,9 @@ class JobOrderResponse(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    hourly_min: Optional[float] = None
+    hourly_max: Optional[float] = None
+    employment_type: Optional[str] = None
     requirements: Optional[str] = None
     notes: Optional[str] = None
     status: str
@@ -55,6 +64,9 @@ class JobOrderParseResponse(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    hourly_min: Optional[float] = None
+    hourly_max: Optional[float] = None
+    employment_type: Optional[str] = None
     requirements: Optional[str] = None
     company_name: Optional[str] = None
     notes: Optional[str] = None
@@ -66,6 +78,9 @@ class JobMatchResult(BaseModel):
     location: Optional[str] = None
     salary_min: Optional[int] = None
     salary_max: Optional[int] = None
+    hourly_min: Optional[float] = None
+    hourly_max: Optional[float] = None
+    employment_type: Optional[str] = None
     requirements: Optional[str] = None
     status: str
     employer_profile_id: Optional[int] = None
