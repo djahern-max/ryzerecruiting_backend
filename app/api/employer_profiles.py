@@ -22,6 +22,7 @@ from app.schemas.employer_profile import (
     EmployerProfileParseResponse,
 )
 from app.services.ai_parser import parse_employer_prospect
+from app.services.branding import get_branding
 from app.services.embedding_service import embed_employer_background
 from app.services.spaces import upload_file, delete_file, make_unique_filename
 from app.api.employer_pdf_template import (
@@ -515,6 +516,8 @@ def download_employer_profile_pdf(
     if not profile:
         raise HTTPException(status_code=404, detail="Employer profile not found.")
 
+    branding = get_branding(db, tenant_id)
+
     # Logo tag
     if getattr(profile, "logo_url", None):
         logo_tag = f'<img src="{pdf_e(profile.logo_url)}" />'
@@ -561,14 +564,9 @@ def download_employer_profile_pdf(
         else ""
     )
 
-    red_flags_section = (
-        pdf_card(
-            "⚠ Red Flags",
-            f'<div class="red-flag-box">{pdf_e(profile.ai_red_flags)}</div>',
-        )
-        if profile.ai_red_flags
-        else ""
-    )
+    # ── Red Flags — intentionally NOT exported ──
+    # Client-facing artifact; red flags stay internal (still visible on the
+    # admin detail page and EmployerRoster brief panel, never in the PDF).
 
     # Sidebar
     contact_rows = '<div class="info-list">'
@@ -603,10 +601,10 @@ def download_employer_profile_pdf(
         overview_section=overview_section,
         hiring_needs_section=hiring_needs_section,
         talking_points_section=talking_points_section,
-        red_flags_section=red_flags_section,
         contact_section=contact_section,
         details_section=details_section,
         today=date.today().strftime("%B %d, %Y"),
+        footer_brand=pdf_e(branding.brand_name),
     )
 
     pdf_bytes = render_pdf(html_str)

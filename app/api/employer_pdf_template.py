@@ -229,16 +229,6 @@ body {{
     line-height: 1.35;
 }}
 
-.red-flag-box {{
-    background: #fff7ed;
-    border-left: 3px solid #f97316;
-    padding: 8px 12px;
-    border-radius: 0 6px 6px 0;
-    font-size: 9.5px;
-    color: #9a3412;
-    line-height: 1.6;
-}}
-
 .footer {{
     display: flex;
     justify-content: space-between;
@@ -260,19 +250,6 @@ body {{
     color: #ffffff;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-}}
-
-.footer-sep {{
-    display: inline-block;
-    width: 1px;
-    height: 10px;
-    background: rgba(255,255,255,0.3);
-    margin: 0 10px;
-}}
-
-.footer-tagline {{
-    font-size: 8px;
-    color: rgba(255,255,255,0.55);
 }}
 
 .footer-date {{
@@ -307,7 +284,6 @@ PDF_HTML = """<!DOCTYPE html>
     {overview_section}
     {hiring_needs_section}
     {talking_points_section}
-    {red_flags_section}
   </div>
   <div class="side-col">
     {contact_section}
@@ -317,9 +293,7 @@ PDF_HTML = """<!DOCTYPE html>
 
 <div class="footer">
   <div class="footer-left">
-    <span class="footer-brand">RYZE.ai</span>
-    <span class="footer-sep"></span>
-    <span class="footer-tagline">Recruiter Intelligence Brief</span>
+    <span class="footer-brand">{footer_brand}</span>
   </div>
   <div class="footer-date">Generated {today}</div>
 </div>
