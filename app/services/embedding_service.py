@@ -148,6 +148,13 @@ def build_employer_text(employer: EmployerProfile) -> Optional[str]:
     return text if len(text) > 20 else None
 
 
+JOB_ORDER_EMPLOYMENT_TYPE_LABELS = {
+    "contract": "Contract",
+    "contract_to_hire": "Contract-to-Hire",
+    "direct_hire": "Direct Hire (Permanent)",
+}
+
+
 def build_job_order_text(job_order: JobOrder) -> Optional[str]:
     """
     Compose a rich text representation of a job order.
@@ -166,6 +173,21 @@ def build_job_order_text(job_order: JobOrder) -> Optional[str]:
         )
     elif job_order.salary_min:
         parts.append(f"Salary: ${job_order.salary_min:,}+")
+
+    if job_order.hourly_min and job_order.hourly_max:
+        parts.append(
+            f"Hourly rate: ${job_order.hourly_min:,.2f} - ${job_order.hourly_max:,.2f}/hr"
+        )
+    elif job_order.hourly_min:
+        parts.append(f"Hourly rate: ${job_order.hourly_min:,.2f}/hr+")
+    elif job_order.hourly_max:
+        parts.append(f"Hourly rate: up to ${job_order.hourly_max:,.2f}/hr")
+
+    if job_order.employment_type:
+        label = JOB_ORDER_EMPLOYMENT_TYPE_LABELS.get(
+            job_order.employment_type, job_order.employment_type
+        )
+        parts.append(f"Employment type: {label}")
 
     if job_order.requirements:
         parts.append(f"Requirements: {job_order.requirements}")

@@ -31,6 +31,25 @@ def fmt_salary(min_val, max_val) -> str:
     return f"up to {fmt(max_val)}"
 
 
+def fmt_hourly(min_val, max_val) -> str:
+    """Format hourly range as $25.00/hr – $40.00/hr."""
+    if not min_val and not max_val:
+        return ""
+    fmt = lambda n: f"${float(n):,.2f}/hr"
+    if min_val and max_val:
+        return f"{fmt(min_val)} \u2013 {fmt(max_val)}"
+    if min_val:
+        return f"{fmt(min_val)}+"
+    return f"up to {fmt(max_val)}"
+
+
+EMPLOYMENT_TYPE_LABELS = {
+    "contract": "Contract",
+    "contract_to_hire": "Contract-to-Hire",
+    "direct_hire": "Direct Hire",
+}
+
+
 def pdf_card(title: str, body_html: str) -> str:
     """Render a section card with a label header."""
     return f"""

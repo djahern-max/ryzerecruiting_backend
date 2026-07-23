@@ -39,6 +39,8 @@ from app.api.job_order_pdf_template import (
     pdf_card,
     pdf_info_row,
     fmt_salary,
+    fmt_hourly,
+    EMPLOYMENT_TYPE_LABELS,
 )
 
 logger = logging.getLogger(__name__)
@@ -443,13 +445,21 @@ def download_job_order_pdf(
         else ""
     )
 
-    # ── Chips: location, salary, status ──
+    # ── Chips: location, salary, hourly, employment type, status ──
     chips = ""
     if job.location:
         chips += f'<span class="chip">{pdf_e(job.location)}</span>'
     salary_str = fmt_salary(job.salary_min, job.salary_max)
     if salary_str:
         chips += f'<span class="chip">{pdf_e(salary_str)}</span>'
+    hourly_str = fmt_hourly(job.hourly_min, job.hourly_max)
+    if hourly_str:
+        chips += f'<span class="chip">{pdf_e(hourly_str)}</span>'
+    employment_type_label = (
+        EMPLOYMENT_TYPE_LABELS.get(job.employment_type) if job.employment_type else None
+    )
+    if employment_type_label:
+        chips += f'<span class="chip">{pdf_e(employment_type_label)}</span>'
     status_raw = (job.status or "open").lower()
     status_label = status_raw.replace("_", " ").title()
     chips += f'<span class="chip chip-{status_raw}">{pdf_e(status_label)}</span>'
@@ -486,6 +496,10 @@ def download_job_order_pdf(
         details_rows += pdf_info_row("Location", pdf_e(job.location))
     if salary_str:
         details_rows += pdf_info_row("Salary", pdf_e(salary_str))
+    if hourly_str:
+        details_rows += pdf_info_row("Hourly Rate", pdf_e(hourly_str))
+    if employment_type_label:
+        details_rows += pdf_info_row("Employment Type", pdf_e(employment_type_label))
     details_rows += pdf_info_row("Status", pdf_e(status_label))
     if job.created_at:
         details_rows += pdf_info_row("Added", job.created_at.strftime("%b %d, %Y"))
