@@ -187,3 +187,24 @@ fed with `pdf_e(branding.brand_name)`. Do NOT re-implement the resolver.
   real image, not a silent revert. `PDF_STYLE`/`.format()` plumbing unaffected (still 1
   runtime arg). Awaiting user re-test against production before this can be marked
   Completed.
+- 2026-07-24 — User re-tested 220px against production: **rejected**. 220px made cropping
+  worse, not better — flipped from vertical crop (bottom trimmed) to horizontal crop (top
+  and right edge of the banner script cut off, more zoomed-in overall than the employer
+  PDF). This matches `cover`-fit math: a taller box requires a larger cover-scale factor,
+  which generally increases total crop, not reduces it — going taller was the wrong
+  direction. Critically, the user also clarified the root confusion from the prior 140px
+  test: job order and employer PDFs render **the same banner image** for this employer,
+  and at 140px the employer PDF has the *same* vertical trim on the photo strip that the
+  job order PDF had — the user now confirms that trim is acceptable and already approved
+  on the employer PDF. The earlier "only job order looks cropped" read was inaccurate; the
+  actual issue was never a job-order-specific defect, it was the inherent `cover`
+  trade-off, which the user is fine with. **Decision: revert `.banner` height 220px →
+  140px, restoring full Path A parity** (140px, -42px overlap, 2-stop gradient — all three
+  now match `.banner-strip` exactly, no remaining departure). Reverted in code; app-import
+  clean (98 routes, unchanged). **Open follow-up, unscoped:** no fixed height +
+  `background-size: cover` can show both the full banner script/logo and the full photo
+  strip for every uploaded image — 140px trims the photo vertically (accepted), 180/220px
+  trimmed differently-shaped images horizontally (rejected). A structural fix (e.g.
+  `background-size: 100% auto`, a stored focal-point field, or enforcing a banner aspect
+  ratio at upload) is needed to solve this generally, and belongs to a future spec, not
+  this task. User will re-deploy and re-test the 140px revert before this task is archived.
