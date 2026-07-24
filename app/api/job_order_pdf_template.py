@@ -121,6 +121,8 @@ body {{
 /* ── Banner ── */
 .banner-frame {{
     width: 100%;
+    max-height: 240px;
+    overflow: hidden;
     display: block;
     position: relative;
     flex-shrink: 0;
@@ -129,10 +131,6 @@ body {{
 .banner-frame img {{
     width: 100%;
     height: auto;
-    min-height: 220px;
-    max-height: 240px;
-    object-fit: cover;
-    object-position: center top;
     display: block;
 }}
 
@@ -145,20 +143,26 @@ body {{
 .identity-zone {{
     background: #fff;
     padding: 0 32px 12px;
-    margin-top: -42px;
+    margin-top: 0;
     position: relative;
     z-index: 2;
     display: flex;
     align-items: flex-end;
     gap: 16px;
 }}
-
-.identity-left {{
+.logo-wrap {{
+    width: 88px;
+    height: 88px;
+    margin-top: -42px;
+    border-radius: 12px;
+    border: 3px solid #fff;
+    background: #f8fafc;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
     display: flex;
-    align-items: flex-end;
-    gap: 14px;
-    flex: 1;
-    min-width: 0;
+    align-items: center;
+    justify-content: center;
 }}
 
 .logo-wrap {{
