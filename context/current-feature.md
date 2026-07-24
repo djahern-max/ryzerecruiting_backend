@@ -226,6 +226,45 @@ Behavior by image shape:
   → `PDF_STYLE.format()`; `banner_html` added to `PDF_HTML.format()` kwargs.
   App-import clean (98 routes, unchanged). `audit_tenant_coverage.py`: same
   2 pre-existing unrelated `candidates.py` REVIEW lines, no new
-  REVIEW/HARDCODED. Not committed to git yet — committing employer and
-  candidate as two separate commits (employer first), matching commit 1's
-  granularity, before user deploys and runs the visual checklist.
+  REVIEW/HARDCODED. Committed separately as `8217272`, per user's request
+  to keep employer and candidate as two distinct commits matching commit
+  1's granularity.
+- 2026-07-24 — Commit 3 implemented (candidate). `candidate_pdf_template.py`:
+  `.banner-strip` replaced with the same `.banner-frame`/`.banner-frame img`
+  pair; `.banner-empty` keeps candidate's own distinct 3-stop navy gradient
+  (`#0f2444`/`#1a3a6b`/`#1e4a8a`), per the confirmed no-color-unification
+  decision; `PDF_HTML` banner div replaced with `{banner_html}`; header
+  comment corrected. `candidates.py`: `banner_style` replaced with the same
+  two-branch `banner_html` builder (now passes `candidate.banner_url`
+  through `pdf_e()`, which the old `banner_style` line did not — the old
+  code interpolated the raw URL directly into a CSS `url(...)` value with
+  no escaping; the new `<img src="...">` path picks up the same `pdf_e()`
+  treatment already used for `logo_tag` in the other two templates, closing
+  a minor pre-existing gap as a side effect, not a separate fix). App-import
+  clean (98 routes, unchanged). `audit_tenant_coverage.py`: same 2
+  pre-existing unrelated REVIEW lines, no new REVIEW/HARDCODED.
+
+  **Dense-candidate one-page verification (per the confirmed amendment) —
+  passed.** Built a local test harness (not committed — scratch script)
+  that calls the real `candidate_pdf_template` functions directly with a
+  maximally dense mock candidate (every optional field populated: full
+  600-char summary, experience text long enough to hit the 6-bullet cap,
+  education at the 3-bullet cap, all 14 skill tags, all 3 known cert
+  badges, full contact block, career level + years experience + added
+  date) and a banner image deliberately sized to a 816:260px aspect ratio
+  so its intrinsic render height (260px) exceeds the 240px cap by 20px —
+  forcing `overflow: hidden` to actually engage and consuming the full
+  240px budget, the worst case for page-budget purposes. Rendered via the
+  real `render_pdf()` (had to `playwright install chromium` locally — not
+  previously installed in this dev environment) and counted pages with
+  `pypdf`: **1 page**, `MediaBox` confirmed standard Letter (612×792pt,
+  i.e. 8.5×11in) — not an auto-shrunk single page. No stop-and-flag
+  triggered; proceeding without adjusting the cap.
+
+  Grepped all three route files and all three templates for leftover
+  `banner_style`/`.banner-strip`/`class="banner"` references: zero matches
+  anywhere. All three PDF exports (job order, employer, candidate) are now
+  on the same intrinsic-aspect `<img>` + `.banner-frame`/`.banner-empty`
+  rendering strategy. Not committed to git yet — awaiting user's deploy +
+  visual check on all three exports (per the Verification section) before
+  archiving this task.

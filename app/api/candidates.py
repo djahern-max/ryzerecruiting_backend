@@ -751,11 +751,11 @@ def download_candidate_pdf(
     today_str = datetime.utcnow().strftime("%B %d, %Y")
     branding = get_branding(db, tenant_id)
 
-    # ── Banner style ──────────────────────────────────────────────────────
+    # ── Banner html (intrinsic-aspect <img>, or gradient fallback) ─────────
     if candidate.banner_url:
-        banner_style = f"url('{candidate.banner_url}')"
+        banner_html = f'<div class="banner-frame"><img src="{pdf_e(candidate.banner_url)}" /></div>'
     else:
-        banner_style = "linear-gradient(135deg, #0f2444 0%, #1a3a6b 60%, #1e4a8a 100%)"
+        banner_html = '<div class="banner-frame banner-empty"></div>'
 
     # ── Avatar / photo tag ────────────────────────────────────────────────
     if candidate.photo_url:
@@ -870,7 +870,8 @@ def download_candidate_pdf(
 
     # ── Assemble HTML ─────────────────────────────────────────────────────
     html_string = PDF_HTML.format(
-        style=PDF_STYLE.format(banner_style=banner_style),
+        style=PDF_STYLE.format(),
+        banner_html=banner_html,
         photo_tag=photo_tag,
         name=pdf_e(candidate.name or "Unknown"),
         meta_line=meta_line,

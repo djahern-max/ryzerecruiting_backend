@@ -22,8 +22,10 @@ import re
 from playwright.sync_api import sync_playwright
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS — {banner_style} is the only runtime format argument.
-#        All other {{ }} are escaped literal braces for the CSS itself.
+# CSS — no runtime format arguments. PDF_STYLE.format() is called with zero
+#        kwargs (banner rendering is a real <img> element built in the
+#        route; see banner_html). All {{ }} are escaped literal braces for
+#        the CSS itself.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PDF_STYLE = """
@@ -53,14 +55,24 @@ body {{
     min-height: 11in;
 }}
 
-/* ─── BANNER STRIP (pure visual — mirrors UI) ─── */
-.banner-strip {{
-    height: 140px;
-    background: {banner_style};
-    background-size: cover;
-    background-position: center;
+/* ─── BANNER (intrinsic-aspect <img>, mirrors UI) ─── */
+.banner-frame {{
+    width: 100%;
+    max-height: 240px;
+    overflow: hidden;
     flex-shrink: 0;
     display: block;
+}}
+
+.banner-frame img {{
+    width: 100%;
+    height: auto;
+    display: block;
+}}
+
+.banner-empty {{
+    height: 140px;
+    background: linear-gradient(135deg, #0f2444 0%, #1a3a6b 60%, #1e4a8a 100%);
 }}
 
 /* ─── IDENTITY ZONE (avatar overlaps banner seam, mirrors .identityRow) ─── */
@@ -386,8 +398,8 @@ PDF_HTML = """<!DOCTYPE html>
 </head>
 <body>
 
-<!-- BANNER (pure visual, mirrors UI) -->
-<div class="banner-strip"></div>
+<!-- BANNER (intrinsic-aspect <img>, mirrors UI) -->
+{banner_html}
 
 <!-- IDENTITY ZONE: avatar overlaps the banner/white seam -->
 <div class="identity-zone">
