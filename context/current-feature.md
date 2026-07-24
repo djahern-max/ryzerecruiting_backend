@@ -265,6 +265,67 @@ Behavior by image shape:
   `banner_style`/`.banner-strip`/`class="banner"` references: zero matches
   anywhere. All three PDF exports (job order, employer, candidate) are now
   on the same intrinsic-aspect `<img>` + `.banner-frame`/`.banner-empty`
-  rendering strategy. Not committed to git yet — awaiting user's deploy +
-  visual check on all three exports (per the Verification section) before
-  archiving this task.
+  rendering strategy.
+- 2026-07-24 — User requested employer and candidate be committed as two
+  separate commits (matching commit 1's granularity) rather than one
+  combined commit, so they could pull and test incrementally. Committed
+  employer as `8217272`, candidate as `ff3d1ec`. Working tree clean, both
+  ahead of `origin/main`, awaiting user's deploy + visual checklist.
+- 2026-07-24 — **User reported a real defect from a live PDF**: "the banner
+  is too narrow vertically." Rather than guess, requested the actual PDF
+  (`Landscape_Designer_JobOrder.pdf`) and parsed it directly with PyMuPDF
+  (`fitz`) to get ground truth instead of eyeballing a rendered preview.
+  Root cause, with exact numbers: the real Greenscene banner image is
+  **2000×400px — a 5:1 aspect ratio**, an extremely wide/flat photo-collage
+  strip. At full page width (612pt/8.5in), it placed at exactly 122.25pt
+  (≈163 CSS px), matching the hand-computed intrinsic value (122.4pt) almost
+  exactly — confirming the code was working *exactly as designed*, zero
+  cropping, well under the 240px cap. This was, mechanically, not a bug —
+  and even 23px *taller* than the old fixed 140px box. The complaint was a
+  real design gap the spec's own predicted behavior ("wide/short image:
+  renders at natural height, fully intact") didn't anticipate would look
+  *this* thin in practice. Confirmed this wasn't guesswork by extracting the
+  actual embedded image and the frame's placed rect via `fitz` rather than
+  reasoning from the CSS alone.
+
+  Presented the finding and asked the user how to handle genuinely
+  short/wide images going forward. **Decision: add a min-height floor**,
+  trading a small amount of side-cropping back in for a more prominent
+  banner on flat images — confirmed via a second round (**220px floor**,
+  paired with the existing **240px ceiling** — only 20px of headroom
+  between them, deliberately tight since 220 needed to exceed this image's
+  natural 163px to have any visible effect at all).
+
+  **Implementation**: moved the min/max-height and crop logic from the
+  `.banner-frame` wrapper (`overflow: hidden`) onto the `<img>` itself
+  (`height: auto; min-height: 220px; max-height: 240px; object-fit: cover;
+  object-position: center top;`) in all three templates —
+  `job_order_pdf_template.py`, `employer_pdf_template.py`,
+  `candidate_pdf_template.py`. `.banner-frame` simplified to just
+  `width: 100%; flex-shrink: 0; display: block;` (single source of truth
+  now lives on the img). Verified mathematically before implementing that
+  `object-fit: cover` + `object-position: center top` reproduces the
+  existing ceiling behavior exactly (crops the bottom only, never the
+  sides) — cover's scale-selection always picks scale-by-width whenever
+  the image's natural height exceeds the box, identical to the old
+  `overflow: hidden` mechanism — and only introduces side-cropping in the
+  new floor case, which is the explicitly approved tradeoff.
+
+  **Verified with real data, not synthetic data, where possible**:
+  extracted the actual 2000×400 banner PNG bytes out of the user's PDF via
+  `fitz.extract_image()` and re-rendered the real job order template with
+  it locally — confirmed the placed rect is now exactly 220pt×0.75=165pt
+  → **220 CSS px**, the floor engaging correctly, and visually reviewed the
+  render: script text intact and larger, photos cropped modestly at the
+  left/right edges, no stretching/distortion. Separately verified the
+  ceiling still crops bottom-only (not sides) with a synthetic 2.72:1 test
+  image carrying a green top marker band and a red bottom marker band —
+  rasterized the output PDF page and scanned pixel colors: green marker
+  present at the very top, zero red pixels anywhere in the banner region,
+  confirming the bottom-only crop survived the mechanism change. Re-ran the
+  dense-candidate one-page check (candidate template's CSS changed too):
+  still **1 page**. App-import clean (98 routes), `audit_tenant_coverage.py`
+  unchanged (same 2 pre-existing unrelated findings). Not yet committed —
+  reporting the fix and verification back to the user before committing,
+  since the prior three commits were already pulled/under test and this
+  changes behavior they were mid-review on.

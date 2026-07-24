@@ -121,8 +121,6 @@ body {{
 /* ── Banner ── */
 .banner-frame {{
     width: 100%;
-    max-height: 240px;
-    overflow: hidden;
     display: block;
     position: relative;
     flex-shrink: 0;
@@ -131,6 +129,10 @@ body {{
 .banner-frame img {{
     width: 100%;
     height: auto;
+    min-height: 220px;
+    max-height: 240px;
+    object-fit: cover;
+    object-position: center top;
     display: block;
 }}
 

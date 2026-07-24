@@ -58,8 +58,6 @@ body {{
 /* ─── BANNER (intrinsic-aspect <img>, mirrors UI) ─── */
 .banner-frame {{
     width: 100%;
-    max-height: 240px;
-    overflow: hidden;
     flex-shrink: 0;
     display: block;
 }}
@@ -67,6 +65,10 @@ body {{
 .banner-frame img {{
     width: 100%;
     height: auto;
+    min-height: 220px;
+    max-height: 240px;
+    object-fit: cover;
+    object-position: center top;
     display: block;
 }}
 
