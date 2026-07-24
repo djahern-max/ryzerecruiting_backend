@@ -214,3 +214,18 @@ Behavior by image shape:
   job order: gradient fallback at 140px; identity-zone overlap; footer
   branding unchanged; one-page fit) before commit and before starting
   Commit 2 (employer).
+- 2026-07-24 — User deployed/tested and committed Commit 1 (`0431ea0`),
+  then instructed to proceed directly through Commits 2 and 3.
+- 2026-07-24 — Commit 2 implemented (employer). `employer_pdf_template.py`:
+  `.banner-strip` replaced with `.banner-frame` (max-height 240px,
+  `overflow: hidden`) + `.banner-frame img` (width 100%, height auto) +
+  `.banner-empty` (fixed 140px, same 2-stop gradient as job order — parity
+  preserved); `PDF_HTML`'s banner div replaced with `{banner_html}`; header
+  comment corrected. `employer_profiles.py`: `banner_style` replaced with
+  the same two-branch `banner_html` builder; `PDF_STYLE.format(banner_style=...)`
+  → `PDF_STYLE.format()`; `banner_html` added to `PDF_HTML.format()` kwargs.
+  App-import clean (98 routes, unchanged). `audit_tenant_coverage.py`: same
+  2 pre-existing unrelated `candidates.py` REVIEW lines, no new
+  REVIEW/HARDCODED. Not committed to git yet — committing employer and
+  candidate as two separate commits (employer first), matching commit 1's
+  granularity, before user deploys and runs the visual checklist.

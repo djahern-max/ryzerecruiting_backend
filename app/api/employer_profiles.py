@@ -524,12 +524,11 @@ def download_employer_profile_pdf(
     else:
         logo_tag = pdf_e(profile.company_name[:1].upper())
 
-    # Banner style
-    banner_style = (
-        f"url('{profile.banner_url}') center/cover no-repeat"
-        if getattr(profile, "banner_url", None)
-        else "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)"
-    )
+    # Banner html (intrinsic-aspect <img>, or gradient fallback)
+    if getattr(profile, "banner_url", None):
+        banner_html = f'<div class="banner-frame"><img src="{pdf_e(profile.banner_url)}" /></div>'
+    else:
+        banner_html = '<div class="banner-frame banner-empty"></div>'
 
     # Meta chips
     chips = ""
@@ -592,9 +591,10 @@ def download_employer_profile_pdf(
     details_rows += "</div>"
     details_section = pdf_card("Details", details_rows)
 
-    style = PDF_STYLE.format(banner_style=banner_style)
+    style = PDF_STYLE.format()
     html_str = PDF_HTML.format(
         style=style,
+        banner_html=banner_html,
         logo_tag=logo_tag,
         company_name=pdf_e(profile.company_name),
         meta_chips=chips,

@@ -6,7 +6,9 @@ import re
 from playwright.sync_api import sync_playwright
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS — {banner_style} is the only runtime format argument.
+# CSS — no runtime format arguments. PDF_STYLE.format() is called with zero
+# kwargs (banner rendering is a real <img> element built in the route; see
+# banner_html).
 # ─────────────────────────────────────────────────────────────────────────────
 
 PDF_STYLE = """
@@ -36,13 +38,23 @@ body {{
     min-height: 11in;
 }}
 
-.banner-strip {{
-    height: 140px;
-    background: {banner_style};
-    background-size: cover;
-    background-position: center;
+.banner-frame {{
+    width: 100%;
+    max-height: 240px;
+    overflow: hidden;
     flex-shrink: 0;
     display: block;
+}}
+
+.banner-frame img {{
+    width: 100%;
+    height: auto;
+    display: block;
+}}
+
+.banner-empty {{
+    height: 140px;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
 }}
 
 .identity-zone {{
@@ -266,7 +278,7 @@ PDF_HTML = """<!DOCTYPE html>
 </head>
 <body>
 
-<div class="banner-strip"></div>
+{banner_html}
 
 <div class="identity-zone">
   <div class="identity-left">
