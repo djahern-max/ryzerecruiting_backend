@@ -84,8 +84,10 @@ def render_pdf(html_str: str) -> bytes:
 
 # ---------------------------------------------------------------------------
 # CSS
-# {banner_style} is the only runtime format argument.
-# All other {{ }} are escaped literal braces for Python str.format().
+# No runtime format arguments — PDF_STYLE.format() is called with zero
+# kwargs (banner rendering moved to a real <img> element built in the
+# route; see banner_html). All {{ }} are escaped literal braces for
+# Python str.format().
 # ---------------------------------------------------------------------------
 
 PDF_STYLE = """
@@ -117,15 +119,24 @@ body {{
 }}
 
 /* ── Banner ── */
-.banner {{
+.banner-frame {{
     width: 100%;
-    height: 140px;
-    background: {banner_style};
-    background-size: cover;
-    background-position: center;
+    max-height: 240px;
+    overflow: hidden;
     display: block;
     position: relative;
     flex-shrink: 0;
+}}
+
+.banner-frame img {{
+    width: 100%;
+    height: auto;
+    display: block;
+}}
+
+.banner-empty {{
+    height: 140px;
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
 }}
 
 /* ── Identity Zone ── */
@@ -370,7 +381,7 @@ PDF_HTML = """<!DOCTYPE html>
 <body>
 
 <!-- Banner -->
-<div class="banner"></div>
+{banner_html}
 
 <!-- Identity Zone -->
 <div class="identity-zone">

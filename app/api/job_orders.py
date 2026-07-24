@@ -425,13 +425,12 @@ def download_job_order_pdf(
             .first()
         )
 
-    # ── Banner style ──
+    # ── Banner html (intrinsic-aspect <img>, or gradient fallback) ──
     banner_url = getattr(employer, "banner_url", None) if employer else None
-    banner_style = (
-        f"url('{banner_url}') center/cover no-repeat"
-        if banner_url
-        else "linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%)"
-    )
+    if banner_url:
+        banner_html = f'<div class="banner-frame"><img src="{pdf_e(banner_url)}" /></div>'
+    else:
+        banner_html = '<div class="banner-frame banner-empty"></div>'
 
     # ── Logo tag ──
     logo_url = getattr(employer, "logo_url", None) if employer else None
@@ -510,9 +509,10 @@ def download_job_order_pdf(
     details_section = pdf_card("Job Details", details_rows)
 
     # ── Render ──
-    style = PDF_STYLE.format(banner_style=banner_style)
+    style = PDF_STYLE.format()
     html_str = PDF_HTML.format(
         style=style,
+        banner_html=banner_html,
         logo_tag=logo_tag,
         company_name_tag=company_name_tag,
         job_title=pdf_e(job.title),
