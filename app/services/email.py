@@ -1515,6 +1515,77 @@ def send_self_serve_welcome_email(
 
 
 # ---------------------------------------------------------------------------
+# Demo request — notify Dane
+# ---------------------------------------------------------------------------
+
+
+def send_demo_request_notification(
+    name: str,
+    company: str,
+    email: str,
+    phone: str = "",
+    message: str = "",
+    branding: TenantBranding = None,
+) -> None:
+    """Notify RYZE's admin inbox that someone requested a demo from the
+    landing page. Always RYZE-side — no tenant exists yet for the requester."""
+    branding = branding or get_branding(None, "ryze")
+
+    resend.Emails.send(
+        {
+            "from": branding.email_from_line,
+            "to": [branding.admin_email],
+            "subject": f"New Demo Request — {name} ({company})",
+            "html": f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 32px; background: #f9fafb; border-radius: 8px;">
+            <h1 style="color: #0a66c2; margin-bottom: 8px;">{branding.brand_name}</h1>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-bottom: 24px;" />
+
+            <h2 style="color: #111827; margin-bottom: 4px;">New Demo Request 📋</h2>
+            <p style="color: #64748b; font-size: 14px; margin-top: 0;">
+                Someone requested a demo from the landing page.
+            </p>
+
+            <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 24px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; width: 40%;">Name</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Company</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">{company}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Email</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">
+                            <a href="mailto:{email}" style="color: #0a66c2;">{email}</a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px;">Phone</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{phone or "—"}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; color: #64748b; font-size: 14px; vertical-align: top;">Message</td>
+                        <td style="padding: 8px 0; color: #111827; font-size: 14px;">{message or "—"}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin-top: 32px;" />
+            <p style="color: #94a3b8; font-size: 12px; text-align: center;">
+                © 2026 {branding.brand_name}. All rights reserved.
+            </p>
+        </div>
+        """,
+        }
+    )
+
+    logger.info(f"Demo request notification sent for {email} ({company})")
+
+
+# ---------------------------------------------------------------------------
 # Candidate "I'm Interested" — notify the firm's recruiter
 # ---------------------------------------------------------------------------
 

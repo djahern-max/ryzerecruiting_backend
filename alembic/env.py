@@ -24,6 +24,7 @@ from app.models.webhook_log import WebhookLog
 from app.models.tenant import Tenant
 from app.models.chat_session import ChatSession
 from app.models.chat_message import ChatMessage
+from app.models.demo_request import DemoRequest
 
 # this is the Alembic Config object
 config = context.config

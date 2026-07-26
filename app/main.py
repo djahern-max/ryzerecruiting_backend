@@ -25,6 +25,7 @@ from app.api.db_explorer import router as db_explorer_router
 from app.api.admin_invite import router as admin_invite_router
 from app.api.billing import router as billing_router
 from app.api.settings import router as settings_router
+from app.api.demo_request import router as demo_request_router
 
 app = FastAPI(title="RYZE.ai API")
 
@@ -74,6 +75,7 @@ app.include_router(settings_router)
 # Integrations & webhooks
 app.include_router(webhooks_router)
 app.include_router(waitlist_router)
+app.include_router(demo_request_router)
 
 # Internal / dev tools
 app.include_router(db_explorer_router)
