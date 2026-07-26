@@ -88,7 +88,7 @@ def invite_firm(
     Onboard a new recruiting firm in one action:
       1. Validate no existing user with that email
       2. Generate a tenant slug from company_name
-      3. Create Tenant row (status=trial, 30-day window)
+      3. Create Tenant row (status=trial, 60-day window)
       4. Create User row linked to the new tenant
       5. Fire branded welcome email via Resend
     """
@@ -110,7 +110,7 @@ def invite_firm(
 
     # 3. Create Tenant
     now = datetime.now(timezone.utc)
-    trial_ends = now + timedelta(days=30)
+    trial_ends = now + timedelta(days=60)
 
     tenant = Tenant(
         slug=slug,

@@ -1372,7 +1372,7 @@ def send_welcome_invite_email(
         {
             "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
             "to": [email],
-            "subject": "You're invited to RYZE.ai — your 30-day trial starts today",
+            "subject": "You're invited to RYZE.ai — your 60-day trial starts today",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
             <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
@@ -1380,7 +1380,7 @@ def send_welcome_invite_email(
 
             <h2 style="color:#111827;margin-bottom:4px;">Welcome to RYZE.ai, {full_name}! 🎉</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">
-                Your 30-day free trial for <strong>{company_name}</strong> starts now.
+                Your 60-day free trial for <strong>{company_name}</strong> starts now.
             </p>
 
             <p style="color:#334155;font-size:15px;">
@@ -1455,7 +1455,7 @@ def send_self_serve_welcome_email(
         {
             "from": f"RYZE.ai <{settings.FROM_EMAIL}>",
             "to": [email],
-            "subject": "Welcome to RYZE.ai — your 30-day trial starts today",
+            "subject": "Welcome to RYZE.ai — your 60-day trial starts today",
             "html": f"""
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f9fafb;border-radius:8px;">
             <h1 style="color:#0a66c2;margin-bottom:8px;">RYZE.ai</h1>
@@ -1463,7 +1463,7 @@ def send_self_serve_welcome_email(
 
             <h2 style="color:#111827;margin-bottom:4px;">Welcome to RYZE.ai, {full_name}! 🎉</h2>
             <p style="color:#64748b;font-size:14px;margin-top:0;">
-                Your 30-day free trial for <strong>{company_name}</strong> starts now.
+                Your 60-day free trial for <strong>{company_name}</strong> starts now.
             </p>
 
             <p style="color:#334155;font-size:15px;">

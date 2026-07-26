@@ -99,7 +99,7 @@ def _generate_firm_slug(company_name: str, db: Session) -> str:
 def signup_firm(payload: SignupFirmRequest, request: Request, db: Session = Depends(get_db)):
     """
     Public self-serve signup: creates a new recruiting-firm tenant + ADMIN
-    user with a 30-day trial, no card required. Response mirrors /login so
+    user with a 60-day trial, no card required. Response mirrors /login so
     the frontend can log the user straight in.
     """
     ip = get_client_ip(request)
@@ -123,7 +123,7 @@ def signup_firm(payload: SignupFirmRequest, request: Request, db: Session = Depe
     slug = _generate_firm_slug(payload.company_name, db)
 
     now = datetime.now(timezone.utc)
-    trial_ends = now + timedelta(days=30)
+    trial_ends = now + timedelta(days=60)
 
     tenant = Tenant(
         slug=slug,
