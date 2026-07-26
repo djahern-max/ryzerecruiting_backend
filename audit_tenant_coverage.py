@@ -52,6 +52,7 @@ PUBLIC_PATTERNS = {
     "respond_to_invite",
     "get_my_bookings",
     "trigger_embedding_sync",
+    "signup_firm",
 }
 
 # Auth dependency names that mean "this endpoint requires a logged-in user"

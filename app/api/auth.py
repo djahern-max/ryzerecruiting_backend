@@ -1,27 +1,32 @@
 # app/api/auth.py - Updated to use Redis for OAuth temp storage
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from starlette.responses import RedirectResponse
 import httpx
+import re
 import secrets
 import logging
 import redis
 import json
 
 from app.core.database import get_db
-from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
+from app.schemas.user import UserCreate, UserLogin, UserResponse, Token, SignupFirmRequest
 from app.services.auth import AuthService
 from app.core.security import (
     decode_access_token,
     create_access_token,
+    get_password_hash,
 )
 from app.core.oauth import oauth
 from app.core.config import settings
 from app.models.user import User, UserType
+from app.models.tenant import Tenant
 from app.services.branding import get_branding
+from app.services.email import send_self_serve_welcome_email
+from app.services.rate_limit import check_rate_limit, get_client_ip
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -72,6 +77,99 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred during registration: {str(e)}",
         )
+
+
+def _generate_firm_slug(company_name: str, db: Session) -> str:
+    """
+    Convert company_name to a URL-safe slug, appending a short numeric
+    suffix on collision. Self-contained copy of admin_invite.py's
+    _generate_slug — duplicated rather than shared so the superadmin
+    invite flow stays completely untouched by this change.
+    """
+    base = re.sub(r"[^a-z0-9]+", "_", company_name.lower()).strip("_")
+    slug = base
+    attempt = 0
+    while db.query(Tenant).filter(Tenant.slug == slug).first():
+        attempt += 1
+        slug = f"{base}_{attempt}"
+    return slug
+
+
+@router.post("/signup-firm", response_model=Token, status_code=status.HTTP_201_CREATED)
+def signup_firm(payload: SignupFirmRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Public self-serve signup: creates a new recruiting-firm tenant + ADMIN
+    user with a 30-day trial, no card required. Response mirrors /login so
+    the frontend can log the user straight in.
+    """
+    ip = get_client_ip(request)
+    if not check_rate_limit(f"ratelimit:signup_firm:{ip}", limit=5, window_seconds=3600):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many signup attempts. Please try again later.",
+        )
+
+    if payload.website:
+        logger.warning(f"[signup-firm] Honeypot tripped from IP {ip} for email {payload.email}")
+        raise HTTPException(status_code=400, detail="Unable to process request")
+
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A user with email {payload.email} already exists.",
+        )
+
+    slug = _generate_firm_slug(payload.company_name, db)
+
+    now = datetime.now(timezone.utc)
+    trial_ends = now + timedelta(days=30)
+
+    tenant = Tenant(
+        slug=slug,
+        company_name=payload.company_name,
+        status="trial",
+        trial_starts_at=now,
+        trial_ends_at=trial_ends,
+    )
+    db.add(tenant)
+    db.flush()
+
+    new_user = User(
+        email=payload.email,
+        full_name=payload.full_name,
+        hashed_password=get_password_hash(payload.password),
+        user_type=UserType.ADMIN,
+        is_superuser=False,
+        is_active=True,
+        tenant_id=slug,
+        first_login_at=now,
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    logger.info(
+        f"[signup-firm] New self-serve tenant created — slug={slug} "
+        f"user={payload.email} trial_ends={trial_ends.strftime('%Y-%m-%d')}"
+    )
+
+    try:
+        send_self_serve_welcome_email(
+            full_name=payload.full_name,
+            email=payload.email,
+            company_name=payload.company_name,
+            trial_ends_at=trial_ends,
+        )
+    except Exception as e:
+        logger.error(f"[signup-firm] Welcome email failed for {payload.email}: {e}")
+
+    access_token = create_access_token(data={"sub": new_user.email})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": AuthService._auth_user_payload(db, new_user),
+    }
 
 
 @router.post("/login", response_model=Token)

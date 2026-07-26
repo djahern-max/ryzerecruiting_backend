@@ -34,6 +34,14 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
+class SignupFirmRequest(BaseModel):
+    company_name: str
+    full_name: str
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=100)
+    website: str = ""  # honeypot — real users never see or fill this field
+
     @field_validator("email", "password", mode="before")
     @classmethod
     def _strip_whitespace(cls, v):
