@@ -9,6 +9,7 @@ Rules applied to each endpoint function body:
   ✓ SAFE       — uses get_current_tenant / get_current_admin_tenant
   ✓ SAFE       — filters query by tenant_id variable
   ✓ SAFE       — uses current_user.tenant_id directly
+  ✓ SAFE       — tenant scoping delegated to a known-safe helper function
   ⚠ HARDCODED  — uses RYZE_TENANT constant instead of dynamic tenant
   ⚠ REVIEW     — authenticated but no tenant filter found
   ○ PUBLIC     — no auth dependency (intentionally open)
@@ -98,6 +99,17 @@ TENANT_SAFE_PATTERNS = [
     "tenant_id == ",
     ".tenant_id",
 ]
+
+# Helper functions (not visible to this script's per-endpoint text scan,
+# since they live in a different function body) that are known to enforce
+# tenant scoping internally before returning a row to the caller. Endpoints
+# that delegate to one of these get a distinct SAFE label rather than being
+# silently folded into plain SAFE, so the delegation stays visible in every
+# audit run — e.g. candidates.py's /me/photo and /me/banner, which resolve
+# their row via _resolve_candidate_for_user() instead of an inline filter.
+HELPER_SAFE_FUNCS = {
+    "_resolve_candidate_for_user",
+}
 
 HARDCODED_PATTERNS = [
     "RYZE_TENANT",
@@ -258,6 +270,12 @@ def evaluate_endpoint(
     touches_data = any(t in func_source for t in tenant_tables)
 
     if touches_data:
+        helper_hits = [h for h in HELPER_SAFE_FUNCS if h in func_source]
+        if helper_hits:
+            return (
+                "SAFE",
+                f"Tenant scoping delegated to helper: {helper_hits[0]}",
+            )
         return (
             "REVIEW",
             "Authenticated + touches tenant data but no tenant_id filter found",

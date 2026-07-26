@@ -88,7 +88,14 @@ def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidat
 def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Candidate]:
     tenant_id = current_user.tenant_id or RYZE_TENANT
 
-    candidate = db.query(Candidate).filter(Candidate.user_id == current_user.id).first()
+    # tenant_id filter is a read-time enforcement of the write-time invariant:
+    # Candidate.user_id is only ever set below, already gated by tenant_id ==
+    # tenant_id — this stops a future second writer from silently breaking it.
+    candidate = (
+        db.query(Candidate)
+        .filter(Candidate.user_id == current_user.id, Candidate.tenant_id == tenant_id)
+        .first()
+    )
     if candidate:
         return candidate
 
