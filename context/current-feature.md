@@ -5,7 +5,7 @@ Free trial: 30 days -> 60 days
 
 ## Status
 <!-- Not Started | In Progress | Completed -->
-In Progress
+Completed
 
 ## Goals
 <!-- Goals & requirements -->
@@ -33,3 +33,4 @@ In Progress
 ## History
 <!-- Keep this updated. Earliest to latest -->
 - 2026-07-26: Task started — audited for all trial-related "30" literals across backend + frontend, updated this file before coding.
+- 2026-07-26: Changed both `timedelta(days=30)` calls (auth.py, admin_invite.py) and their docstrings to 60. Updated both welcome email variants in email.py (subject + body, 4 spots). Updated InviteForm.jsx (2 spots), UpgradePage.jsx, and SignupFirm.jsx subhead (added "60-day free trial" as a selling point). Ran audit_tenant_coverage.py — no new REVIEW/HARDCODED findings on auth.py/admin_invite.py. Backend committed (`1d47499`), frontend committed separately (`78d9716`, different repo).
