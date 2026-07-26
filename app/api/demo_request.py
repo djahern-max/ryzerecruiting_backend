@@ -25,6 +25,9 @@ def create_demo_request(payload: DemoRequestCreate, request: Request, db: Sessio
     """
     ip = get_client_ip(request)
     if not check_rate_limit(f"ratelimit:demo_request:{ip}", limit=10, window_seconds=3600):
+        logger.warning(
+            f"[demo-request] Rate limit hit from IP {ip} for email {payload.email}"
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Please try again later.",

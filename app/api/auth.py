@@ -114,6 +114,9 @@ def signup_firm(
     if not check_rate_limit(
         f"ratelimit:signup_firm:{ip}", limit=5, window_seconds=3600
     ):
+        logger.warning(
+            f"[signup-firm] Rate limit hit from IP {ip} for email {payload.email}"
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many signup attempts. Please try again later.",
