@@ -13,7 +13,13 @@ import redis
 import json
 
 from app.core.database import get_db
-from app.schemas.user import UserCreate, UserLogin, UserResponse, Token, SignupFirmRequest
+from app.schemas.user import (
+    UserCreate,
+    UserLogin,
+    UserResponse,
+    Token,
+    SignupFirmRequest,
+)
 from app.services.auth import AuthService
 from app.core.security import (
     decode_access_token,
@@ -96,28 +102,34 @@ def _generate_firm_slug(company_name: str, db: Session) -> str:
 
 
 @router.post("/signup-firm", response_model=Token, status_code=status.HTTP_201_CREATED)
-def signup_firm(payload: SignupFirmRequest, request: Request, db: Session = Depends(get_db)):
+def signup_firm(
+    payload: SignupFirmRequest, request: Request, db: Session = Depends(get_db)
+):
     """
     Public self-serve signup: creates a new recruiting-firm tenant + ADMIN
     user with a 60-day trial, no card required. Response mirrors /login so
     the frontend can log the user straight in.
     """
     ip = get_client_ip(request)
-    if not check_rate_limit(f"ratelimit:signup_firm:{ip}", limit=5, window_seconds=3600):
+    if not check_rate_limit(
+        f"ratelimit:signup_firm:{ip}", limit=5, window_seconds=3600
+    ):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many signup attempts. Please try again later.",
         )
 
     if payload.website:
-        logger.warning(f"[signup-firm] Honeypot tripped from IP {ip} for email {payload.email}")
+        logger.warning(
+            f"[signup-firm] Honeypot tripped from IP {ip} for email {payload.email}"
+        )
         raise HTTPException(status_code=400, detail="Unable to process request")
 
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A user with email {payload.email} already exists.",
+            detail="Email already registered",
         )
 
     slug = _generate_firm_slug(payload.company_name, db)

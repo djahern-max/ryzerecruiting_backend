@@ -4,6 +4,16 @@ Completed features/fixes move here from `current-feature.md` once Status = Compl
 
 This file doubles as source material for the Build in Public series — each entry is close to script-ready: what the problem was, what changed, and the dated sequence of how it got fixed.
 
+## Free Trial — 30 days → 60 days (completed 2026-07-26)
+Extended the free trial length from 30 to 60 days everywhere it's set or described, across both repos. Backend: both trial-creation paths — `app/api/auth.py`'s self-serve signup and `app/api/admin_invite.py`'s admin invite — had their `timedelta(days=30)` calls and docstrings changed to 60, plus the welcome email copy in `app/services/email.py` updated for both the invite and self-serve variants (subject lines and body text, 4 spots total). Frontend: `InviteForm.jsx` (2 mentions), `UpgradePage.jsx`'s expired-trial message, and `SignupFirm.jsx`'s subhead — the last of which went further than a number swap, promoting "60-day free trial" to an explicit selling point on the signup page.
+
+Audited for other literal `30`s tied to trials before touching any code. Found two dated historical mentions — `context/CHANGELOG.md` itself and `../frontend/src/pages/SaasLanding.jsx`'s EP16/EP17 dev-log entries — both left unchanged, since they're records of what was true when that work shipped, not living product copy (same treatment CHANGELOG.md entries generally get).
+
+History:
+- 2026-07-26 — Task started. Audited for all trial-related "30" literals across backend + frontend, updated `current-feature.md` before writing any code.
+- 2026-07-26 — Changed both `timedelta(days=30)` calls (`auth.py`, `admin_invite.py`) and their docstrings to 60. Updated both welcome email variants in `email.py` (subject + body, 4 spots). Updated `InviteForm.jsx` (2 spots), `UpgradePage.jsx`, and `SignupFirm.jsx`'s subhead (added "60-day free trial" as a selling point). Ran `audit_tenant_coverage.py` — no new REVIEW/HARDCODED findings on `auth.py`/`admin_invite.py`. Backend committed (`1d47499`), frontend committed separately (`78d9716`, different repo).
+- 2026-07-26 — Confirmed working end-to-end against Stripe in test mode. Confirmed complete by user.
+
 ## Self-Serve Recruiter Signup + Demo Requests — backend (completed 2026-07-26)
 Backend half of Feature 1 of 3 for go-live day (frontend items ship as a separate session in the frontend repo). Before this, onboarding was invite-only: `POST /api/admin/invite` (superadmin-gated) created a trial Tenant + ADMIN User + fired a welcome email with a temp password — there was no public path for a recruiter to create their own firm's tenant, and no way to capture a "just show me a demo" lead. Downstream trial machinery (402 handling, trial badge, upgrade flow) was already fully built and needed zero changes — self-serve users just had to come out shaped like invited users.
 
