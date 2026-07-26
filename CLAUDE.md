@@ -68,6 +68,7 @@ sudo systemctl start ryze-api     # or restart
 - I prefer **complete drop-in replacement files** for anything that's gotten complex, rather than partial diffs — I'll say so when I want that.
 - Narrow, clearly-scoped surgical edits are fine without asking.
 - Don't invent new abstractions or rename public APIs/endpoints unless I asked for that specifically.
+- A task is not done until its commits are pushed to `origin/main`; a deploy is not verified until the droplet's HEAD matches and the service restarts healthy.
 
 ## Session workflow — context/current-feature.md
 At the start of every session, read `context/current-feature.md` — it holds the active task's Status, Goals, Related Files, and Verification steps. Work from it, don't start unrelated work without checking it first.
