@@ -209,10 +209,21 @@ def build_job_order_text(job_order: JobOrder) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def generate_embedding(text: str) -> Optional[list[float]]:
+def generate_embedding(
+    text: str,
+    *,
+    db: Optional[Session] = None,
+    tenant_id: Optional[str] = None,
+    source: str = "embedding",
+) -> Optional[list[float]]:
     """
     Generate a 1536-dimensional embedding vector for the given text.
     Returns None on failure so callers can decide how to handle it.
+
+    Pass db + tenant_id to record usage/cost via app.services.usage.record_usage.
+    Both optional — existing callers that omit them are unaffected. This is a
+    record-only path: never gated by check_ai_budget (embeddings triggered by
+    data writes are explicitly exempt from the AI budget cap).
     """
     try:
         client = get_openai_client()
@@ -220,7 +231,23 @@ def generate_embedding(text: str) -> Optional[list[float]]:
             model="text-embedding-3-small",
             input=text,
         )
-        return response.data[0].embedding
+        vector = response.data[0].embedding
+        if db is not None and tenant_id is not None:
+            try:
+                from app.services.usage import record_usage
+
+                record_usage(
+                    db,
+                    tenant_id,
+                    provider="openai",
+                    model="text-embedding-3-small",
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=0,
+                    source=source,
+                )
+            except Exception as e:
+                logger.error(f"[usage] embedding usage recording failed: {e}")
+        return vector
     except Exception as e:
         logger.error(f"Embedding generation failed: {e}")
         return None
