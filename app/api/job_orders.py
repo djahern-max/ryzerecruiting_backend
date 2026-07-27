@@ -27,6 +27,7 @@ from app.schemas.job_order import (
 )
 from app.schemas.job_interest import JobInterestCreate, JobInterestResponse
 from app.services.ai_parser import parse_job_description
+from app.services.usage import check_ai_budget
 from app.services.embedding_service import embed_job_order_background
 from app.services.matching import compute_match_score
 from app.services.notifications import notify_candidate_interest
@@ -544,14 +545,17 @@ def download_job_order_pdf(
 @router.post("/parse", response_model=JobOrderParseResponse)
 def parse_job_order(
     payload: JobOrderParseRequest,
-    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     if not payload.text or len(payload.text.strip()) < 30:
         raise HTTPException(
             status_code=400,
             detail="Text is too short to parse.",
         )
-    result = parse_job_description(payload.text)
+    tenant_id = current_user.tenant_id or "ryze"
+    check_ai_budget(db, tenant_id)
+    result = parse_job_description(payload.text, db=db, tenant_id=tenant_id)
     if not result:
         raise HTTPException(
             status_code=422,

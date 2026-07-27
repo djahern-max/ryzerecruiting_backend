@@ -9,7 +9,13 @@ logger = logging.getLogger(__name__)
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 
-def _call_claude(prompt: str, text: str) -> dict:
+def _call_claude(
+    prompt: str,
+    text: str,
+    db=None,
+    tenant_id: str | None = None,
+    source: str = "ai_parser",
+) -> dict:
     """
     Core Claude parsing call. Returns parsed dict or empty dict on failure.
     """
@@ -19,6 +25,17 @@ def _call_claude(prompt: str, text: str) -> dict:
             max_tokens=1024,
             messages=[{"role": "user", "content": f"{prompt}\n\n---\n\n{text}"}],
         )
+        if db is not None and tenant_id is not None:
+            try:
+                from app.services.usage import record_usage
+
+                record_usage(
+                    db, tenant_id, provider="anthropic", model="claude-sonnet-4-6",
+                    input_tokens=message.usage.input_tokens,
+                    output_tokens=message.usage.output_tokens, source=source,
+                )
+            except Exception as e:
+                logger.error(f"[usage] ai_parser usage recording failed: {e}")
         raw = message.content[0].text.strip()
         # Strip markdown code fences if present
         if raw.startswith("```"):
@@ -34,7 +51,7 @@ def _call_claude(prompt: str, text: str) -> dict:
         return {}
 
 
-def parse_candidate_profile(text: str) -> dict:
+def parse_candidate_profile(text: str, db=None, tenant_id: str | None = None) -> dict:
     prompt = """You are an expert recruiter reviewing a candidate profile or resume.
 Extract the following information and return ONLY valid JSON with no preamble or markdown.
 
@@ -62,10 +79,10 @@ Rules:
 - For ai_career_level: junior = 0-3 years, mid = 3-7 years, senior = 7-15 years, executive = 15+ years or C-suite/VP/Director titles
 - Be thorough with ai_experience — this is the most valuable field for recruiting purposes"""
 
-    return _call_claude(prompt, text)
+    return _call_claude(prompt, text, db=db, tenant_id=tenant_id, source="ai_parser_candidate")
 
 
-def parse_job_description(text: str) -> dict:
+def parse_job_description(text: str, db=None, tenant_id: str | None = None) -> dict:
     """
     Parse a job description or job posting from any industry into
     structured job order fields.
@@ -104,10 +121,10 @@ def parse_job_description(text: str) -> dict:
     - hourly_min and hourly_max must be numbers (e.g. 32.50 not "$32.50")
     - If a field cannot be determined return null"""
 
-    return _call_claude(prompt, text)
+    return _call_claude(prompt, text, db=db, tenant_id=tenant_id, source="ai_parser_job")
 
 
-def parse_employer_prospect(text: str) -> dict:
+def parse_employer_prospect(text: str, db=None, tenant_id: str | None = None) -> dict:
     """
     Parse a job posting, LinkedIn company page, or any employer content
     into structured employer profile + prospecting intelligence.
@@ -133,4 +150,4 @@ Rules:
 - Be specific in talking points — reference actual details from the text
 - If a field cannot be determined return null"""
 
-    return _call_claude(prompt, text)
+    return _call_claude(prompt, text, db=db, tenant_id=tenant_id, source="ai_parser_employer")

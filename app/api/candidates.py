@@ -45,6 +45,7 @@ from app.services.embedding_service import (
     generate_embedding,
 )
 from app.services.ai_parser import parse_candidate_profile
+from app.services.usage import check_ai_budget
 from app.services.branding import get_branding
 
 # ── PDF template: HTML/CSS + pure helpers live in their own module ────────────
@@ -527,11 +528,14 @@ def delete_candidate(
 @router.post("/parse", response_model=CandidateParseResponse)
 def parse_candidate(
     payload: CandidateParseRequest,
-    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     if not payload.text or len(payload.text.strip()) < 50:
         raise HTTPException(status_code=400, detail="Text is too short to parse.")
-    result = parse_candidate_profile(payload.text)
+    tenant_id = _tenant(current_user)
+    check_ai_budget(db, tenant_id)
+    result = parse_candidate_profile(payload.text, db=db, tenant_id=tenant_id)
     if not result:
         raise HTTPException(
             status_code=422, detail="Could not parse the provided text."
@@ -542,7 +546,8 @@ def parse_candidate(
 @router.post("/parse-file", response_model=CandidateParseResponse)
 async def parse_candidate_file(
     file: UploadFile = File(...),
-    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     filename = file.filename or ""
     content_type = file.content_type or ""
@@ -553,6 +558,9 @@ async def parse_candidate_file(
     )
     if not is_pdf and not is_docx:
         raise HTTPException(status_code=400, detail="Unsupported file type.")
+
+    tenant_id = _tenant(current_user)
+    check_ai_budget(db, tenant_id)
 
     data = await file.read()
     if len(data) > 10 * 1024 * 1024:
@@ -578,7 +586,7 @@ async def parse_candidate_file(
             status_code=422, detail="File appears to be empty or unreadable."
         )
 
-    result = parse_candidate_profile(text)
+    result = parse_candidate_profile(text, db=db, tenant_id=tenant_id)
     if not result:
         raise HTTPException(status_code=422, detail="Could not parse the file.")
     return result

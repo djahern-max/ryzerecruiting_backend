@@ -22,6 +22,7 @@ from app.schemas.employer_profile import (
     EmployerProfileParseResponse,
 )
 from app.services.ai_parser import parse_employer_prospect
+from app.services.usage import check_ai_budget
 from app.services.branding import get_branding
 from app.services.embedding_service import embed_employer_background
 from app.services.spaces import upload_file, delete_file, make_unique_filename
@@ -621,7 +622,8 @@ def download_employer_profile_pdf(
 @router.post("/parse", response_model=EmployerProfileParseResponse)
 def parse_employer_profile(
     payload: EmployerProfileParseRequest,
-    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     """
     Parse raw employer/company text into structured profile fields.
@@ -633,7 +635,9 @@ def parse_employer_profile(
             detail="Text is too short to parse.",
         )
 
-    result = parse_employer_prospect(payload.text)
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+    check_ai_budget(db, tenant_id)
+    result = parse_employer_prospect(payload.text, db=db, tenant_id=tenant_id)
     if not result:
         raise HTTPException(
             status_code=422,
