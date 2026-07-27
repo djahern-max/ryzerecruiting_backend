@@ -24,6 +24,7 @@ from app.models.user import User
 from app.services.embedding_service import generate_embedding
 from app.services.branding import get_branding, TenantBranding
 from app.services.matching import compute_match_score
+from app.services.usage import record_usage, check_ai_budget
 
 logger = logging.getLogger(__name__)
 
@@ -1018,6 +1019,11 @@ def stream_chat_response(
             tools=TOOLS,
             messages=messages,
         )
+        record_usage(
+            db, tenant_id, provider="anthropic", model="claude-sonnet-4-6",
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens, source="chat",
+        )
 
         if response.stop_reason == "end_turn":
             break
@@ -1096,6 +1102,12 @@ def stream_chat_response(
         ) as stream:
             for text_chunk in stream.text_stream:
                 yield text_chunk
+            final_message = stream.get_final_message()
+            record_usage(
+                db, tenant_id, provider="anthropic", model="claude-sonnet-4-6",
+                input_tokens=final_message.usage.input_tokens,
+                output_tokens=final_message.usage.output_tokens, source="chat_final",
+            )
     except anthropic.APIStatusError as e:
         logger.error(f"Anthropic streaming error: {e}")
         yield "\n\nI encountered an error generating a response. Please try again."
@@ -1148,6 +1160,8 @@ async def chat(
 ):
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
+
+    check_ai_budget(db, tenant_id)
 
     return StreamingResponse(
         stream_chat_response(payload, db, tenant_id),
