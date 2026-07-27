@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     # AI — OpenAI (embeddings)
     OPENAI_API_KEY: str = ""
 
+    # AI usage metering — internal per-tenant monthly budget (COGS guardrail),
+    # separate from the $20/mo subscription price (revenue). The `ryze` tenant
+    # is exempt from the cap (see app/services/usage.py::is_over_budget) but
+    # still gets its usage recorded.
+    AI_MONTHLY_BUDGET_USD: float = 8.00
+
     # Stripe
     STRIPE_SECRET_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
