@@ -20,6 +20,8 @@ from app.services.zoom import (
     get_meeting_transcript,
     download_recording_file,
 )
+from app.core.deps import RYZE_TENANT
+from app.services.usage import record_usage, is_over_budget
 from app.services.embedding_service import (
     embed_booking_background,
     embed_candidate_background,
@@ -132,6 +134,14 @@ def _generate_summary_from_transcript(booking_id: int) -> None:
             logger.info(f"[summary_from_transcript] Booking #{booking_id} already has a summary — skipping")
             return
 
+        tenant_id = booking.tenant_id or RYZE_TENANT
+        if is_over_budget(db, tenant_id):
+            logger.info(
+                f"[summary_from_transcript] Skipping booking #{booking_id} — "
+                f"tenant {tenant_id} over AI budget"
+            )
+            return
+
         client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
         response = client.messages.create(
             model="claude-sonnet-4-6",
@@ -154,6 +164,11 @@ Return ONLY a JSON object with these keys:
 - "keywords": comma-separated skills/topics mentioned (string, or null)""",
                 }
             ],
+        )
+        record_usage(
+            db, tenant_id, provider="anthropic", model="claude-sonnet-4-6",
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens, source="summary",
         )
         text = response.content[0].text.strip().replace("```json", "").replace("```", "").strip()
         data = json.loads(text)
