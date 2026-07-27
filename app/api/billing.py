@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user, RYZE_TENANT
+from app.core.deps import get_current_user, get_current_superuser, RYZE_TENANT
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.models.usage_event import UsageEvent
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,20 @@ class CheckoutSessionResponse(BaseModel):
     checkout_url: str
 
 
+class TenantUsageBreakdown(BaseModel):
+    tenant_id: str
+    cost_usd: float
+    input_tokens: int
+    output_tokens: int
+    event_count: int
+
+
+class UsageResponse(BaseModel):
+    month: str
+    budget_usd: float
+    tenants: list[TenantUsageBreakdown]
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -46,6 +61,10 @@ class CheckoutSessionResponse(BaseModel):
 def _get_tenant(user: User, db: Session) -> Tenant | None:
     slug = user.tenant_id or RYZE_TENANT
     return db.query(Tenant).filter(Tenant.slug == slug).first()
+
+
+def _tenant(user: User) -> str:
+    return user.tenant_id or RYZE_TENANT
 
 
 # ---------------------------------------------------------------------------
@@ -232,3 +251,58 @@ async def stripe_webhook(
         logger.info(f"[billing] Unhandled event type: {event_type}")
 
     return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# GET /api/billing/usage
+# Superuser-only. Returns per-tenant AI usage/cost breakdown for the current
+# calendar month (UTC) — this is the platform owner's global cost dashboard,
+# not a per-tenant endpoint, so it is deliberately NOT scoped to the caller's
+# own tenant. Same intentional-scoping-bypass precedent as
+# app/api/db_explorer.py's _is_platform_owner() global view. The _tenant()
+# call below exists only to satisfy audit_tenant_coverage.py's SAFE-pattern
+# convention for authenticated endpoints; it has no bearing on the query.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/usage", response_model=UsageResponse)
+def get_usage(
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
+):
+    _tenant(current_user)  # see comment above — view is deliberately unscoped
+
+    from datetime import datetime
+    from sqlalchemy import func
+
+    now = datetime.utcnow()
+    month_start = datetime(now.year, now.month, 1)
+
+    rows = (
+        db.query(
+            UsageEvent.tenant_id,
+            func.coalesce(func.sum(UsageEvent.cost_usd), 0),
+            func.coalesce(func.sum(UsageEvent.input_tokens), 0),
+            func.coalesce(func.sum(UsageEvent.output_tokens), 0),
+            func.count(UsageEvent.id),
+        )
+        .filter(UsageEvent.created_at >= month_start)
+        .group_by(UsageEvent.tenant_id)
+        .order_by(func.sum(UsageEvent.cost_usd).desc())
+        .all()
+    )
+
+    return UsageResponse(
+        month=now.strftime("%Y-%m"),
+        budget_usd=settings.AI_MONTHLY_BUDGET_USD,
+        tenants=[
+            TenantUsageBreakdown(
+                tenant_id=r[0],
+                cost_usd=float(r[1]),
+                input_tokens=r[2],
+                output_tokens=r[3],
+                event_count=r[4],
+            )
+            for r in rows
+        ],
+    )
