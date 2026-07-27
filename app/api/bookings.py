@@ -13,9 +13,10 @@ from typing import List
 from app.services.ai_brief import generate_pre_call_brief
 from app.services.branding import get_branding
 from app.services.calendar import create_calendar_event, delete_calendar_event
+from app.services.usage import is_over_budget
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
-from app.core.deps import get_current_admin_tenant
+from app.core.deps import get_current_admin_tenant, RYZE_TENANT
 from app.core.deps import get_current_admin_user
 from app.api.auth import get_current_user
 from app.models.booking import Booking
@@ -69,11 +70,20 @@ def _generate_brief_background(booking_id: int) -> None:
         if not booking or not booking.website_url:
             return
 
+        tenant_id = booking.tenant_id or RYZE_TENANT
+        if is_over_budget(db, tenant_id):
+            logger.info(
+                f"Skipping AI brief for booking #{booking_id} — tenant {tenant_id} over AI budget"
+            )
+            return
+
         logger.info(
             f"Background AI brief starting for booking #{booking_id} — {booking.website_url}"
         )
         branding = get_branding(db, booking.tenant_id)
-        brief_dict = generate_pre_call_brief(booking.website_url, branding.brand_name)
+        brief_dict = generate_pre_call_brief(
+            booking.website_url, branding.brand_name, db=db, tenant_id=tenant_id
+        )
 
         # Prefer the stub already linked synchronously (find_or_create_employer_stub)
         # so the brief enriches the same row future signups link to by email.

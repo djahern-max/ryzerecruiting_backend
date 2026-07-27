@@ -140,7 +140,13 @@ Required format:
 }}"""
 
 
-def _call_claude(prompt: str, website_url: str) -> dict:
+def _call_claude(
+    prompt: str,
+    website_url: str,
+    db=None,
+    tenant_id: str | None = None,
+    source: str = "ai_brief",
+) -> dict:
     """Send a prompt to Claude and parse the JSON response. Returns {} on failure."""
     try:
         client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -149,6 +155,17 @@ def _call_claude(prompt: str, website_url: str) -> dict:
             max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
+        if db is not None and tenant_id is not None:
+            try:
+                from app.services.usage import record_usage
+
+                record_usage(
+                    db, tenant_id, provider="anthropic", model="claude-sonnet-4-6",
+                    input_tokens=message.usage.input_tokens,
+                    output_tokens=message.usage.output_tokens, source=source,
+                )
+            except Exception as e:
+                logger.error(f"[usage] ai_brief usage recording failed: {e}")
         raw = message.content[0].text.strip()
 
         # Strip markdown fences Claude occasionally wraps JSON in
@@ -176,7 +193,12 @@ def _call_claude(prompt: str, website_url: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def generate_pre_call_brief(website_url: str, brand_name: str) -> dict:
+def generate_pre_call_brief(
+    website_url: str,
+    brand_name: str,
+    db=None,
+    tenant_id: str | None = None,
+) -> dict:
     """
     Generate a structured pre-call brief for an employer.
 
@@ -186,6 +208,9 @@ def generate_pre_call_brief(website_url: str, brand_name: str) -> dict:
     brand_name identifies the recruiting firm on whose behalf the brief is
     generated (the tenant's branded name, not RYZE.ai) — resolve it via
     app.services.branding.get_branding() at the call site.
+
+    Pass db + tenant_id to record usage/cost. Both optional — omitting them
+    skips metering, unchanged behavior otherwise.
 
     Returns {} on total failure — never raises.
     """
@@ -208,7 +233,7 @@ def generate_pre_call_brief(website_url: str, brand_name: str) -> dict:
     if website_text:
         logger.info(f"Generating brief from scraped content: {raw_url}")
         prompt = _build_prompt_from_website(website_text, brand_name)
-        result = _call_claude(prompt, raw_url)
+        result = _call_claude(prompt, raw_url, db=db, tenant_id=tenant_id)
         if result:
             return result
 
@@ -220,7 +245,7 @@ def generate_pre_call_brief(website_url: str, brand_name: str) -> dict:
     # Try to extract a readable company name from the domain
     company_name = domain.split(".")[0].replace("-", " ").replace("_", " ").title()
     prompt = _build_prompt_from_knowledge(company_name, domain, brand_name)
-    result = _call_claude(prompt, raw_url)
+    result = _call_claude(prompt, raw_url, db=db, tenant_id=tenant_id)
 
     if result:
         logger.info(f"Brief generated from Claude knowledge fallback for: {domain}")
