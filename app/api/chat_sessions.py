@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 from app.api.bookings import require_admin
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.deps import RYZE_TENANT
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.user import User
+from app.services.usage import record_usage, check_ai_budget
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +247,9 @@ def generate_title(
 
     exchange = "\n".join([f"{m.role}: {m.content[:200]}" for m in messages])
 
+    tenant_id = current_user.tenant_id or RYZE_TENANT
+    check_ai_budget(db, tenant_id)
+
     try:
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -255,6 +260,11 @@ def generate_title(
                     "content": f"Generate a 4-6 word title for this conversation. Return only the title, no punctuation, no quotes:\n\n{exchange}",
                 }
             ],
+        )
+        record_usage(
+            db, tenant_id, provider="anthropic", model="claude-haiku-4-5-20251001",
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens, source="title",
         )
         title = response.content[0].text.strip()
     except Exception as e:
