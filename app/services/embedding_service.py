@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.core.deps import RYZE_TENANT
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
@@ -282,7 +283,9 @@ def embed_candidate_background(candidate_id: int) -> None:
             )
             return
 
-        vector = generate_embedding(text)
+        vector = generate_embedding(
+            text, db=db, tenant_id=candidate.tenant_id, source="embed_background"
+        )
         if vector:
             candidate.embedding = vector
             candidate.embedded_at = datetime.utcnow()
@@ -322,7 +325,9 @@ def embed_employer_background(profile_id: int) -> None:
             )
             return
 
-        vector = generate_embedding(text)
+        vector = generate_embedding(
+            text, db=db, tenant_id=employer.tenant_id, source="embed_background"
+        )
         if vector:
             employer.embedding = vector
             employer.embedded_at = datetime.utcnow()
@@ -360,7 +365,9 @@ def embed_job_order_background(job_order_id: int) -> None:
             )
             return
 
-        vector = generate_embedding(text)
+        vector = generate_embedding(
+            text, db=db, tenant_id=job_order.tenant_id, source="embed_background"
+        )
         if vector:
             job_order.embedding = vector
             job_order.embedded_at = datetime.utcnow()
@@ -433,7 +440,7 @@ def embed_booking_background(booking_id: int) -> None:
             text("""
                 SELECT id, company_name, employer_name, date, call_notes,
                        meeting_summary, meeting_next_steps, meeting_keywords,
-                       meeting_transcript
+                       meeting_transcript, tenant_id
                 FROM bookings WHERE id = :id
             """),
             {"id": booking_id},
@@ -468,7 +475,12 @@ def embed_booking_background(booking_id: int) -> None:
             )
             return
 
-        vector = generate_embedding(text_block)
+        vector = generate_embedding(
+            text_block,
+            db=db,
+            tenant_id=result.tenant_id or RYZE_TENANT,
+            source="embed_background",
+        )
         if vector:
             db.execute(
                 text(
@@ -502,7 +514,7 @@ def backfill_bookings() -> dict:
         rows = db.execute(text("""
                 SELECT id, company_name, employer_name, date, call_notes,
                        meeting_summary, meeting_next_steps, meeting_keywords,
-                       meeting_transcript
+                       meeting_transcript, tenant_id
                 FROM bookings
                 WHERE meeting_summary IS NOT NULL
                 AND embedding IS NULL
@@ -530,7 +542,12 @@ def backfill_bookings() -> dict:
             if len(text_block) < 20:
                 continue
 
-            vector = generate_embedding(text_block)
+            vector = generate_embedding(
+                text_block,
+                db=db,
+                tenant_id=result.tenant_id or RYZE_TENANT,
+                source="embed_background",
+            )
             if vector:
                 db.execute(
                     text(
@@ -582,7 +599,9 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             text = build_candidate_text(candidate)
             if not text:
                 continue
-            vector = generate_embedding(text)
+            vector = generate_embedding(
+                text, db=db, tenant_id=candidate.tenant_id or RYZE_TENANT, source="embed_sync"
+            )
             if vector:
                 candidate.embedding = vector
                 candidate.embedded_at = datetime.utcnow()
@@ -602,7 +621,9 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             text = build_employer_text(employer)
             if not text:
                 continue
-            vector = generate_embedding(text)
+            vector = generate_embedding(
+                text, db=db, tenant_id=employer.tenant_id or RYZE_TENANT, source="embed_sync"
+            )
             if vector:
                 employer.embedding = vector
                 employer.embedded_at = datetime.utcnow()
@@ -622,7 +643,9 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             text = build_job_order_text(job)
             if not text:
                 continue
-            vector = generate_embedding(text)
+            vector = generate_embedding(
+                text, db=db, tenant_id=job.tenant_id or RYZE_TENANT, source="embed_sync"
+            )
             if vector:
                 job.embedding = vector
                 job.embedded_at = datetime.utcnow()

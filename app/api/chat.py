@@ -341,7 +341,7 @@ def _vector_search(
     """
     from app.services.embedding_service import generate_embedding
 
-    embedding = generate_embedding(query)
+    embedding = generate_embedding(query, db=db, tenant_id=tenant_id, source="chat")
     if not embedding:
         return []
 

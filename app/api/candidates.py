@@ -610,7 +610,9 @@ def embed_single_candidate(
     if not text:
         raise HTTPException(status_code=400, detail="Not enough data to embed")
 
-    vector = generate_embedding(text)
+    vector = generate_embedding(
+        text, db=db, tenant_id=_tenant(current_user), source="candidate_embed"
+    )
     if not vector:
         raise HTTPException(status_code=500, detail="Embedding generation failed")
 

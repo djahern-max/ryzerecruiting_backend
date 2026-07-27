@@ -130,7 +130,7 @@ def search_candidates(
 ):
     tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
-    query_vector = generate_embedding(q)
+    query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
@@ -177,7 +177,7 @@ def search_employers(
 ):
     tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
-    query_vector = generate_embedding(q)
+    query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
@@ -222,7 +222,7 @@ def search_job_orders(
 ):
     tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
-    query_vector = generate_embedding(q)
+    query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:
         raise HTTPException(status_code=503, detail="Embedding service unavailable.")
 
