@@ -4,6 +4,140 @@ Completed features/fixes move here from `current-feature.md` once Status = Compl
 
 This file doubles as source material for the Build in Public series — each entry is close to script-ready: what the problem was, what changed, and the dated sequence of how it got fixed.
 
+## AI Usage Metering, Internal Budget Cap, $20 Plan, Stripe Go-Live (completed 2026-07-28)
+Every AI call is now metered with real token counts and cost, each tenant has an
+internal AI cost budget separate from subscription price, and the subscription
+itself moved to a live $20/month Stripe plan. Before this, there was no usage
+tracking anywhere in the codebase and Stripe was still in test mode.
+
+**Steps 1–5 — usage metering + budget cap (backend, 2026-07-27).** New
+`usage_events` table (tenant_id, provider, model, source, input/output tokens,
+`cost_usd` as `Numeric(10,6)`, indexed on `(tenant_id, created_at)`) plus
+`app/services/usage.py` as the single choke point: `record_usage` (wrapped in
+try/except, never raises — metering must never break a request), `get_month_cost`
+(calendar-month UTC sum), `is_over_budget` (the `ryze` tenant always exempt, fails
+open on error), and `check_ai_budget` (raises `HTTPException(429,
+{"code": "ai_usage_limit", ...})` — deliberately not the existing 402 machinery in
+`deps.py`, since the frontend's global axios interceptor redirects every 402 to
+`/upgrade`, which would wrongly bounce a paying customer). `AI_MONTHLY_BUDGET_USD`
+env var, default $8.00 — intentionally not the same number as the $20 price;
+price is revenue, budget is COGS. Pricing verified against provider docs at
+implementation time: Claude Sonnet 4.6 $3/$15 per MTok, Claude Haiku 4.5 $1/$5 per
+MTok, OpenAI `text-embedding-3-small` $0.02/MTok. An unrecognized model logs a
+warning and records cost 0 rather than crashing the caller.
+
+Every AI call site in the app was instrumented. `generate_embedding` gained
+optional `db`/`tenant_id`/`source` kwargs (backward compatible — omitted by
+existing callers with zero behavior change) and was wired into all ~9 embedding
+call sites (chat RAG search, the 3 semantic search endpoints, candidate embed, and
+5 background/batch embedding helpers) — record-only, never budget-gated, since
+blocking embeddings tied to data writes would silently corrupt search. Every
+Anthropic call site was both metered and gated: `chat.py`'s tool-loop and final
+streamed answer (budget check runs in the endpoint *before* the
+`StreamingResponse` is returned, since a 429 can't be raised mid-stream),
+`chat_sessions.py`'s title generation, `ai_parser.py` and its 4 endpoint callers
+across candidates/job-orders/employer-profiles (2 of which had neither `db` nor
+`tenant_id` in scope before and needed both added). Two background-task call
+sites — `webhooks.py`'s transcript summary and `ai_brief.py`'s pre-call brief —
+use the non-raising `is_over_budget` to soft-skip instead, since a `BackgroundTask`
+has no HTTP caller to catch a 429.
+
+Added `GET /api/billing/usage` (superuser-only) as a per-tenant cost-breakdown
+dashboard for the current UTC month, following the existing `db_explorer.py`
+precedent for satisfying `audit_tenant_coverage.py`'s tenant-scoping check on a
+deliberately cross-tenant endpoint (a `_tenant()` helper call plus a prose comment
+documenting the exemption, since the audit script has no dedicated mechanism for
+"intentionally unscoped"). Verified against the local dev DB only — hand-checked
+sums matched raw `usage_events` rows and a non-superuser got 403 — but this has
+not yet been re-verified against live production data; see follow-ups.
+
+Every call site was verified manually end-to-end (not just unit tests): usage
+rows recorded with correct tenant/model/cost, 429 firing for an over-budget
+non-`ryze` tenant while `ryze` stayed exempt, and both soft-skip paths skipping
+the Claude call entirely with no usage row and no side effect. `python
+audit_tenant_coverage.py` stayed clean throughout — 95 endpoints, 0 hardcoded,
+0 review, including the new endpoint and the 2 newly `db`-wired parse endpoints.
+Shipped as 11 commit-sized steps, each tested before the next.
+
+**Step 6 — Stripe test → live, $20 plan (ops, 2026-07-28).** Moved Stripe from
+test to live mode and verified the entire subscription lifecycle with a real $20
+purchase, refunded after confirmation. No code changes in this repo — this was
+ops/configuration per the Step 6 runbook — plus one frontend copy fix shipped
+mid-test (see frontend repo: UpgradePage.jsx still displayed the old $99 price in
+the plan card and button label; Checkout itself was always correct since the
+amount comes from the Stripe Price).
+
+Configuration: live $20/mo Price created in the Stripe dashboard (`price_1Ty5C12...`,
+livemode confirmed via Workbench Inspector); new live-mode webhook destination
+`ryze-production` → `https://api.ryze.ai/api/billing/webhook` listening on exactly
+the 3 handled events (checkout.session.completed, customer.subscription.deleted,
+invoice.payment_failed); server `.env` updated with live `STRIPE_SECRET_KEY`,
+live `STRIPE_PRICE_ID`, and the live destination's own `STRIPE_WEBHOOK_SECRET`
+(the classic go-live trap — the test secret would fail signature verification on
+every live event). No frontend Stripe key exists (confirmed by grep in the earlier
+session) — Checkout is fully backend-session-driven.
+
+Verification, end to end with real money:
+- Reachability: unsigned `curl -X POST` to the webhook URL returned 400
+  "Invalid signature" with the matching WARNING in journalctl — proving
+  DNS/TLS/Nginx/gunicorn/handler wiring before any payment.
+- Full funnel: fresh self-serve signup as Green Path Recruiting → tenant row
+  created correctly → trial expired via SQL → 402 → /upgrade wall → live Checkout
+  ($20.00, correct product name, customer_email prefilled) → real card payment →
+  `checkout.session.completed` received, signature verified, tenant activated
+  with cus_/sub_ IDs → confetti page → upgrade wall gone.
+- Cancellation path: immediate cancel + full refund via dashboard credit note →
+  `customer.subscription.deleted` received → tenant set to cancelled. Both
+  webhook handler branches now proven in production.
+- Green Path restored post-test to a fresh 30-day trial with Stripe IDs nulled.
+
+Backstops set: Anthropic console monthly spend limit $50 (email alert at $30;
+prepaid balance with auto-reload off is a further hard stop — deliberate tradeoff,
+revisit auto-reload when real tenant AI usage grows). OpenAI project spend limit
+$10 with hard limit enforced (embeddings-only usage; can only trip on a runaway
+bug, never legitimate volume).
+
+A stray tenant row (`slug='none'`, `company_name='None'`) surfaced during signup
+testing — live evidence of a signup-path bug, not something introduced by this
+feature. Logged with full detail in `context/tenant-assignment-problem.md`
+(upgraded from a theoretical risk to an observed production occurrence) rather
+than as a follow-up here.
+
+**Parked follow-ups, not done in this feature:**
+- The superadmin usage view (backend `GET /api/billing/usage` + frontend
+  `/admin/usage`) was implemented and verified against the local dev DB only —
+  production acceptance criteria (sum hand-check against live data, bar-color
+  thresholds, 429/403 behavior against real tenants) are still deferred.
+- Stripe legal entity displays as "12X, Inc." on Checkout — update public business
+  name / statement descriptor in Stripe Settings → Business details before real
+  customers pay, to avoid "unrecognized charge" disputes.
+- Upgrade wall price is hardcoded in UpgradePage.jsx — consider env var or
+  backend-driven price to prevent drift on future price changes.
+- Tenant-facing usage meter, $5 top-ups, automated overage billing, per-user usage
+  breakdown, and subscription-anchor billing months were explicit Scope-OUT items
+  from the start — build only if real usage patterns justify them.
+
+History:
+- 2026-07-27 — Steps 1-5 implemented as 11 commit-sized steps, each tested before
+  the next: `usage_events` table + migration; `app/services/usage.py`;
+  `generate_embedding` extended and wired into all embedding call sites
+  (record-only); `chat.py` gated + metered (tool-loop + final answer);
+  `chat_sessions.py` title generation gated + metered; `webhooks.py` transcript
+  summary and `ai_brief.py` pre-call brief soft-skip via `is_over_budget`
+  (BackgroundTasks, no HTTP caller for a raise); `ai_parser.py` + its 4 endpoint
+  callers gated + metered. `GET /api/billing/usage` added. Verified manually
+  against the local dev DB at every step (usage rows, 429 gating, `ryze`
+  exemption, soft-skip behavior). `audit_tenant_coverage.py`: 95 endpoints, 0
+  hardcoded, 0 review throughout.
+- 2026-07-28 — User pushed all 8 backend commits to `origin/main`, ran `alembic
+  upgrade head` on the server, restarted `ryze-api`. Steps 1-5 live in production.
+- 2026-07-28 — Live Price + webhook destination created, .env flipped, service
+  restarted. Curl reachability check passed (400 Invalid signature = handler reached).
+- 2026-07-28 — Real $20 purchase as green_path_recruiting: activation webhook
+  verified in journalctl (07:51:39 UTC). Cancel + refund: cancellation webhook
+  verified (07:57:46 UTC). Tenant restored. Spend backstops set in both AI consoles.
+  Feature confirmed complete end to end by user.
+
 ## Parked follow-ups — rate-limit logging + candidates.py tenant-scoping review (completed 2026-07-26)
 Closed out two parked items from the self-serve signup + demo-request session: rate-limit trips logged nothing (honeypot trips already did), and two long-standing `audit_tenant_coverage.py` REVIEW lines on `candidates.py`'s `/me/photo`/`/me/banner` had never been investigated.
 
