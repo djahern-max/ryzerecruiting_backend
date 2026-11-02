@@ -33,6 +33,7 @@ def upgrade() -> None:
                existing_type=postgresql.TIMESTAMP(timezone=True),
                type_=sa.DateTime(),
                existing_nullable=True)
+    op.add_column('bookings', sa.Column('candidate_id', sa.Integer(), nullable=True))
     op.create_index(op.f('ix_bookings_candidate_id'), 'bookings', ['candidate_id'], unique=False)
     op.create_foreign_key(None, 'bookings', 'candidates', ['candidate_id'], ['id'], ondelete='SET NULL')
     op.add_column('candidates', sa.Column('source', sa.String(length=50), nullable=True))
@@ -46,6 +47,7 @@ def downgrade() -> None:
     op.drop_column('candidates', 'source')
     op.drop_constraint(None, 'bookings', type_='foreignkey')
     op.drop_index(op.f('ix_bookings_candidate_id'), table_name='bookings')
+    op.drop_column('bookings', 'candidate_id')
     op.alter_column('bookings', 'updated_at',
                existing_type=sa.DateTime(),
                type_=postgresql.TIMESTAMP(timezone=True),
