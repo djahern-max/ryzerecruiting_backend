@@ -26,3 +26,6 @@ ZOOM.md
 ICONS.md
 
 scripts/
+
+# Local dev JWT (never commit)
+.token
