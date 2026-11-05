@@ -132,7 +132,7 @@ def make_tenant(db, tag: str = "firm", **overrides) -> Tenant:
 
 def make_user(
     db,
-    tenant_id: str | None,
+    tenant_id: str,
     *,
     user_type: UserType = UserType.ADMIN,
     is_superuser: bool = False,
@@ -148,6 +148,21 @@ def make_user(
     db.add(user)
     db.flush()
     return user
+
+
+def transient_user(*, is_superuser: bool = False) -> User:
+    """A User with no tenant that is never written: users.tenant_id is NOT
+    NULL since restructure part 3, so the NULL-tenant cases below exercise
+    require_tenant / is_superuser on an object the dependency override hands
+    straight to the endpoint."""
+    return User(
+        email=_email(),
+        full_name="Transient User",
+        user_type=UserType.ADMIN,
+        is_active=True,
+        is_superuser=is_superuser,
+        tenant_id=None,
+    )
 
 
 def make_candidate(db, tenant_id: str, name: str) -> Candidate:
@@ -362,9 +377,10 @@ def test_missing_tenant_row_is_403(db, client):
 
 # ==========================================================================
 # 4. Behaviour 3 — NULL users.tenant_id = no access to tenant data (403)
+#    (the column is NOT NULL since part 3; these guard the defensive branch)
 # ==========================================================================
 def test_null_user_tenant_is_403(db, client):
-    user = make_user(db, None)
+    user = transient_user()
 
     with pytest.raises(HTTPException) as exc:
         require_tenant(user)
@@ -379,7 +395,7 @@ def test_null_user_tenant_is_403(db, client):
 
 def test_null_tenant_superuser_still_has_no_tenant_data_access(db, client):
     """is_superuser grants platform-level views, not a tenant's data."""
-    user = make_user(db, None, is_superuser=True)
+    user = transient_user(is_superuser=True)
     _login(user)
     assert client.get("/api/job-orders/open").status_code == 403
     assert client.get("/api/candidates").status_code == 403
@@ -392,7 +408,7 @@ def test_platform_owner_is_the_superuser_flag(db):
     tenant = make_tenant(db)
     tenant_admin = make_user(db, tenant.slug, is_superuser=False)
     superuser_in_tenant = make_user(db, tenant.slug, is_superuser=True)
-    superuser_no_tenant = make_user(db, None, is_superuser=True)
+    superuser_no_tenant = transient_user(is_superuser=True)
 
     assert _is_platform_owner(tenant_admin) is False
     assert _is_platform_owner(superuser_in_tenant) is True
@@ -409,7 +425,7 @@ def test_non_superuser_cannot_reach_unscoped_db_explorer(db, client, firms):
 def test_superuser_without_tenant_reaches_unscoped_db_explorer(db, client, firms):
     """The platform view does not need tenant membership, and it is unscoped:
     the counts include rows from every tenant created by this test."""
-    owner = make_user(db, None, is_superuser=True)
+    owner = transient_user(is_superuser=True)
     _login(owner)
 
     resp = client.get("/admin/db/counts")

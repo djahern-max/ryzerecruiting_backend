@@ -17,7 +17,9 @@ HOW IT'S LAYERED (by cost / determinism)
   test_tenant_isolation.py     -> self-contained: builds its own tenants/rows in
                                   a rolled-back transaction. No external APIs,
                                   no seed data. Always runs. Fast.
-  test_signup_tenant_resolution -> same transactional pattern, no external APIs.
+  test_signup_tenant_resolution -> same transactional pattern, no external APIs;
+                                  drives /oauth/complete-signup with a fake
+                                  redis_client, so no Redis needed either.
   test_retrieval_reachability  -> needs OpenAI (query embedding). Cheap. Auto-skips
                                   if the embedding service is unreachable.
   test_intelligence_e2e.py     -> needs OpenAI + Anthropic. Opt-in only:
