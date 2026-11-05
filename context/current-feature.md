@@ -171,3 +171,9 @@ Done means:
   the temp token and passes HTTPException through, config comment fixed.
   Grep criterion met; audit unchanged (95 / 76 Safe / 0 / 0); offline suite
   19 passed with the stale signup test excluded (rewritten in commit 3).
+- 2026-11-05 — Commit 2 (cf094d9): migration b2c3d4e5f6a7 backfills NULL
+  users.tenant_id to green_path_recruiting then sets NOT NULL; model
+  nullable=False; require_tenant NULL branch kept with a comment. Round-trip
+  verified on niceats, alembic check clean, audit unchanged. Four isolation
+  tests that flush a NULL-tenant User now fail on the constraint — fixed in
+  commit 3 by using transient User objects.
