@@ -80,7 +80,7 @@ def send_employer_confirmation(
 ) -> None:
     """Send a booking request confirmation email to the employer.
     Zoom link is NOT included yet — sent separately when admin confirms."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     resend.Emails.send(
         {
@@ -151,7 +151,7 @@ def send_admin_notification(
     branding: TenantBranding = None,
 ) -> None:
     """Send a new booking request notification email to the firm — action required."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
@@ -243,7 +243,7 @@ def send_meeting_confirmed(
     branding: TenantBranding = None,
 ) -> None:
     """Send confirmed call email with Zoom link to both the employer and the firm."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     if ai_brief is None:
         ai_brief = {}
@@ -422,7 +422,7 @@ def send_cancellation_email(
     branding: TenantBranding = None,
 ) -> None:
     """Notify both the employer and the firm that a booking has been cancelled."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     # --- Employer email ---
     resend.Emails.send(
@@ -549,7 +549,7 @@ def send_reminder_email(
     branding: TenantBranding = None,
 ) -> None:
     """Send a 15-minute reminder email with Zoom link directly to the employer."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     resend.Emails.send(
         {
@@ -630,7 +630,7 @@ def send_recruiter_invite(
     is_admin_copy: bool = False,
     branding: TenantBranding = None,
 ) -> None:
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     type_label = "Employer" if contact_type == "employer" else "Candidate"
     company_line = f" ({company_name})" if company_name else ""
@@ -740,7 +740,7 @@ def send_candidate_booking_received_admin(
     branding: TenantBranding = None,
 ) -> None:
     """Notify the firm that a candidate has requested a call."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     admin_dashboard_url = f"{settings.FRONTEND_URL}/admin"
 
@@ -818,7 +818,7 @@ def send_candidate_booking_confirmation(
 ) -> None:
     """Send a booking request confirmation to the candidate.
     Zoom link is NOT included yet — sent separately when admin confirms."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     resend.Emails.send(
         {
@@ -895,7 +895,7 @@ def send_recruiter_invite_with_response(
     Contains Accept and Decline buttons — NO Zoom link yet.
     Zoom link is only sent after they accept.
     """
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     accept_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=accept"
     decline_url = f"{settings.BACKEND_URL}/api/bookings/respond?token={response_token}&action=decline"
@@ -1012,7 +1012,7 @@ def send_invite_accepted_admin_notify(
     Notifies the firm that their outbound invite was accepted.
     Fires immediately when the contact clicks Accept — before AI brief is ready.
     """
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     company_line = f" ({company_name})" if company_name else ""
     type_label = "Employer" if contact_type == "employer" else "Candidate"
@@ -1091,7 +1091,7 @@ def send_invite_admin_copy(
     branding: TenantBranding = None,
 ) -> None:
     """Admin copy confirming the outbound invite was sent — awaiting response."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     company_line = f" ({company_name})" if company_name else ""
     type_label = "Employer" if contact_type == "employer" else "Candidate"
@@ -1156,7 +1156,7 @@ def send_invite_accepted_confirmation(
     branding: TenantBranding = None,
 ) -> None:
     """Confirmation email to contact after they accept — includes Zoom link."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     company_line = f" ({company_name})" if company_name else ""
 
@@ -1223,7 +1223,7 @@ def send_invite_declined_admin(
     branding: TenantBranding = None,
 ) -> None:
     """Notify the firm that the contact declined the invite."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     company_line = f" ({company_name})" if company_name else ""
 
@@ -1267,7 +1267,7 @@ def send_booking_received_email(
     notes: str = "",
     branding: TenantBranding = None,
 ) -> None:
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
     send_employer_confirmation(
         employer_name=employer_name,
         employer_email=employer_email,
@@ -1302,7 +1302,7 @@ def send_candidate_confirmed_email(
     branding: TenantBranding = None,
 ) -> None:
     """Confirmation email sent to candidate when admin confirms their booking."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     zoom_button = (
         f'<a href="{meeting_url}" style="display:inline-block;background:#0a66c2;'
@@ -1529,7 +1529,7 @@ def send_demo_request_notification(
 ) -> None:
     """Notify RYZE's admin inbox that someone requested a demo from the
     landing page. Always RYZE-side — no tenant exists yet for the requester."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     resend.Emails.send(
         {
@@ -1602,7 +1602,7 @@ def send_candidate_interest_notification(
     """Notify the firm's admin inbox that a candidate expressed interest in
     an open job order. reply_to is the candidate's own email so the
     recruiter can hit reply and talk to them directly."""
-    branding = branding or get_branding(None, "ryze")
+    branding = branding or get_branding(None, None)
 
     note_html = (
         f"""

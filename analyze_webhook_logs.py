@@ -177,8 +177,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--tenant",
-        default="ryze",
-        help="Tenant to assume for the querying recruiter (default: ryze)",
+        default="green_path_recruiting",
+        help="Tenant to assume for the querying recruiter (default: green_path_recruiting)",
     )
     ap.add_argument(
         "--hours",

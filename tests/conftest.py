@@ -5,7 +5,7 @@ RYZE Intelligence regression suite.
 WHAT THIS SUITE DOES
 --------------------
 It locks in the behavior your webhook diagnostic just proved correct:
-  1. Tenant isolation — greenpath_recruiting can see its calls; ryze cannot.
+  1. Tenant isolation — green_path_recruiting can see its calls; another firm cannot.
   2. Retrieval reachability — the seeded calls are findable by date, by name,
      and by semantic (vector) search.
   3. (opt-in) End-to-end Intelligence answers reference the right people.
@@ -21,7 +21,7 @@ HOW IT'S LAYERED (by cost / determinism)
 IMPORTANT
 ---------
 This suite queries your LIVE database read-only. It never writes. The ground
-truth below matches the two seeded actor-demo calls under greenpath_recruiting.
+truth below matches the two seeded actor-demo calls under green_path_recruiting.
 Edit GROUND_TRUTH when your seed data changes.
 
 RUN FROM the backend project root (folder containing `app/`), venv active:
@@ -49,9 +49,9 @@ from app.core.database import SessionLocal  # noqa: E402
 # --------------------------------------------------------------------------
 GROUND_TRUTH = {
     # The firm whose data actually exists in the DB right now.
-    "seen_tenant": "greenpath_recruiting",
+    "seen_tenant": "green_path_recruiting",
     # A different firm that must NOT be able to see the above.
-    "blind_tenant": "ryze",
+    "blind_tenant": "other_firm_recruiting",
     # Date the actor-demo calls were booked on (ISO).
     "call_date": "2026-07-09",
     # People who appear on greenpath's calls (in Booking.employer_name).

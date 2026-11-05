@@ -22,8 +22,8 @@ class Tenant(Base):
     trial_starts_at = Column(DateTime(timezone=True), nullable=True)
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Platform tenants (the house account) are exempt from billing / AI budget
-    # checks. Replaces the slug == "ryze" comparisons in part 2 of the restructure.
+    # Exempt from billing / AI budget checks (deps._check_tenant_access,
+    # usage.is_over_budget). Replaced the old house-tenant slug comparisons.
     billing_exempt = Column(
         Boolean, nullable=False, default=False, server_default="false"
     )

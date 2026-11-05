@@ -22,7 +22,7 @@ import uuid
 import pytest
 
 from app.core.database import SessionLocal
-from app.core.deps import RYZE_TENANT
+from app.services.tenant_resolution import _LEGACY_UNPLACED as RYZE_TENANT
 
 # Booking/User imported (unused directly) so SQLAlchemy can resolve the FK
 # targets on Candidate.booking_id / Candidate.user_id before insert.

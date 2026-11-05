@@ -23,13 +23,15 @@ IMPORTANT — tenant handling:
   * Recruiter dashboards and Intelligence chat are tenant-scoped.
   * On seed, user id 1 is stamped tenant_id='green_path_recruiting' so YOUR
     login sees all of this data. (You remain superuser.)
-  * On --wipe-only, user id 1 is restored to tenant_id='ryze'.
-  * The green_path_recruiting Tenant row is created if missing and forced to
-    status='active' so a mid-demo trial expiry can never 402 you.
+  * On --wipe-only, user id 1 stays in green_path_recruiting (there is no
+    house tenant any more; this is Dane's own tenant as well as the demo one).
+  * The green_path_recruiting Tenant row is created if missing (the data
+    migration normally creates it) and forced to status='active',
+    billing_exempt=true so a mid-demo trial expiry can never 402 you.
 
 Usage (backend repo root, venv active, .env loaded):
     python seed_greenpath_demo.py               # wipe everything (except user 1) + seed
-    python seed_greenpath_demo.py --wipe-only   # post-demo teardown: wipe + restore user 1 to ryze
+    python seed_greenpath_demo.py --wipe-only   # post-demo teardown: wipe, keep user 1 + tenant row
 
 Then generate embeddings (required for AI matching):
     python run_backfill.py
@@ -115,7 +117,7 @@ WIPE_TABLES = [
 ]
 
 
-def wipe_all(restore_ryze_tenant: bool):
+def wipe_all():
     print("🗑️  Wiping database (preserving user id 1)...\n")
     for table in WIPE_TABLES:
         try:
@@ -145,25 +147,25 @@ def wipe_all(restore_ryze_tenant: bool):
         print(f"❌ No user with id={SUPERADMIN_ID} found — aborting.")
         sys.exit(1)
 
-    if restore_ryze_tenant:
-        admin.tenant_id = "ryze"
-        db.commit()
-        print(f"   ✓ user #{SUPERADMIN_ID} ({admin.email}) restored to tenant 'ryze'\n")
     return admin
 
 
 def ensure_tenant():
-    """Create/activate the Greenpath tenant so billing checks never 402."""
+    """Create/activate the Greenpath tenant so billing checks never 402.
+    Idempotent against the row the data migration creates."""
     tenant = db.query(Tenant).filter(Tenant.slug == TENANT).first()
     if tenant is None:
-        tenant = Tenant(slug=TENANT, company_name=BRAND, status="active")
+        tenant = Tenant(
+            slug=TENANT, company_name=BRAND, status="active", billing_exempt=True
+        )
         db.add(tenant)
         db.commit()
-        print(f"   ✓ Tenant '{TENANT}' created (status=active)")
+        print(f"   ✓ Tenant '{TENANT}' created (status=active, billing_exempt)")
     else:
         tenant.status = "active"
+        tenant.billing_exempt = True
         db.commit()
-        print(f"   ✓ Tenant '{TENANT}' set to status=active")
+        print(f"   ✓ Tenant '{TENANT}' set to status=active, billing_exempt")
     return tenant
 
 
@@ -1307,7 +1309,7 @@ def seed_bookings(candidates, employers):
 def main():
     parser = argparse.ArgumentParser(description="Greenpath Recruiting demo seed (wipes DB except user id 1).")
     parser.add_argument("--wipe-only", action="store_true",
-                        help="Post-demo teardown: wipe everything except user 1 and restore them to the 'ryze' tenant.")
+                        help="Post-demo teardown: wipe everything except user 1 (who stays in green_path_recruiting).")
     parser.add_argument("--yes", action="store_true", help="Skip the confirmation prompt.")
     args = parser.parse_args()
 
@@ -1320,15 +1322,15 @@ def main():
             return
 
     try:
-        admin = wipe_all(restore_ryze_tenant=args.wipe_only)
+        admin = wipe_all()
+        ensure_tenant()
+        stamp_admin_tenant(admin)
 
         if args.wipe_only:
-            print("✅ Teardown complete. Database is empty; you are back on the 'ryze' tenant.")
+            print(f"✅ Teardown complete. Database is empty; user #{SUPERADMIN_ID} stays in '{TENANT}'.")
             return
 
         print("🌱 Seeding Greenpath Recruiting demo data...\n")
-        ensure_tenant()
-        stamp_admin_tenant(admin)
         candidates = seed_candidates()
         employers = seed_employers()
         seed_job_orders(employers)

@@ -79,6 +79,8 @@ def send_upcoming_reminders() -> None:
                         date=str(booking.date),
                         time_slot=booking.time_slot,
                         meeting_url=booking.meeting_url or "",
+                        tenant_id=booking.tenant_id,
+                        db=db,
                     )
                     fired += 1
                 except Exception as e:

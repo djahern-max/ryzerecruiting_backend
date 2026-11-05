@@ -6,8 +6,8 @@ reseed_demo.py — rebuild the two actor-call demo records from the snapshot
 Runs AFTER the DB wipe. Reads webhook_snapshot.json (which is on disk and
 survives the wipe) and reconstructs:
 
-  * Booking #? outbound_candidate — Renata Voss (greenpath_recruiting)
-  * Booking #? outbound_employer  — Walt Kessler (greenpath_recruiting)
+  * Booking #? outbound_candidate — Renata Voss (green_path_recruiting)
+  * Booking #? outbound_employer  — Walt Kessler (green_path_recruiting)
 
 For each it goes through the SAME service path production uses, so the result
 is indistinguishable from a real accepted-invite call:

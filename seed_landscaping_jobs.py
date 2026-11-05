@@ -20,13 +20,13 @@
 # IMPORTANT: jobs are only visible to candidates in the SAME tenant.
 # Renata's user belongs to the Green Path Recruiting tenant, so seed with
 # that tenant id (run `python diagnose_intelligence.py` to see it), e.g.:
-#     python seed_landscaping_jobs.py --tenant greenpath
+#     python seed_landscaping_jobs.py --tenant green_path_recruiting
 #
-# Default tenant is 'ryze' if --tenant is omitted.
+# Default tenant is 'green_path_recruiting' if --tenant is omitted.
 #
 # To wipe that tenant's job orders and re-seed (never touches employer
 # profiles):
-#     python seed_landscaping_jobs.py --tenant greenpath --reset
+#     python seed_landscaping_jobs.py --tenant green_path_recruiting --reset
 # ---------------------------------------------------------------------------
 
 import app.models.user  # noqa: F401
@@ -47,8 +47,9 @@ from sqlalchemy import or_
 
 from app.core.database import SessionLocal
 from app.models.job_order import JobOrder
-from app.core.deps import RYZE_TENANT
 from app.models.employer_profile import EmployerProfile
+DEFAULT_TENANT = "green_path_recruiting"
+
 from app.services.embedding_service import (
     embed_job_order_background,
     embed_employer_background,
@@ -201,7 +202,7 @@ def parse_tenant() -> str:
             return sys.argv[i + 1]
         print("ERROR: --tenant flag given without a value.")
         sys.exit(1)
-    return RYZE_TENANT
+    return DEFAULT_TENANT
 
 
 def main() -> None:

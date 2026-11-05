@@ -3,7 +3,8 @@ backfill_signup_tenants.py
 
 One-time backfill for users created before signup stamped tenant_id
 explicitly (see app/services/tenant_resolution.py): resolves the correct
-tenant for existing CANDIDATE/EMPLOYER users still sitting in ryze/NULL.
+tenant for existing CANDIDATE/EMPLOYER users still sitting in the legacy
+'ryze' slug or NULL.
 
 Dry-run by default — prints the rows that WOULD change, writes nothing.
 Pass --commit to actually apply and commit. Never touches ADMIN/superusers.
@@ -28,7 +29,7 @@ from app.models.employer_profile import EmployerProfile
 from sqlalchemy import or_
 
 from app.core.database import SessionLocal
-from app.core.deps import RYZE_TENANT
+LEGACY_TENANT = "ryze"  # pre-restructure house slug; rows left there are unplaced
 from app.services.tenant_resolution import resolve_signup_tenant
 
 
@@ -39,7 +40,7 @@ def main(commit: bool) -> None:
             db.query(User)
             .filter(
                 User.user_type.in_([UserType.CANDIDATE, UserType.EMPLOYER]),
-                or_(User.tenant_id.is_(None), User.tenant_id == RYZE_TENANT),
+                or_(User.tenant_id.is_(None), User.tenant_id == LEGACY_TENANT),
             )
             .all()
         )

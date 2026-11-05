@@ -31,9 +31,9 @@ class AuthService:
 
         hashed_password = get_password_hash(user.password)
 
-        # Lazy import: app.core.deps imports AuthService before defining
-        # RYZE_TENANT, so importing tenant_resolution (which imports
-        # RYZE_TENANT from deps) at module load time would cycle back here.
+        # Lazy import, kept from when tenant_resolution imported from
+        # app.core.deps (which imports AuthService). That cycle is gone;
+        # part 3 of the tenant restructure owns this file's rewrite.
         from app.services.tenant_resolution import resolve_signup_tenant
 
         # user.user_type is PublicUserType (schema enum), compared inside

@@ -95,6 +95,7 @@ TENANT_SAFE_PATTERNS = [
     "get_current_admin_tenant",
     "current_user.tenant_id",
     "_tenant(current_user)",
+    "require_tenant(",
     "tenant_id == tenant_id",
     "tenant_id == ",
     ".tenant_id",
@@ -430,7 +431,7 @@ def main():
         print(
             f"    1. Add  {GREEN}current_user: User = Depends(get_current_admin_user){RESET}  to the function"
         )
-        print(f"    2. Add  {GREEN}tenant_id = current_user.tenant_id or 'ryze'{RESET}")
+        print(f"    2. Add  {GREEN}tenant_id: str = Depends(get_current_admin_tenant){RESET}")
         print(
             f"    3. Add  {GREEN}.filter(Model.tenant_id == tenant_id){RESET}  to every query"
         )

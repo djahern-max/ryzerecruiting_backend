@@ -49,6 +49,7 @@ TEST_EMPLOYER_EMAIL = "test_employer@ryze.ai"
 TEST_CANDIDATE_EMAIL = "test_candidate@ryze.ai"
 
 db = SessionLocal()
+TENANT = "green_path_recruiting"
 today = date.today()
 
 
@@ -160,7 +161,7 @@ def seed_test_users():
         user_type=UserType.EMPLOYER,
         is_active=True,
         is_superuser=False,
-        tenant_id="ryze",
+        tenant_id=TENANT,
     )
     db.add(test_employer_user)
 
@@ -171,7 +172,7 @@ def seed_test_users():
         user_type=UserType.CANDIDATE,
         is_active=True,
         is_superuser=False,
-        tenant_id="ryze",
+        tenant_id=TENANT,
     )
     db.add(test_candidate_user)
     db.commit()
@@ -208,7 +209,7 @@ def seed_test_profiles(test_employer_user, test_candidate_user):
     test_candidate_profile = Candidate(
         name="Test Candidate",
         email=TEST_CANDIDATE_EMAIL,
-        tenant_id="ryze",
+        tenant_id=TENANT,
         phone="617-555-0099",
         current_title="Senior Accountant",
         current_company="Demo Corp",
@@ -274,7 +275,7 @@ def seed_test_bookings(test_employer_user, test_candidate_user):
     bookings = [
         Booking(
             booking_type="inbound",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_id=test_employer_user.id,
             employer_name="Test Employer",
             employer_email=TEST_EMPLOYER_EMAIL,
@@ -289,7 +290,7 @@ def seed_test_bookings(test_employer_user, test_candidate_user):
         ),
         Booking(
             booking_type="inbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_id=test_candidate_user.id,
             employer_name="Test Candidate",
             employer_email=TEST_CANDIDATE_EMAIL,
@@ -311,7 +312,7 @@ def seed_candidates():
     print("Seeding candidates...")
     candidates = [
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Sarah Chen",
             email="schen@gmail.com",
             phone="617-555-0101",
@@ -338,7 +339,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Michael Torres",
             email="mtorres@gmail.com",
             phone="617-555-0102",
@@ -364,7 +365,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Jennifer Walsh",
             email="jwalsh@gmail.com",
             phone="617-555-0103",
@@ -390,7 +391,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="David Kim",
             email="dkim@gmail.com",
             phone="617-555-0104",
@@ -414,7 +415,7 @@ def seed_candidates():
             notes=mark("Strong quantitative background. Target $125–145K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Amanda Foster",
             email="afoster@gmail.com",
             phone="617-555-0105",
@@ -439,7 +440,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Robert Huang",
             email="rhuang@gmail.com",
             phone="617-555-0106",
@@ -465,7 +466,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Lisa Martinez",
             email="lmartinez@gmail.com",
             phone="617-555-0107",
@@ -487,7 +488,7 @@ def seed_candidates():
             notes=mark("Strong upside candidate. Target $65–75K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="James O'Brien",
             email="jobrien@gmail.com",
             phone="617-555-0108",
@@ -511,7 +512,7 @@ def seed_candidates():
             notes=mark("Motivated by the in-house move. Target $150–170K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Emily Rodriguez",
             email="erodriguez@gmail.com",
             phone="617-555-0109",
@@ -536,7 +537,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Marcus Rivera",
             email="mrivera@gmail.com",
             phone="617-555-0110",
@@ -560,7 +561,7 @@ def seed_candidates():
             notes=mark("Ready to make the move. Target $90–105K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Rachel Green",
             email="rgreen@gmail.com",
             phone="617-555-0111",
@@ -583,7 +584,7 @@ def seed_candidates():
             notes=mark("Open to VP Finance or divisional CFO. Target $165–185K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Thomas Anderson",
             email="tanderson@gmail.com",
             phone="617-555-0112",
@@ -606,7 +607,7 @@ def seed_candidates():
             notes=mark("Strong upside. Target $70–80K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Nicole Williams",
             email="nwilliams@gmail.com",
             phone="617-555-0113",
@@ -630,7 +631,7 @@ def seed_candidates():
             notes=mark("Motivated by W/L balance. Target $100–115K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Kevin Park",
             email="kpark@gmail.com",
             phone="617-555-0114",
@@ -654,7 +655,7 @@ def seed_candidates():
             notes=mark("Actively looking for CFO role. Target $275K+."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Stephanie Brown",
             email="sbrown@gmail.com",
             phone="617-555-0115",
@@ -677,7 +678,7 @@ def seed_candidates():
             notes=mark("Great background for an in-house tax senior. Target $95–110K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Daniel Murphy",
             email="dmurphy@gmail.com",
             phone="617-555-0116",
@@ -701,7 +702,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Alexandra Davis",
             email="adavis@gmail.com",
             phone="617-555-0117",
@@ -727,7 +728,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Christopher Lee",
             email="clee@gmail.com",
             phone="617-555-0118",
@@ -753,7 +754,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Megan Taylor",
             email="mtaylor@gmail.com",
             phone="617-555-0119",
@@ -775,7 +776,7 @@ def seed_candidates():
             notes=mark("Early career. Target $62–70K. Willing to relocate to Boston."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Brian Wilson",
             email="bwilson@gmail.com",
             phone="617-555-0120",
@@ -799,7 +800,7 @@ def seed_candidates():
             notes=mark("Ready for Controller step. Target $120–135K."),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Jessica Moore",
             email="jmoore@gmail.com",
             phone="617-555-0121",
@@ -824,7 +825,7 @@ def seed_candidates():
             ),
         ),
         Candidate(
-            tenant_id="ryze",
+            tenant_id=TENANT,
             name="Andrew Johnson",
             email="ajohnson@gmail.com",
             phone="617-555-0122",
@@ -1244,7 +1245,7 @@ def seed_bookings():
     bookings = [
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Michael Torres",
             employer_email="mtorres@acmemfg.com",
             company_name="Acme Manufacturing Corp",
@@ -1260,7 +1261,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Sarah Chen",
             employer_email="schen@gmail.com",
             date=today,
@@ -1277,7 +1278,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Jennifer Walsh CFO",
             employer_email="cfo@bionovate.com",
             company_name="BioNovate Therapeutics",
@@ -1293,7 +1294,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="David Kim",
             employer_email="dkim@gmail.com",
             date=d(3),
@@ -1308,7 +1309,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="inbound",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Robert Huang",
             employer_email="rhuang@gmail.com",
             company_name="Atlantic Distribution Co",
@@ -1324,7 +1325,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Jennifer Walsh",
             employer_email="jwalsh@gmail.com",
             date=d(7),
@@ -1339,7 +1340,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Karen Simmons",
             employer_email="partners@summitcpa.com",
             company_name="Summit CPA Group",
@@ -1355,7 +1356,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Amanda Foster",
             employer_email="afoster@gmail.com",
             date=d(14),
@@ -1370,7 +1371,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Thomas Wei",
             employer_email="hr@techscale.io",
             company_name="TechScale SaaS Inc",
@@ -1386,7 +1387,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="inbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Marcus Rivera",
             employer_email="mrivera@gmail.com",
             date=d(21),
@@ -1403,7 +1404,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Patricia Kelley",
             employer_email="cfo@coastalhealthcare.com",
             company_name="Coastal Healthcare Partners",
@@ -1419,7 +1420,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Rachel Green",
             employer_email="rgreen@gmail.com",
             date=d(30),
@@ -1434,7 +1435,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Sam Okafor",
             employer_email="mds@bostonpepartners.com",
             company_name="Boston PE Partners",
@@ -1450,7 +1451,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Kevin Park",
             employer_email="kpark@gmail.com",
             date=d(42),
@@ -1465,7 +1466,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Alex Fitzgerald",
             employer_email="cfo@vertexgrowth.com",
             company_name="Vertex Growth Capital",
@@ -1481,7 +1482,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Christopher Lee",
             employer_email="clee@gmail.com",
             date=d(60),
@@ -1496,7 +1497,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Tom Bradley",
             employer_email="tbradley@randco.com",
             company_name="Rand Co",
@@ -1510,7 +1511,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Peter Walsh",
             employer_email="pwalsh@gmail.com",
             date=d(10),
@@ -1523,7 +1524,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Nicole Chen CFO",
             employer_email="cfo@fieldstone.com",
             company_name="Fieldstone Capital Management",
@@ -1537,7 +1538,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="James O'Brien",
             employer_email="jobrien@gmail.com",
             date=today + timedelta(days=2),
@@ -1552,7 +1553,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Bill Grayson",
             employer_email="president@granitestatmfg.com",
             company_name="Granite State Manufacturing",
@@ -1566,7 +1567,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="inbound",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Sarah Thompson",
             employer_email="sthompson@newco.com",
             company_name="NewCo Inc",
@@ -1579,7 +1580,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="inbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Alex Reyes",
             employer_email="areyes@gmail.com",
             date=today + timedelta(days=4),
@@ -1591,7 +1592,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Emily Rodriguez",
             employer_email="erodriguez@gmail.com",
             date=d(45),
@@ -1606,7 +1607,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Howard Kim",
             employer_email="hr@harborfinancial.com",
             company_name="Harbor Financial Group",
@@ -1624,7 +1625,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Nicole Williams",
             employer_email="nwilliams@gmail.com",
             date=d(50),
@@ -1639,7 +1640,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_employer",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="David Park",
             employer_email="ops@fieldstonecap.com",
             company_name="Fieldstone Capital Management",
@@ -1655,7 +1656,7 @@ def seed_bookings():
         ),
         Booking(
             booking_type="outbound_candidate",
-            tenant_id="ryze",
+            tenant_id=TENANT,
             employer_name="Andrew Johnson",
             employer_email="ajohnson@gmail.com",
             date=d(55),

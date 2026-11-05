@@ -19,11 +19,6 @@ from app.models.tenant import Tenant
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# DEPRECATED — there is no house tenant any more. Kept importable only until
-# the last call sites are migrated in part-2 commit 3, then deleted.
-RYZE_TENANT = "ryze"
-
-
 def require_tenant(user: User) -> str:
     """
     Return the user's tenant slug, or raise 403 if the account has none.

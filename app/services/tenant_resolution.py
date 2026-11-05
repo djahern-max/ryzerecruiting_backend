@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.user import UserType
-from app.core.deps import RYZE_TENANT
+# Part 3 decides what happens to unplaced signups. Until then they land in a
+# slug with no tenants row, which get_current_tenant rejects with 403.
+_LEGACY_UNPLACED = "ryze"
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +18,13 @@ def resolve_signup_tenant(db: Session, email: str, user_type: UserType) -> str:
     Decide which tenant a self-registering candidate/employer belongs to.
 
     A person belongs to whichever firm already has a tenant-scoped profile for
-    their email. No prior firm association → RYZE's own book (RYZE_TENANT).
+    their email. No prior firm association → RYZE's own book (_LEGACY_UNPLACED).
     ADMIN never reaches here — firms are created with an explicit tenant via
     the invite flow.
     """
     email = (email or "").strip()
     if not email:
-        return RYZE_TENANT
+        return _LEGACY_UNPLACED
 
     if user_type == UserType.CANDIDATE:
         rows = (
@@ -39,9 +41,9 @@ def resolve_signup_tenant(db: Session, email: str, user_type: UserType) -> str:
             .all()
         )
     else:
-        return RYZE_TENANT
+        return _LEGACY_UNPLACED
 
-    firms = {t for (t,) in rows if t and t != RYZE_TENANT}
+    firms = {t for (t,) in rows if t and t != _LEGACY_UNPLACED}
 
     if len(firms) == 1:
         return firms.pop()
@@ -50,7 +52,7 @@ def resolve_signup_tenant(db: Session, email: str, user_type: UserType) -> str:
         # one tenant. Don't silently pick a winner; leave in ryze and flag.
         logger.warning(
             f"[signup] {email} matches multiple firms {sorted(firms)}; "
-            f"leaving in {RYZE_TENANT} for manual assignment"
+            f"leaving in {_LEGACY_UNPLACED} for manual assignment"
         )
-        return RYZE_TENANT
-    return RYZE_TENANT
+        return _LEGACY_UNPLACED
+    return _LEGACY_UNPLACED

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _send_sms(branding: TenantBranding, to_phone: str, body: str) -> None:
     """Send SMS via the tenant's Twilio sender. Skips silently if no phone or
-    no Twilio config resolved (null tenant creds with no RYZE fallback)."""
+    no Twilio config resolved (null tenant creds with no platform fallback)."""
     if not to_phone or not branding.has_sms:
         return
     try:
@@ -54,7 +54,8 @@ def notify_booking_received(
     date: str,
     time_slot: str,
     notes: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -99,7 +100,8 @@ def notify_booking_confirmed(
     meeting_url: str,
     notes: str = "",
     ai_brief: dict = None,
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -141,7 +143,8 @@ def notify_booking_cancelled(
     company_name: str,
     date: str,
     time_slot: str,
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -179,7 +182,8 @@ def notify_reminder(
     date: str,
     time_slot: str,
     meeting_url: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -237,7 +241,8 @@ def notify_recruiter_invite_sent(
     booking_id: int,
     response_token: str,
     notes: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -297,7 +302,8 @@ def notify_invite_accepted(
     time_slot: str,
     meeting_url: str,
     sms_consent: bool = False,
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -347,7 +353,8 @@ def notify_invite_accepted_admin(
     date: str,
     time_slot: str,
     meeting_url: str,
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     """
@@ -382,7 +389,8 @@ def notify_invite_declined(
     company_name: str,
     date: str,
     time_slot: str,
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -413,7 +421,8 @@ def notify_candidate_booking_received(
     date: str,
     time_slot: str,
     notes: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -463,7 +472,8 @@ def notify_candidate_confirmed(
     date: str,
     time_slot: str,
     meeting_url: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     branding = get_branding(db, tenant_id)
@@ -502,7 +512,8 @@ def notify_candidate_interest(
     job_title: str,
     job_location: str,
     note: str = "",
-    tenant_id: str = "ryze",
+    *,
+    tenant_id: str,
     db: Session = None,
 ) -> None:
     """Notify the firm's admin inbox that a candidate expressed interest in

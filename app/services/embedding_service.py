@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.core.deps import RYZE_TENANT
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
 from app.models.job_order import JobOrder
@@ -478,7 +477,7 @@ def embed_booking_background(booking_id: int) -> None:
         vector = generate_embedding(
             text_block,
             db=db,
-            tenant_id=result.tenant_id or RYZE_TENANT,
+            tenant_id=result.tenant_id,
             source="embed_background",
         )
         if vector:
@@ -545,7 +544,7 @@ def backfill_bookings() -> dict:
             vector = generate_embedding(
                 text_block,
                 db=db,
-                tenant_id=result.tenant_id or RYZE_TENANT,
+                tenant_id=result.tenant_id,
                 source="embed_background",
             )
             if vector:
@@ -600,7 +599,7 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             if not text:
                 continue
             vector = generate_embedding(
-                text, db=db, tenant_id=candidate.tenant_id or RYZE_TENANT, source="embed_sync"
+                text, db=db, tenant_id=candidate.tenant_id, source="embed_sync"
             )
             if vector:
                 candidate.embedding = vector
@@ -622,7 +621,7 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             if not text:
                 continue
             vector = generate_embedding(
-                text, db=db, tenant_id=employer.tenant_id or RYZE_TENANT, source="embed_sync"
+                text, db=db, tenant_id=employer.tenant_id, source="embed_sync"
             )
             if vector:
                 employer.embedding = vector
@@ -644,7 +643,7 @@ def sync_embeddings(batch_size: int = 50) -> dict:
             if not text:
                 continue
             vector = generate_embedding(
-                text, db=db, tenant_id=job.tenant_id or RYZE_TENANT, source="embed_sync"
+                text, db=db, tenant_id=job.tenant_id, source="embed_sync"
             )
             if vector:
                 job.embedding = vector

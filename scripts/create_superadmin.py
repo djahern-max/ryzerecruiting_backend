@@ -2,12 +2,14 @@
 """
 scripts/create_superadmin.py
 
-Creates a RYZE platform-owner superadmin account (tenant_id='ryze').
-No Tenant row is needed — deps.py treats the 'ryze' slug as always-active
-without one. Refuses to run if a user with the given email already exists.
+Creates a platform-owner superadmin account (is_superuser=True) inside a
+tenant. The tenant row must exist — there is no house tenant; a slug with
+no tenants row gets 403 on every data endpoint.
+Refuses to run if a user with the given email already exists.
 
 Usage (from project root):
-    python scripts/create_superadmin.py --email you@ryze.ai
+    python scripts/create_superadmin.py --email you@example.com
+    python scripts/create_superadmin.py --email you@example.com --tenant acme_recruiting
 """
 
 import sys
@@ -23,12 +25,20 @@ load_dotenv()
 
 from app.core.database import SessionLocal
 from app.core.security import get_password_hash
+from app.models.tenant import Tenant
 from app.models.user import User, UserType
+
+DEFAULT_TENANT = "green_path_recruiting"
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Create a RYZE superadmin user.")
+    parser = argparse.ArgumentParser(description="Create a platform-owner superadmin user.")
     parser.add_argument("--email", required=True, help="Email address for the new superadmin")
+    parser.add_argument(
+        "--tenant",
+        default=DEFAULT_TENANT,
+        help=f"Tenant slug the account belongs to (default: {DEFAULT_TENANT}); the tenants row must exist",
+    )
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -36,6 +46,10 @@ def main():
         existing = db.query(User).filter(User.email == args.email).first()
         if existing:
             print(f"ERROR: a user with email {args.email} already exists (id={existing.id}).")
+            sys.exit(1)
+
+        if db.query(Tenant).filter(Tenant.slug == args.tenant).first() is None:
+            print(f"ERROR: no tenants row with slug {args.tenant!r} — create the tenant first.")
             sys.exit(1)
 
         password = getpass.getpass("Password: ")
@@ -46,7 +60,7 @@ def main():
             user_type=UserType.ADMIN,
             is_superuser=True,
             is_active=True,
-            tenant_id="ryze",
+            tenant_id=args.tenant,
         )
         db.add(user)
         db.commit()
