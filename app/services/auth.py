@@ -8,6 +8,7 @@ from app.models.user import User, UserType
 from app.schemas.user import UserCreate, UserLogin
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.services.branding import get_branding
+from app.services.tenant_resolution import resolve_signup_tenant
 
 
 class AuthService:
@@ -31,11 +32,9 @@ class AuthService:
 
         hashed_password = get_password_hash(user.password)
 
-        # Lazy import, kept from when tenant_resolution imported from
-        # app.core.deps (which imports AuthService). That cycle is gone;
-        # part 3 of the tenant restructure owns this file's rewrite.
-        from app.services.tenant_resolution import resolve_signup_tenant
-
+        # Resolve the tenant BEFORE building the User: the resolver raises
+        # 403/409 when no firm (or more than one) has this email, and the
+        # refusal must leave no users row behind.
         # user.user_type is PublicUserType (schema enum), compared inside
         # resolve_signup_tenant against models.user.UserType — both mix in
         # str so cross-class equality works by value. Intentional, not a bug.
@@ -155,10 +154,8 @@ class AuthService:
                 detail="Admin accounts cannot be created via OAuth.",
             )
 
-        # Lazy import — see create_user() above for why this can't be a
-        # module-level import.
-        from app.services.tenant_resolution import resolve_signup_tenant
-
+        # Resolve BEFORE building the User — see create_user(). The caller
+        # (/oauth/complete-signup) clears the Redis temp token on refusal.
         tenant_id = resolve_signup_tenant(db, email, user_type)
 
         # Create new OAuth user

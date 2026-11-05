@@ -507,6 +507,15 @@ async def complete_oauth_signup(
             },
         }
 
+    except HTTPException as he:
+        # Refusals from the tenant resolver (403 no firm / 409 several firms)
+        # and the service's own 400s reach the client with their detail. No
+        # users row was written; drop the temp token so the half-finished
+        # flow cannot be replayed.
+        db.rollback()
+        delete_oauth_temp_data(temp_token)
+        logger.warning(f"[oauth] signup refused for {oauth_data.get('email')}: {he.detail}")
+        raise
     except Exception as e:
         logger.error(f"Error in OAuth signup: {str(e)}", exc_info=True)
         db.rollback()

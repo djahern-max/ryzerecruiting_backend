@@ -53,9 +53,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
 
     # AI usage metering — internal per-tenant monthly budget (COGS guardrail),
-    # separate from the $20/mo subscription price (revenue). The `ryze` tenant
-    # is exempt from the cap (see app/services/usage.py::is_over_budget) but
-    # still gets its usage recorded.
+    # separate from the $20/mo subscription price (revenue). Tenants with
+    # billing_exempt=true skip the cap (see app/services/usage.py::is_over_budget)
+    # but still get their usage recorded.
     AI_MONTHLY_BUDGET_USD: float = 8.00
 
     # Stripe
