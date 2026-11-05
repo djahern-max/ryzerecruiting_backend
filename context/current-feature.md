@@ -177,3 +177,8 @@ Done means:
   verified on niceats, alembic check clean, audit unchanged. Four isolation
   tests that flush a NULL-tenant User now fail on the constraint — fixed in
   commit 3 by using transient User objects.
+- 2026-11-05 — Commit 3 (2e4b360): signup test rewritten (resolver, create_user,
+  /oauth/complete-signup with fake redis — 403/409 detail reaches the client,
+  temp token deleted, no users row); isolation NULL-tenant cases on transient
+  User objects; backfill_signup_tenants.py deleted. Full offline suite
+  33 passed / 0 failed, zero rows left behind, audit unchanged.
