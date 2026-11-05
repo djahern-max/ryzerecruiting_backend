@@ -133,9 +133,9 @@ migration must, in order:
 - [x] `python audit_tenant_coverage.py` run BEFORE any change; output saved (`context/audit_baseline_part2.txt`: 95 endpoints, 76 Safe, 19 Public/Skip, 0 Hardcoded, 0 Review)
 - [ ] Decisions 1–3 presented with recommendations; answers recorded in Notes
 - [ ] `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` → no output
-- [ ] Data migration applied; `psql -d niceats -c "SELECT slug, status, billing_exempt FROM tenants;"` shows Dane's firm, active, `t`
-- [ ] `psql -d niceats -c "SELECT id, email, tenant_id, is_superuser FROM users;"` shows user 1 in the new slug
-- [ ] `alembic downgrade -1` then `upgrade head` round-trips
+- [x] Data migration applied; `psql -d niceats -c "SELECT slug, status, billing_exempt FROM tenants;"` shows Dane's firm, active, `t` (green_path_recruiting | active | t)
+- [x] `psql -d niceats -c "SELECT id, email, tenant_id, is_superuser FROM users;"` shows user 1 in the new slug (1 | green_path_recruiting | t)
+- [x] `alembic downgrade -1` then `upgrade head` round-trips (a1b2c3d4e5f6; `alembic check` clean)
 - [ ] Login returns a JWT; authenticated `GET /api/candidates` → 200 (Dane, in the browser)
 - [ ] Manually: set `billing_exempt=false` and `status='expired'` on the tenant via psql → `GET /api/candidates` → 402; restore → 200
 - [ ] Manually: `UPDATE users SET tenant_id = NULL WHERE id = 1` → 403; restore
@@ -143,6 +143,7 @@ migration must, in order:
 - [ ] `python audit_tenant_coverage.py` after: 0 HARDCODED, 0 REVIEW, Safe ≥ baseline
 - [ ] `python seed_greenpath_demo.py --yes` then `--wipe-only` both run clean against the new slug
 - [ ] `CLAUDE.md` edit proposed and, on confirmation, committed separately
+- [ ] Commit 6 also: un-ignore `scripts/` in `.gitignore` (one line) so `create_superadmin.py` and future helpers are tracked normally
 - [ ] Committed and pushed to `origin/main`; History updated
 
 ## Notes
@@ -189,3 +190,8 @@ migration must, in order:
   (17 `get_branding(None, "ryze")`), settings.py:120 comment, and
   tenant_resolution.py importing `RYZE_TENANT` from deps (part-3 file).
   Decisions 1–3 (+ a new Decision 4) presented; waiting on answers. No code changed.
+- 2026-11-05 — Commits 1–4 landed locally (e8471f5, 7342ea5, c76d157,
+  a1b2c3d4e5f6 migration). Audit unchanged after each of 1–3 (95 / 76 Safe /
+  0 / 0). Migration round-tripped on `niceats`; user 1 now in
+  `green_path_recruiting`, row active + billing_exempt. Awaiting Dane's browser
+  check (login + /api/bookings) before commit 5 (tests). Not yet pushed.
