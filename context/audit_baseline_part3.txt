@@ -1,0 +1,147 @@
+
+[1m═══════════════════════════════════════════════════════════════[0m
+[1m  RYZE.ai — Multi-Tenant Endpoint Coverage Audit               [0m
+[1m═══════════════════════════════════════════════════════════════[0m
+  Scanning: /Users/dane/code/ryzerecruiting_backend/app/api
+
+[1m  admin_invite.py[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /invite                                   [90mAuthenticated — no tenant-sensitive data access detected[0m
+
+[1m  auth.py[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /register                                 [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /signup-firm                              [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /login                                    [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /login/form                               [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /me                                       [90mNo auth dependency[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /oauth/google                             [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /oauth/google/callback                    [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /oauth/linkedin                           [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /oauth/linkedin/callback                  [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /oauth/complete-signup                    [90mNo auth required — intentionally open[0m
+
+[1m  billing.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /status                                   [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /create-checkout-session                  [90mTenant scoping found: current_user.tenant_id[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /webhook                                  [90mVerified by provider signature/HMAC check (webhook) — no tenant scoping needed[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /usage                                    [90mTenant scoping found: _tenant(current_user)[0m
+
+[1m  blog.py[0m
+    [90m○ SKIP      [0m  [94mGET    [0m  /                                         [90mInfrastructure/utility file — tenant scoping not applicable[0m
+
+[1m  bookings.py[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  (?)                                       [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /recruiter-invite                         [90mTenant scoping found: get_current_admin_tenant[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /respond                                  [90mNo auth required — intentionally open[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /respond/confirm                          [90mToken-authenticated — resolves record via unguessable token instead of current_user[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /{booking_id}/status                      [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /candidate                                [90mTenant scoping found: get_current_tenant[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /availability/{date_str}                  [90mNo auth required — intentionally open[0m
+    [90m○ PUBLIC    [0m  [94mGET    [0m  /my                                       [90mNo auth required — intentionally open[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{booking_id}                             [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [91mDELETE [0m  /{booking_id}                             [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{booking_id}/transcript                  [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /instant-meeting                          [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  candidates.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /me                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /me/job-matches                           [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /me/interests                             [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /me                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /me/photo                                 [90mTenant scoping delegated to helper: _resolve_candidate_for_user[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /me/banner                                [90mTenant scoping delegated to helper: _resolve_candidate_for_user[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /check-duplicate                          [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{candidate_id}                           [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  (?)                                       [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /{candidate_id}                           [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [91mDELETE [0m  /{candidate_id}                           [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /parse                                    [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /parse-file                               [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{candidate_id}/embed                     [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /embed-all                                [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{candidate_id}/photo                     [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{candidate_id}/banner                    [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{candidate_id}/pdf                       [90mTenant scoping found: _tenant(current_user)[0m
+
+[1m  chat.py[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  (?)                                       [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  chat_sessions.py[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  (?)                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{session_id}                             [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [91mDELETE [0m  /{session_id}                             [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /{session_id}                             [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{session_id}/messages                    [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{session_id}/generate-title              [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  contact.py[0m
+    [90m○ SKIP      [0m  [92mPOST   [0m  /                                         [90mInfrastructure/utility file — tenant scoping not applicable[0m
+
+[1m  db_explorer.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /db/explorer/tables                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /db/counts                                [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /db/explorer                              [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /db/records/{table}/{record_id}           [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [91mDELETE [0m  /db/records/{table}/{record_id}           [90mTenant scoping found: _tenant(current_user)[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /db/export                                [90mTenant scoping found: _tenant(current_user)[0m
+
+[1m  demo_request.py[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  (?)                                       [90mNo auth required — intentionally open[0m
+
+[1m  employer_profiles.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /me                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /me                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /me/logo                                  [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /me/banner                                [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{profile_id}                             [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /{profile_id}                             [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{profile_id}/logo                        [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{profile_id}/banner                      [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{profile_id}/pdf                         [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /parse                                    [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  job_orders.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /open                                     [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{job_order_id}/candidate-matches         [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /{job_order_id}/express-interest          [90mTenant scoping found: get_current_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{job_order_id}                           [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  (?)                                       [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /{job_order_id}                           [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [91mDELETE [0m  /{job_order_id}                           [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /{job_order_id}/pdf                       [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /parse                                    [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  search.py[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /candidates                               [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /employers                                [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /job-orders                               [90mTenant scoping found: get_current_admin_tenant[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  /embeddings/sync                          [90mNo auth required — intentionally open[0m
+
+[1m  settings.py[0m
+    [92m✓ SAFE      [0m  [92mPOST   [0m  /change-password                          [90mAuthenticated — no tenant-sensitive data access detected[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  /tenant                                   [90mTenant scoping found: get_current_admin_tenant[0m
+    [92m✓ SAFE      [0m  [93mPATCH  [0m  /tenant                                   [90mTenant scoping found: get_current_admin_tenant[0m
+
+[1m  waitlist.py[0m
+    [90m○ PUBLIC    [0m  [92mPOST   [0m  (?)                                       [90mNo auth required — intentionally open[0m
+    [92m✓ SAFE      [0m  [94mGET    [0m  (?)                                       [90mAuthenticated — no tenant-sensitive data access detected[0m
+
+[1m  webhooks.py[0m
+    [90m○ SKIP      [0m  [92mPOST   [0m  /zoom                                     [90mInfrastructure/utility file — tenant scoping not applicable[0m
+
+[1m═══════════════════════════════════════════════════════════════[0m
+[1m  Summary[0m
+[1m═══════════════════════════════════════════════════════════════[0m
+  Total endpoints scanned : 95
+  [92m✓ Safe                  : 76[0m
+  [90m○ Public / Skip         : 19[0m
+  [93m⚠ Hardcoded tenant      : 0[0m
+  [91m✗ Needs review          : 0[0m
+
+  [92m[1m✅ All authenticated data endpoints are tenant-scoped.[0m
+[1m═══════════════════════════════════════════════════════════════[0m
+
