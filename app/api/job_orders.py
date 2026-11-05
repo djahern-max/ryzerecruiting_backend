@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.models.job_order import JobOrder
 from app.models.candidate import Candidate
 from app.models.job_interest import JobInterest
-from app.core.deps import get_current_admin_user
+from app.core.deps import get_current_admin_user, get_current_admin_tenant, get_current_tenant
 from app.core.deps import get_current_user
 from app.api.auth import get_current_user as get_any_authenticated_user
 from app.api.candidates import _resolve_candidate_for_user
@@ -82,8 +82,8 @@ class CandidateMatchResult(BaseModel):
 def list_open_job_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     return (
         db.query(JobOrder)
         .filter(JobOrder.status == "open", JobOrder.tenant_id == tenant_id)
@@ -106,6 +106,7 @@ def get_candidate_matches_for_job(
     limit: int = Query(5, ge=1, le=20),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """
     EP15 — Returns top candidates ranked by AI match score for a given job order.
@@ -128,7 +129,6 @@ def get_candidate_matches_for_job(
             detail="Employer or admin access required.",
         )
 
-    tenant_id = current_user.tenant_id or "ryze"  # EP16
 
     job = (
         db.query(JobOrder)
@@ -230,6 +230,7 @@ def express_interest_in_job_order(
     payload: JobInterestCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     """
     Let an authenticated candidate express interest in an open job order,
@@ -240,7 +241,6 @@ def express_interest_in_job_order(
     if not candidate:
         raise HTTPException(status_code=404, detail="No candidate profile found.")
 
-    tenant_id = current_user.tenant_id or "ryze"
 
     job = (
         db.query(JobOrder)
@@ -302,8 +302,8 @@ def express_interest_in_job_order(
 def list_job_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     return (
         db.query(JobOrder)
         .filter(JobOrder.tenant_id == tenant_id)
@@ -317,9 +317,9 @@ def get_job_order(
     job_order_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """Fetch a single job order by ID. Admin only."""
-    tenant_id = current_user.tenant_id or "ryze"
     job = (
         db.query(JobOrder)
         .filter(
@@ -339,8 +339,8 @@ def create_job_order(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     job_order = JobOrder(tenant_id=tenant_id, **payload.model_dump())
     db.add(job_order)
     db.commit()
@@ -359,8 +359,8 @@ def update_job_order(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     job_order = (
         db.query(JobOrder)
         .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == tenant_id)
@@ -385,8 +385,8 @@ def delete_job_order(
     job_order_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     job_order = (
         db.query(JobOrder)
         .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == tenant_id)
@@ -404,9 +404,9 @@ def download_job_order_pdf(
     job_order_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """Generate and stream a branded PDF for a job order. Admin only."""
-    tenant_id = current_user.tenant_id or "ryze"
     job = (
         db.query(JobOrder)
         .filter(JobOrder.id == job_order_id, JobOrder.tenant_id == tenant_id)
@@ -547,13 +547,13 @@ def parse_job_order(
     payload: JobOrderParseRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     if not payload.text or len(payload.text.strip()) < 30:
         raise HTTPException(
             status_code=400,
             detail="Text is too short to parse.",
         )
-    tenant_id = current_user.tenant_id or "ryze"
     check_ai_budget(db, tenant_id)
     result = parse_job_description(payload.text, db=db, tenant_id=tenant_id)
     if not result:

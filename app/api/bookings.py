@@ -16,7 +16,7 @@ from app.services.calendar import create_calendar_event, delete_calendar_event
 from app.services.usage import is_over_budget
 from app.core.config import settings
 from app.core.database import get_db, SessionLocal
-from app.core.deps import get_current_admin_tenant, RYZE_TENANT
+from app.core.deps import get_current_admin_tenant, get_current_tenant
 from app.core.deps import get_current_admin_user
 from app.api.auth import get_current_user
 from app.models.booking import Booking
@@ -70,7 +70,7 @@ def _generate_brief_background(booking_id: int) -> None:
         if not booking or not booking.website_url:
             return
 
-        tenant_id = booking.tenant_id or RYZE_TENANT
+        tenant_id = booking.tenant_id
         if is_over_budget(db, tenant_id):
             logger.info(
                 f"Skipping AI brief for booking #{booking_id} — tenant {tenant_id} over AI budget"
@@ -146,10 +146,11 @@ def create_booking(
     payload: BookingCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     booking = Booking(
         booking_type="inbound",
-        tenant_id=current_user.tenant_id or "ryze",
+        tenant_id=tenant_id,
         employer_id=current_user.id,
         employer_name=current_user.full_name or current_user.email,
         employer_email=current_user.email,
@@ -175,7 +176,7 @@ def create_booking(
             date=str(payload.date),
             time_slot=payload.time_slot,
             notes=payload.notes or "",
-            tenant_id=current_user.tenant_id or "ryze",
+            tenant_id=tenant_id,
             db=db,
         )
     except Exception as e:
@@ -198,12 +199,13 @@ def send_recruiter_invite(
     payload: RecruiterInviteCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     token = secrets.token_urlsafe(32)
 
     booking = Booking(
         booking_type=payload.invite_type,
-        tenant_id=current_user.tenant_id or "ryze",
+        tenant_id=tenant_id,
         employer_id=None,
         employer_name=payload.contact_name,
         employer_email=payload.contact_email,
@@ -232,6 +234,8 @@ def send_recruiter_invite(
             booking_id=booking.id,
             response_token=token,
             notes=payload.notes or "",
+            tenant_id=booking.tenant_id,
+            db=db,
         )
     except Exception as e:
         logger.error(f"Failed to send recruiter invite notifications: {e}")
@@ -288,6 +292,8 @@ def respond_to_invite(
                 company_name=booking.company_name or "",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
+                tenant_id=booking.tenant_id,
+                db=db,
             )
         except Exception as e:
             logger.error(f"Failed to send decline notifications: {e}")
@@ -376,7 +382,7 @@ def confirm_invite(
             from app.services.candidate_stub import find_or_create_candidate_stub
             from app.services.embedding_service import embed_candidate_background
 
-            tenant_id = booking.tenant_id or "ryze"
+            tenant_id = booking.tenant_id
             candidate = find_or_create_candidate_stub(db, booking, tenant_id)
             db.commit()
             background_tasks.add_task(embed_candidate_background, candidate.id)
@@ -392,7 +398,7 @@ def confirm_invite(
         try:
             from app.services.employer_stub import find_or_create_employer_stub
 
-            tenant_id = booking.tenant_id or "ryze"
+            tenant_id = booking.tenant_id
             profile = find_or_create_employer_stub(db, booking, tenant_id)
             db.commit()
             logger.info(
@@ -421,7 +427,7 @@ def confirm_invite(
             time_slot=booking.time_slot,
             meeting_url=booking.meeting_url,
             sms_consent=consented,
-            tenant_id=booking.tenant_id or "ryze",
+            tenant_id=booking.tenant_id,
             db=db,
         )
     except Exception as e:
@@ -440,6 +446,8 @@ def confirm_invite(
             date=str(booking.date),
             time_slot=booking.time_slot,
             meeting_url=booking.meeting_url,
+            tenant_id=booking.tenant_id,
+            db=db,
         )
     except Exception as e:
         logger.error(f"Failed to send admin acceptance notification: {e}")
@@ -464,8 +472,8 @@ def update_booking_status(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     booking = (
         db.query(Booking)
         .filter(
@@ -575,6 +583,8 @@ def update_booking_status(
                     date=str(booking.date),
                     time_slot=booking.time_slot,
                     meeting_url=booking.meeting_url or "",
+                    tenant_id=booking.tenant_id,
+                    db=db,
                 )
             except Exception as e:
                 logger.error(f"Failed to send candidate confirmed notifications: {e}")
@@ -590,6 +600,8 @@ def update_booking_status(
                     meeting_url=booking.meeting_url or "",
                     notes=booking.notes or "",
                     ai_brief=brief_dict_safe,
+                    tenant_id=booking.tenant_id,
+                    db=db,
                 )
             except Exception as e:
                 logger.error(f"Failed to send employer confirmed notifications: {e}")
@@ -611,6 +623,8 @@ def update_booking_status(
                 company_name=booking.company_name or "",
                 date=str(booking.date),
                 time_slot=booking.time_slot,
+                tenant_id=booking.tenant_id,
+                db=db,
             )
         except Exception as e:
             logger.error(f"Failed to send booking cancelled notifications: {e}")
@@ -635,10 +649,11 @@ def create_candidate_booking(
     payload: CandidateBookingCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     booking = Booking(
         booking_type="inbound_candidate",
-        tenant_id=current_user.tenant_id or "ryze",
+        tenant_id=tenant_id,
         employer_id=current_user.id,
         employer_name=payload.name,
         employer_email=current_user.email,
@@ -661,6 +676,8 @@ def create_candidate_booking(
             date=str(payload.date),
             time_slot=payload.time_slot,
             notes=payload.notes or "",
+            tenant_id=booking.tenant_id,
+            db=db,
         )
     except Exception as e:
         logger.error(f"Failed to send candidate booking notifications: {e}")
@@ -734,8 +751,8 @@ def get_booking(
     booking_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     booking = (
         db.query(Booking)
         .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
@@ -751,8 +768,8 @@ def delete_booking(
     booking_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or "ryze"
     booking = (
         db.query(Booking)
         .filter(Booking.id == booking_id, Booking.tenant_id == tenant_id)
@@ -919,6 +936,7 @@ def create_instant_meeting(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Create a confirmed meeting and return its Zoom join link immediately, with
@@ -928,7 +946,6 @@ def create_instant_meeting(
     match this booking on recording.completed and attach the transcript,
     summary, next steps, and keywords — same as an accepted invite.
     """
-    tenant_id = current_user.tenant_id or "ryze"
     branding = get_branding(db, tenant_id)
 
     # 1. Create the Zoom meeting FIRST — no meeting, no booking (avoid orphans).

@@ -20,7 +20,6 @@ from app.services.zoom import (
     get_meeting_transcript,
     download_recording_file,
 )
-from app.core.deps import RYZE_TENANT
 from app.services.usage import record_usage, is_over_budget
 from app.services.embedding_service import (
     embed_booking_background,
@@ -134,7 +133,7 @@ def _generate_summary_from_transcript(booking_id: int) -> None:
             logger.info(f"[summary_from_transcript] Booking #{booking_id} already has a summary — skipping")
             return
 
-        tenant_id = booking.tenant_id or RYZE_TENANT
+        tenant_id = booking.tenant_id
         if is_over_budget(db, tenant_id):
             logger.info(
                 f"[summary_from_transcript] Skipping booking #{booking_id} — "

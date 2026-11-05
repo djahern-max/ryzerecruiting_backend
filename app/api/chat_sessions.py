@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.bookings import require_admin
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import RYZE_TENANT
+from app.core.deps import get_current_admin_tenant
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.user import User
@@ -222,6 +222,7 @@ def generate_title(
     session_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     After first exchange, call this to generate a 4-6 word title via Claude Haiku.
@@ -247,7 +248,6 @@ def generate_title(
 
     exchange = "\n".join([f"{m.role}: {m.content[:200]}" for m in messages])
 
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     check_ai_budget(db, tenant_id)
 
     try:

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.deps import get_current_admin_user, get_current_admin_tenant, RYZE_TENANT
+from app.core.deps import get_current_admin_user, get_current_admin_tenant
 from app.models.user import User
 from app.models.candidate import Candidate
 from app.models.employer_profile import EmployerProfile
@@ -92,7 +92,7 @@ def _cosine_search(
     table_name: str,
     query_vector: list,
     limit: int,
-    tenant_id: str = RYZE_TENANT,  # EP16: new param, defaults to "ryze"
+    tenant_id: str,
 ):
     """
     Run a cosine similarity search via PGVector.
@@ -127,8 +127,8 @@ def search_candidates(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
     query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:
@@ -174,8 +174,8 @@ def search_employers(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
     query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:
@@ -219,8 +219,8 @@ def search_job_orders(
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or RYZE_TENANT  # EP16
 
     query_vector = generate_embedding(q, db=db, tenant_id=tenant_id, source="search")
     if not query_vector:

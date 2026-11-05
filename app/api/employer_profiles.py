@@ -11,7 +11,7 @@ from fastapi.responses import Response
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user, RYZE_TENANT
+from app.core.deps import get_current_user, get_current_admin_tenant, require_tenant
 from app.models.employer_profile import EmployerProfile
 from app.models.user import User
 from app.core.deps import get_current_admin_user
@@ -53,7 +53,7 @@ require_admin = get_current_admin_user
 def _resolve_employer_for_user(
     db: Session, current_user: User
 ) -> Optional[EmployerProfile]:
-    tenant_id = current_user.tenant_id or RYZE_TENANT
+    tenant_id = require_tenant(current_user)
     return (
         db.query(EmployerProfile)
         .filter(
@@ -325,8 +325,8 @@ async def upload_my_banner(
 def list_employer_profiles(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profiles = (
         db.query(EmployerProfile)
         .filter(EmployerProfile.tenant_id == tenant_id)
@@ -341,12 +341,12 @@ def get_employer_profile(
     profile_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Fetch a single employer intelligence profile by ID.
     Admin only.
     """
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profile = (
         db.query(EmployerProfile)
         .filter(
@@ -367,12 +367,12 @@ def update_employer_profile(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Update recruiter notes and/or relationship status on an employer profile.
     Admin only. Triggers a background re-embed after save.
     """
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profile = (
         db.query(EmployerProfile)
         .filter(
@@ -402,11 +402,11 @@ async def upload_employer_logo(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Admin: Upload (or replace) the company logo for any employer profile by ID.
     """
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profile = (
         db.query(EmployerProfile)
         .filter(
@@ -453,11 +453,11 @@ async def upload_employer_banner(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Admin: Upload (or replace) the banner image for any employer profile by ID.
     """
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profile = (
         db.query(EmployerProfile)
         .filter(
@@ -503,9 +503,9 @@ def download_employer_profile_pdf(
     profile_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """Generate and stream a branded PDF for an employer profile. Admin only."""
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     profile = (
         db.query(EmployerProfile)
         .filter(
@@ -624,6 +624,7 @@ def parse_employer_profile(
     payload: EmployerProfileParseRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
+    tenant_id: str = Depends(get_current_admin_tenant),
 ):
     """
     Parse raw employer/company text into structured profile fields.
@@ -635,7 +636,6 @@ def parse_employer_profile(
             detail="Text is too short to parse.",
         )
 
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     check_ai_budget(db, tenant_id)
     result = parse_employer_prospect(payload.text, db=db, tenant_id=tenant_id)
     if not result:

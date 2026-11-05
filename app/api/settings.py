@@ -117,8 +117,8 @@ def get_my_tenant_branding(
     """
     tenant = db.query(Tenant).filter(Tenant.slug == tenant_id).first()
     if not tenant:
-        # RYZE's own admins resolve to slug "ryze", which intentionally has no
-        # tenants row. Surface a clear 404 rather than a 500.
+        # get_current_admin_tenant already 403s when the row is missing; this
+        # guards the race where the tenant was deleted mid-request.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No tenant record for this account.",

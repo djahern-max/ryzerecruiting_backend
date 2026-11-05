@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from app.core.deps import RYZE_TENANT, get_current_admin_tenant
+from app.core.deps import get_current_admin_tenant
 
 from app.api.bookings import require_admin
 from app.core.config import settings
@@ -334,7 +334,7 @@ def _vector_search(
     table_name: str,
     query: str,
     limit: int,
-    tenant_id: str = RYZE_TENANT,  # EP16: added tenant_id param
+    tenant_id: str,
 ) -> list:
     """
     Run cosine similarity search using raw SQL.
@@ -359,9 +359,7 @@ def _vector_search(
     return rows
 
 
-def tool_search_candidates(
-    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_search_candidates(db, tenant_id: str, query: str, limit: int = 5) -> dict:
     from app.models.candidate import Candidate
 
     rows = _vector_search(db, "candidates", query, limit, tenant_id)  # EP16
@@ -400,9 +398,7 @@ def tool_search_candidates(
     return {"candidates": results, "count": len(results)}
 
 
-def tool_search_employers(
-    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_search_employers(db, tenant_id: str, query: str, limit: int = 5) -> dict:
     from app.models.employer_profile import EmployerProfile
 
     rows = _vector_search(db, "employer_profiles", query, limit, tenant_id)  # EP16
@@ -441,9 +437,7 @@ def tool_search_employers(
     return {"employers": results, "count": len(results)}
 
 
-def tool_search_job_orders(
-    db, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_search_job_orders(db, tenant_id: str, query: str, limit: int = 5) -> dict:
     from app.models.job_order import JobOrder
 
     rows = _vector_search(db, "job_orders", query, limit, tenant_id)  # EP16
@@ -480,7 +474,7 @@ def tool_search_job_orders(
     return {"job_orders": results, "count": len(results)}
 
 
-def tool_get_todays_meetings(db: Session, tenant_id: str = RYZE_TENANT) -> dict:
+def tool_get_todays_meetings(db: Session, tenant_id: str) -> dict:
     today = date.today()
     bookings = (
         db.query(Booking)
@@ -509,9 +503,9 @@ def tool_get_todays_meetings(db: Session, tenant_id: str = RYZE_TENANT) -> dict:
 
 def tool_get_meetings_by_date(
     db: Session,
+    tenant_id: str,
     start_date: str,
     end_date: Optional[str] = None,
-    tenant_id: str = RYZE_TENANT,
 ) -> dict:
     end = end_date or start_date
     bookings = (
@@ -543,9 +537,7 @@ def tool_get_meetings_by_date(
     return {"meetings": results, "count": len(results)}
 
 
-def tool_get_candidate_by_name(
-    db: Session, name: str, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_get_candidate_by_name(db: Session, tenant_id: str, name: str) -> dict:
     candidates = (
         db.query(Candidate)
         .filter(Candidate.name.ilike(f"%{name}%"), Candidate.tenant_id == tenant_id)
@@ -576,9 +568,7 @@ def tool_get_candidate_by_name(
     return {"candidates": results, "count": len(results)}
 
 
-def tool_get_employer_by_name(
-    db: Session, name: str, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_get_employer_by_name(db: Session, tenant_id: str, name: str) -> dict:
     employers = (
         db.query(EmployerProfile)
         .filter(
@@ -628,13 +618,13 @@ def tool_get_employer_by_name(
 
 
 def tool_match_candidates_to_job(
-    db: Session, job_title: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+    db: Session, tenant_id: str, job_title: str, limit: int = 5
 ) -> dict:
-    return tool_search_candidates(db, job_title, limit, tenant_id)
+    return tool_search_candidates(db, tenant_id, job_title, limit)
 
 
 def tool_search_meeting_notes(
-    db: Session, query: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+    db: Session, tenant_id: str, query: str, limit: int = 5
 ) -> dict:
     rows = _vector_search(db, "bookings", query, limit, tenant_id)
     if not rows:
@@ -664,9 +654,7 @@ def tool_search_meeting_notes(
     return {"meetings": results, "count": len(results)}
 
 
-def tool_get_candidate_calls(
-    db: Session, name: str, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_get_candidate_calls(db: Session, tenant_id: str, name: str) -> dict:
     # First find the candidate(s) matching the name
     candidates = (
         db.query(Candidate)
@@ -742,9 +730,7 @@ def tool_get_candidate_calls(
     return {"meetings": results, "count": len(results)}
 
 
-def tool_get_call_transcript(
-    db: Session, booking_id: int, tenant_id: str = RYZE_TENANT
-) -> dict:
+def tool_get_call_transcript(db: Session, tenant_id: str, booking_id: int) -> dict:
     from app.services.transcript import parse_transcript
 
     booking = (
@@ -768,7 +754,7 @@ def tool_get_call_transcript(
 
 
 def tool_match_jobs_to_candidate(
-    db: Session, name: str, limit: int = 5, tenant_id: str = RYZE_TENANT
+    db: Session, tenant_id: str, name: str, limit: int = 5
 ) -> dict:
     """
     Rank open job orders against ONE candidate's stored profile embedding.
@@ -860,40 +846,42 @@ def tool_match_jobs_to_candidate(
 
 
 def make_tool_dispatch(tenant_id: str) -> dict:
+    # Every tool takes tenant_id as its first argument after db — required,
+    # no default — so a tool can never run unscoped.
     return {
         "search_candidates": lambda db, inp: tool_search_candidates(
-            db, inp["query"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["query"], inp.get("limit", 5)
         ),
         "search_employers": lambda db, inp: tool_search_employers(
-            db, inp["query"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["query"], inp.get("limit", 5)
         ),
         "search_job_orders": lambda db, inp: tool_search_job_orders(
-            db, inp["query"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["query"], inp.get("limit", 5)
         ),
         "get_todays_meetings": lambda db, inp: tool_get_todays_meetings(db, tenant_id),
         "get_meetings_by_date": lambda db, inp: tool_get_meetings_by_date(
-            db, inp["start_date"], inp.get("end_date"), tenant_id
+            db, tenant_id, inp["start_date"], inp.get("end_date")
         ),
         "get_candidate_by_name": lambda db, inp: tool_get_candidate_by_name(
-            db, inp["name"], tenant_id
+            db, tenant_id, inp["name"]
         ),
         "get_employer_by_name": lambda db, inp: tool_get_employer_by_name(
-            db, inp["name"], tenant_id
+            db, tenant_id, inp["name"]
         ),
         "match_candidates_to_job": lambda db, inp: tool_match_candidates_to_job(
-            db, inp["job_title"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["job_title"], inp.get("limit", 5)
         ),
         "search_meeting_notes": lambda db, inp: tool_search_meeting_notes(
-            db, inp["query"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["query"], inp.get("limit", 5)
         ),
         "get_candidate_calls": lambda db, inp: tool_get_candidate_calls(
-            db, inp["name"], tenant_id
+            db, tenant_id, inp["name"]
         ),
         "get_call_transcript": lambda db, inp: tool_get_call_transcript(
-            db, inp["booking_id"], tenant_id
+            db, tenant_id, inp["booking_id"]
         ),
         "match_jobs_to_candidate": lambda db, inp: tool_match_jobs_to_candidate(
-            db, inp["name"], inp.get("limit", 5), tenant_id
+            db, tenant_id, inp["name"], inp.get("limit", 5)
         ),
     }
 

@@ -29,7 +29,7 @@ from conftest import names_in_meetings
 # --------------------------------------------------------------------------
 def test_owning_tenant_sees_its_calls_by_date(db, gt):
     res = tool_get_meetings_by_date(
-        db, gt["call_date"], gt["call_date"], gt["seen_tenant"]
+        db, gt["seen_tenant"], gt["call_date"], gt["call_date"]
     )
     assert res["count"] >= len(gt["known_people"]), (
         f"Expected at least {len(gt['known_people'])} calls for "
@@ -44,7 +44,7 @@ def test_owning_tenant_sees_its_calls_by_date(db, gt):
 
 def test_other_tenant_cannot_see_those_calls_by_date(db, gt):
     res = tool_get_meetings_by_date(
-        db, gt["call_date"], gt["call_date"], gt["blind_tenant"]
+        db, gt["blind_tenant"], gt["call_date"], gt["call_date"]
     )
     blob = names_in_meetings(res)
     for person in gt["known_people"]:
@@ -58,7 +58,7 @@ def test_other_tenant_cannot_see_those_calls_by_date(db, gt):
 # Candidate call-history reachability + isolation  (pure SQL, no embeddings)
 # --------------------------------------------------------------------------
 def test_owning_tenant_finds_candidate_calls(db, gt):
-    res = tool_get_candidate_calls(db, gt["known_candidate"], gt["seen_tenant"])
+    res = tool_get_candidate_calls(db, gt["seen_tenant"], gt["known_candidate"])
     assert res["count"] >= 1, (
         f"Expected at least one call on record for {gt['known_candidate']} "
         f"under {gt['seen_tenant']}, got {res['count']}."
@@ -66,7 +66,7 @@ def test_owning_tenant_finds_candidate_calls(db, gt):
 
 
 def test_other_tenant_finds_no_candidate_calls(db, gt):
-    res = tool_get_candidate_calls(db, gt["known_candidate"], gt["blind_tenant"])
+    res = tool_get_candidate_calls(db, gt["blind_tenant"], gt["known_candidate"])
     assert res["count"] == 0, (
         f"ISOLATION LEAK: {gt['blind_tenant']} sees "
         f"{res['count']} call(s) for {gt['known_candidate']}."
@@ -96,7 +96,7 @@ def test_candidate_tool_boundary_excludes_employer_contacts(db, gt):
     """
     # Candidate side: reachable for the owning tenant.
     seen_candidate = tool_get_candidate_calls(
-        db, gt["known_candidate"], gt["seen_tenant"]
+        db, gt["seen_tenant"], gt["known_candidate"]
     )
     assert seen_candidate["count"] >= 1, (
         f"{gt['known_candidate']} (a candidate with a linked call) should be "
@@ -105,7 +105,7 @@ def test_candidate_tool_boundary_excludes_employer_contacts(db, gt):
 
     # Employer-only contact: correctly NOT surfaced by the candidate tool.
     employer_via_candidate_tool = tool_get_candidate_calls(
-        db, gt["known_employer_contact"], gt["seen_tenant"]
+        db, gt["seen_tenant"], gt["known_employer_contact"]
     )
     assert employer_via_candidate_tool["count"] == 0, (
         f"Expected the candidate tool to NOT return the employer-only contact "
@@ -116,7 +116,7 @@ def test_candidate_tool_boundary_excludes_employer_contacts(db, gt):
 
     # And the candidate path stays tenant-isolated.
     blind_candidate = tool_get_candidate_calls(
-        db, gt["known_candidate"], gt["blind_tenant"]
+        db, gt["blind_tenant"], gt["known_candidate"]
     )
     assert (
         blind_candidate["count"] == 0

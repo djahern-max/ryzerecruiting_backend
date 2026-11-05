@@ -22,7 +22,7 @@ from app.services.spaces import upload_file, make_unique_filename, delete_file
 from app.services.matching import compute_match_score
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_admin_user, RYZE_TENANT
+from app.core.deps import get_current_admin_user, get_current_tenant, require_tenant
 from app.api.auth import get_current_user as get_any_authenticated_user
 from app.models.user import User
 from app.models.candidate import Candidate
@@ -70,7 +70,7 @@ require_admin = get_current_admin_user
 
 
 def _tenant(user: User) -> str:
-    return user.tenant_id or RYZE_TENANT
+    return require_tenant(user)
 
 
 def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidate]:
@@ -87,7 +87,7 @@ def _find_by_email(db: Session, email: str, tenant_id: str) -> Optional[Candidat
 
 
 def _resolve_candidate_for_user(db: Session, current_user: User) -> Optional[Candidate]:
-    tenant_id = current_user.tenant_id or RYZE_TENANT
+    tenant_id = require_tenant(current_user)
 
     # tenant_id filter is a read-time enforcement of the write-time invariant:
     # Candidate.user_id is only ever set below, already gated by tenant_id ==
@@ -137,12 +137,12 @@ def get_my_job_matches(
     limit: int = 5,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
         raise HTTPException(status_code=404, detail="No candidate profile found.")
 
-    tenant_id = current_user.tenant_id or RYZE_TENANT
 
     def _unranked_fallback():
         jobs = (
@@ -225,12 +225,12 @@ def get_my_job_matches(
 def get_my_job_interests(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_any_authenticated_user),
+    tenant_id: str = Depends(get_current_tenant),
 ):
     candidate = _resolve_candidate_for_user(db, current_user)
     if not candidate:
         raise HTTPException(status_code=404, detail="No candidate profile found.")
 
-    tenant_id = current_user.tenant_id or RYZE_TENANT
     return (
         db.query(JobInterest)
         .filter(

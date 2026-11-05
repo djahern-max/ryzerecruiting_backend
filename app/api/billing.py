@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.deps import get_current_user, get_current_superuser, RYZE_TENANT
+from app.core.deps import get_current_user, get_current_superuser, require_tenant
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.usage_event import UsageEvent
@@ -59,12 +59,12 @@ class UsageResponse(BaseModel):
 
 
 def _get_tenant(user: User, db: Session) -> Tenant | None:
-    slug = user.tenant_id or RYZE_TENANT
+    slug = require_tenant(user)
     return db.query(Tenant).filter(Tenant.slug == slug).first()
 
 
 def _tenant(user: User) -> str:
-    return user.tenant_id or RYZE_TENANT
+    return require_tenant(user)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,7 @@ def create_checkout_session(
             ],
             customer_email=current_user.email,
             metadata={
-                "tenant_slug": current_user.tenant_id or RYZE_TENANT,
+                "tenant_slug": _tenant(current_user),
                 "user_id": str(current_user.id),
             },
             success_url=f"{settings.FRONTEND_URL}/billing/success",
