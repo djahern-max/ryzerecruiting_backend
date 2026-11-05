@@ -38,7 +38,8 @@ After this task there is no house tenant. All tenants are peers. The platform
    ~lines 352–360) use `user.is_superuser`.
 
 Done means:
-- `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` returns nothing.
+- `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` returns nothing except the
+  `_LEGACY_UNPLACED = "ryze"` line in `tenant_resolution.py` (Decision 4a; part 3).
 - `app/core/deps.py` and `app/services/branding.py` no longer define the constant.
   `get_branding()` drops the `tid == RYZE_TENANT` shortcut; the `_ryze_defaults`
   function is renamed `_platform_defaults` (contents unchanged — the strings
@@ -146,10 +147,11 @@ migration must, in order:
 
 ## Notes
 - Platform name: Nice ATS (niceats.com). Local DB `niceats`. No production server.
-- **Decisions (2026-11-05):** 1 → (b), Dane's own firm gets its own slug
-  (slug / company_name still to be supplied — needed before commits 3 and 4);
-  `green_path_recruiting` stays demo-only; seed script gets `--tenant` for the
-  restore step. 2 → (a) 403. 3 → (a) required positional. 4 → (a): local
+- **Decisions (2026-11-05):** 1 → (a): slug `green_path_recruiting`,
+  company_name "Green Path Recruiting". Migration upserts that row (active,
+  billing_exempt=true) and moves user 1 into it; `ensure_tenant` in the seed
+  is idempotent against it; `--wipe-only` keeps user 1 there; no `--tenant`
+  flag on the seed; `create_superadmin.py --tenant` defaults to it. 2 → (a) 403. 3 → (a) required positional. 4 → (a): local
   `_LEGACY_UNPLACED = "ryze"` inside `tenant_resolution.py` and the signup
   test, so part 3 still owns the rewrite. **Consequence of 4:** unplaced
   signups now resolve to a slug with no `tenants` row and therefore get 403 on
