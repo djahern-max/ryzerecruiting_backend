@@ -4,7 +4,7 @@ Tenant restructure, part 2 of 3 — remove the house tenant: delete `RYZE_TENANT
 
 ## Status
 <!-- Not Started | In Progress | Completed -->
-Not Started
+In Progress
 
 ## Goals
 <!-- Goals & requirements -->
@@ -131,20 +131,20 @@ migration must, in order:
 
 ## Verification
 - [x] `python audit_tenant_coverage.py` run BEFORE any change; output saved (`context/audit_baseline_part2.txt`: 95 endpoints, 76 Safe, 19 Public/Skip, 0 Hardcoded, 0 Review)
-- [ ] Decisions 1–3 presented with recommendations; answers recorded in Notes
-- [ ] `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` → no output
+- [x] Decisions 1–3 (+4) presented with recommendations; answers recorded in Notes
+- [x] `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` → only `_LEGACY_UNPLACED = "ryze"` in `tenant_resolution.py` (Decision 4a)
 - [x] Data migration applied; `psql -d niceats -c "SELECT slug, status, billing_exempt FROM tenants;"` shows Dane's firm, active, `t` (green_path_recruiting | active | t)
 - [x] `psql -d niceats -c "SELECT id, email, tenant_id, is_superuser FROM users;"` shows user 1 in the new slug (1 | green_path_recruiting | t)
 - [x] `alembic downgrade -1` then `upgrade head` round-trips (a1b2c3d4e5f6; `alembic check` clean)
 - [ ] Login returns a JWT; authenticated `GET /api/candidates` → 200 (Dane, in the browser)
 - [ ] Manually: set `billing_exempt=false` and `status='expired'` on the tenant via psql → `GET /api/candidates` → 402; restore → 200
 - [ ] Manually: `UPDATE users SET tenant_id = NULL WHERE id = 1` → 403; restore
-- [ ] `pytest -m "not semantic"` → 0 failed
-- [ ] `python audit_tenant_coverage.py` after: 0 HARDCODED, 0 REVIEW, Safe ≥ baseline
-- [ ] `python seed_greenpath_demo.py --yes` then `--wipe-only` both run clean against the new slug
-- [ ] `CLAUDE.md` edit proposed and, on confirmation, committed separately
-- [ ] Commit 6 also: un-ignore `scripts/` in `.gitignore` (one line) so `create_superadmin.py` and future helpers are tracked normally
-- [ ] Committed and pushed to `origin/main`; History updated
+- [x] `pytest -m "not semantic"` → 0 failed (24 passed, 3 skipped, 3 deselected; commit 5)
+- [x] `python audit_tenant_coverage.py` after: 95 endpoints, 76 Safe, 0 HARDCODED, 0 REVIEW — unchanged from baseline
+- [ ] `python seed_greenpath_demo.py --yes` then `--wipe-only --yes` both run clean against the new slug (Dane: Claude's auto-mode permission refused to run the wipe; every table it clears is currently empty, so the pair is a no-op on data)
+- [x] `CLAUDE.md` edit committed separately (dd46661, commit 6)
+- [x] Commit 6 also: un-ignore `scripts/` in `.gitignore` (one line) so `create_superadmin.py` and future helpers are tracked normally (dd46661)
+- [x] Committed and pushed to `origin/main` (commits 1–6: e8471f5, 7342ea5, c76d157, af88f5e, 0fef322, dd46661); History updated
 
 ## Notes
 - Platform name: Nice ATS (niceats.com). Local DB `niceats`. No production server.
@@ -195,3 +195,17 @@ migration must, in order:
   0 / 0). Migration round-tripped on `niceats`; user 1 now in
   `green_path_recruiting`, row active + billing_exempt. Awaiting Dane's browser
   check (login + /api/bookings) before commit 5 (tests). Not yet pushed.
+- 2026-11-05 — Commits 1–4 pushed. Commit 5 (0fef322): `test_tenant_isolation.py`
+  rewritten self-contained (own tenants/rows in a rolled-back transaction),
+  15 tests covering chat-tool isolation both ways plus behaviours 1–4 at the
+  dependency and HTTP level (httpx ASGITransport — starlette 0.35's TestClient
+  is incompatible with the pinned httpx 0.28). conftest/README updated, stale
+  `greenpath_recruiting` slug fixed. Full offline suite 24 passed / 0 failed.
+  Commit 6 (dd46661): CLAUDE.md isolation + branding sections rewritten for
+  the no-house-tenant rules; `.gitignore` no longer ignores `scripts/`. Both
+  pushed. Open: Dane's browser login check, the two manual psql checks, and
+  the seed/wipe run (permission-blocked). Finding: `GET /api/candidates` uses
+  `require_tenant` only, so it returns 200, not 402, for an expired
+  non-exempt tenant — same as before part 2. The 402 path is on endpoints
+  that depend on `get_current_tenant` (e.g. `GET /api/bookings`,
+  `GET /api/job-orders/open`); the manual 402 check should use one of those.
