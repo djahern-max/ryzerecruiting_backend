@@ -167,3 +167,7 @@ Done means:
   config hits — rebrand task); every `User(...)` constructor in the repo
   passes `tenant_id`; zero NULL `users.tenant_id` locally. Decisions 1–4
   answered by Dane (see Notes). No code changed.
+- 2026-11-05 — Commit 1 (2cc0b40): resolver raises 403/409, OAuth handler clears
+  the temp token and passes HTTPException through, config comment fixed.
+  Grep criterion met; audit unchanged (95 / 76 Safe / 0 / 0); offline suite
+  19 passed with the stale signup test excluded (rewritten in commit 3).
