@@ -20,19 +20,23 @@ FastAPI backend for RYZE.ai V2 — a multi-tenant ATS for recruiting firms. RYZE
 - `audit_tenant_coverage.py` — static analysis script that walks `app/api/` and flags endpoints missing tenant scoping (SAFE / HARDCODED / REVIEW / PUBLIC / SKIP). Run this after any change touching auth or queries.
 
 ## CRITICAL: multi-tenant isolation
-This is the single most important rule in this codebase. RYZE Recruiting is tenant #1, but the platform is being licensed to other firms, so **every query on tenant-owned data must be scoped by `tenant_id`.**
+This is the single most important rule in this codebase. The platform is licensed to multiple firms, so **every query on tenant-owned data must be scoped by `tenant_id`.**
 
-- Use `get_current_tenant` / `get_current_admin_tenant` or `current_user.tenant_id` — never a hardcoded `RYZE_TENANT` constant for anything but genuinely RYZE-specific defaults.
-- `chat_sessions` and `chat_messages` were previously found unscoped — treat any table without an obvious `tenant_id` filter as suspect until proven otherwise.
+- **There is no house tenant.** All tenants are peers; the platform (Nice ATS) is not a tenant. `RYZE_TENANT` and every `or "ryze"` fallback were deleted in the tenant restructure (part 2, 2026-11-05). Never reintroduce a default slug. (The only remaining literal is `_LEGACY_UNPLACED` inside `app/services/tenant_resolution.py`, owned by part 3.)
+- Endpoints take `tenant_id: str = Depends(get_current_tenant)` (or `get_current_admin_tenant`); both enforce the tenant's billing state. Non-endpoint code that already holds a `User` calls `require_tenant(user)` from `app/core/deps.py`. Never inline `current_user.tenant_id or <slug>`.
+- A NULL `users.tenant_id`, or a slug with no `tenants` row, is a 403 — no access to tenant data. `users.tenant_id` stays nullable until part 3 settles unplaced signups.
+- Billing / AI-budget exemption is `tenants.billing_exempt` (`_check_tenant_access`, `usage.is_over_budget`), never a slug compare. The platform owner (unscoped `db_explorer` views) is `users.is_superuser`, not tenant membership.
+- `chat_sessions` and `chat_messages` have no `tenant_id` (scoped through the owning user) — treat any table without an obvious `tenant_id` filter as suspect until proven otherwise.
 - Run `python audit_tenant_coverage.py` after touching any endpoint and paste me the new `REVIEW`/`HARDCODED` lines rather than assuming a fix worked.
+- `tests/test_tenant_isolation.py` is self-contained (rolled-back transaction) and covers the rules above; `pytest -m "not semantic"` runs offline.
 
 ## Tenant branding — resolver EXISTS, use it
 The per-tenant branding resolver is **implemented** at `app/services/branding.py` — do not re-implement it or go looking for `app/core/tenant_branding.py` (an older doc referenced that path; it never existed).
 
-- `get_branding(db, tenant_id)` returns a frozen `TenantBranding` dataclass. **Every field falls back individually to RYZE's global defaults** (`app.core.config.settings`), so a tenant with all-NULL override columns behaves exactly like RYZE. It is safe to call with `db=None` or an unknown tenant — you get RYZE defaults.
+- `get_branding(db, tenant_id)` returns a frozen `TenantBranding` dataclass. **Every field falls back individually to the platform defaults** (`_platform_defaults`, built from `app.core.config.settings`; the strings themselves are still RYZE-branded until the rebrand task), so a tenant with all-NULL override columns gets the platform defaults. It is safe to call with `db=None` or `tenant_id=None` — you get the platform defaults. There is no tenant-slug shortcut any more.
 - Already migrated onto the resolver: `app/services/notifications.py` (all notify functions take `tenant_id` + `db` and resolve branding) and `app/services/email.py` (all senders take a `branding` parameter). Admins can override whitelisted branding fields via `GET/PATCH /api/settings/tenant` in `app/api/settings.py`.
 - **Still hardcoded — remaining migration targets:** the PDF templates (`candidate_pdf_template.py`, `employer_pdf_template.py`, `job_order_pdf_template.py`) bake `RYZE.ai` / `RYZE.AI` into their footers. Verify `ai_brief.py` and `calendar.py` before assuming either way.
-- **Known risk:** the notify functions default to `tenant_id="ryze"`. A call site that forgets to pass `tenant_id` silently sends RYZE-branded messages for another firm's data. When adding or touching a notify call site, always pass the real `tenant_id` and `db` explicitly. (Making the param required is a queued hardening task for before tenant #2 onboards.)
+- **Pass the tenant explicitly:** the notify functions require `tenant_id` and `db` (no default — a missing `tenant_id` is a `TypeError`, not a silently mis-branded message). Platform-level mail with no tenant context calls `get_branding(None, None)`. Never pass a literal slug.
 - **Secret handling:** `tenant.twilio_auth_token` is a credential-column stub for a future per-number model. Do NOT populate it in production until it's encrypted at rest. In the shared-sender model, tenants leave `twilio_*` NULL and ride on RYZE's number.
 - **Resend:** `from_email` must be a Resend-verified domain. Until a firm verifies its own domain, leave its `from_email` NULL — mail sends from RYZE's verified address with the firm's display name and the firm's `reply_to`.
 
