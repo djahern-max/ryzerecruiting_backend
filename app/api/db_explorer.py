@@ -9,15 +9,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.deps import get_current_superuser, RYZE_TENANT
+from app.core.deps import get_current_superuser, require_tenant
 
 router = APIRouter(prefix="/admin", tags=["db-explorer"])
 
 # ---------------------------------------------------------------------------
 # Tables that have a tenant_id column — all queries on these tables are
 # scoped to the authenticated admin's tenant, EXCEPT for the platform owner
-# (RYZE's own superadmin, _is_platform_owner()), who gets an unscoped, global
-# view across every table. Tables NOT in this set are either global
+# (any is_superuser account, _is_platform_owner()), who gets an unscoped,
+# global view across every table. Tables NOT in this set are either global
 # (waitlist, contacts, webhook_logs) or scoped by a different key
 # (chat_sessions → user_id).
 # ---------------------------------------------------------------------------
@@ -350,14 +350,14 @@ TABLES_WITH_UPDATED_AT = {
 
 
 def _tenant(user) -> str:
-    return user.tenant_id or "ryze"
+    return require_tenant(user)
 
 
 def _is_platform_owner(user) -> bool:
-    """RYZE's own superadmin (tenant_id == 'ryze') gets a global, unscoped view
-    across every table. Any other user — including a firm-level superuser, should
-    one ever exist — stays scoped to their own tenant, preserving isolation."""
-    return (user.tenant_id or RYZE_TENANT) == RYZE_TENANT
+    """Platform ownership is the is_superuser flag, not tenant membership.
+    Superusers get a global, unscoped view across every table; everyone else
+    stays scoped to their own tenant, preserving isolation."""
+    return bool(user.is_superuser)
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +378,8 @@ async def get_all_counts(
     """Row count for every table — scoped to tenant where applicable, except
     for the platform owner (_is_platform_owner()), who sees unscoped global
     counts across every table."""
-    tenant_id = _tenant(current_user)
     unscoped = _is_platform_owner(current_user)
+    tenant_id = None if unscoped else _tenant(current_user)
     counts = {}
     for table in TABLE_COLS:
         try:
@@ -420,8 +420,8 @@ async def browse_table(
             status_code=400, detail=f"Table '{table}' is not available."
         )
 
-    tenant_id = _tenant(current_user)
     unscoped = _is_platform_owner(current_user)
+    tenant_id = None if unscoped else _tenant(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)
@@ -585,8 +585,8 @@ async def export_table_csv(
     if table not in TABLE_COLS:
         raise HTTPException(status_code=400, detail=f"Table '{table}' not available.")
 
-    tenant_id = _tenant(current_user)
     unscoped = _is_platform_owner(current_user)
+    tenant_id = None if unscoped else _tenant(current_user)
     cols = TABLE_COLS[table]
     searchable = SEARCHABLE_COLS.get(table, [])
     cols_sql = ", ".join(f'"{c}"' for c in cols)

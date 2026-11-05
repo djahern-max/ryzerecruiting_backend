@@ -19,8 +19,26 @@ from app.models.tenant import Tenant
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
-# Default tenant slug — RYZE Recruiting's own data
+# DEPRECATED — there is no house tenant any more. Kept importable only until
+# the last call sites are migrated in part-2 commit 3, then deleted.
 RYZE_TENANT = "ryze"
+
+
+def require_tenant(user: User) -> str:
+    """
+    Return the user's tenant slug, or raise 403 if the account has none.
+
+    A NULL users.tenant_id grants no access to tenant-owned data. Use this in
+    non-endpoint code that already holds a User; endpoints should depend on
+    get_current_tenant / get_current_admin_tenant instead, which also enforce
+    the tenant's billing state.
+    """
+    if not user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is not linked to a tenant.",
+        )
+    return user.tenant_id
 
 
 def get_current_user(
@@ -71,18 +89,20 @@ def _check_tenant_access(tenant_slug: str, db: Session) -> str:
     """
     Look up the tenant row and enforce trial / billing state.
 
-    RYZE's own tenant slug bypasses billing checks — it is always active.
-
     Returns the slug on success.
+    Raises 403 if there is no tenants row for the slug — no row, no access.
     Raises 402 if the trial has expired or the subscription is cancelled.
+    Tenants with billing_exempt=true skip the billing checks entirely.
     """
-    if tenant_slug == RYZE_TENANT:
-        return tenant_slug
-
     tenant = db.query(Tenant).filter(Tenant.slug == tenant_slug).first()
 
-    # No tenants row yet means this is a legacy or pre-EP17 account — allow through.
     if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tenant record for this account.",
+        )
+
+    if tenant.billing_exempt:
         return tenant_slug
 
     now = datetime.now(timezone.utc)
@@ -117,7 +137,7 @@ def get_current_tenant(
     trial / billing state.
 
     All data endpoints depend on this to scope their queries.
-    Falls back to RYZE_TENANT for legacy rows where tenant_id is NULL.
+    Raises 403 if the user has no tenant_id or the tenant row is missing.
 
     Usage in an endpoint:
         @router.get("")
@@ -127,8 +147,7 @@ def get_current_tenant(
         ):
             return db.query(Thing).filter(Thing.tenant_id == tenant_id).all()
     """
-    slug = current_user.tenant_id or RYZE_TENANT
-    return _check_tenant_access(slug, db)
+    return _check_tenant_access(require_tenant(current_user), db)
 
 
 def get_current_admin_tenant(
@@ -139,5 +158,4 @@ def get_current_admin_tenant(
     Same as get_current_tenant but also enforces admin-only access.
     Use this on every admin data endpoint going forward.
     """
-    slug = current_user.tenant_id or RYZE_TENANT
-    return _check_tenant_access(slug, db)
+    return _check_tenant_access(require_tenant(current_user), db)

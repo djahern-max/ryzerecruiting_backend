@@ -31,8 +31,6 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.tenant import Tenant
 
-RYZE_TENANT = "ryze"
-
 
 @dataclass(frozen=True)
 class TenantBranding:
@@ -61,7 +59,7 @@ class TenantBranding:
         )
 
 
-def _ryze_defaults(tenant_id: str) -> TenantBranding:
+def _platform_defaults(tenant_id: str) -> TenantBranding:
     return TenantBranding(
         tenant_id=tenant_id,
         brand_name="RYZE.ai",
@@ -77,16 +75,17 @@ def _ryze_defaults(tenant_id: str) -> TenantBranding:
 
 
 def get_branding(db: Optional[Session], tenant_id: Optional[str]) -> TenantBranding:
-    """Resolve branding for a tenant; every field falls back to RYZE globals.
+    """Resolve branding for a tenant; every field falls back to the platform
+    globals in settings. tenant_id=None or db=None yields the platform defaults.
 
     getattr(..., None) is used for the override columns so this still works
     BEFORE the migration adds them — deploy the code first, migrate second,
     with no window of breakage.
     """
-    tid = tenant_id or RYZE_TENANT
-    defaults = _ryze_defaults(tid)
+    tid = tenant_id or ""
+    defaults = _platform_defaults(tid)
 
-    if db is None or tid == RYZE_TENANT:
+    if db is None or not tid:
         return defaults
 
     tenant = db.query(Tenant).filter(Tenant.slug == tid).first()

@@ -13,8 +13,9 @@ is the deliberate gate, called only at synchronous AI-endpoint entry points
 where a raise can actually reach the client. Never call it from a background
 task — use is_over_budget() there instead for a soft skip.
 
-Imports nothing from app.core.deps except the RYZE_TENANT constant — this
-module is intentionally independent of deps.py's 402/tenant-access machinery.
+Imports nothing from app.core.deps — this module is intentionally independent
+of deps.py's 402/tenant-access machinery. Budget exemption is read straight
+from tenants.billing_exempt.
 """
 import logging
 from datetime import datetime
@@ -26,7 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.deps import RYZE_TENANT
+from app.models.tenant import Tenant
 from app.models.usage_event import UsageEvent
 
 logger = logging.getLogger(__name__)
@@ -97,11 +98,17 @@ def get_month_cost(db: Session, tenant_id: str, now: Optional[datetime] = None) 
         return 0.0
 
 
+def _is_billing_exempt(db: Session, tenant_id: str) -> bool:
+    row = db.query(Tenant.billing_exempt).filter(Tenant.slug == tenant_id).first()
+    return bool(row and row[0])
+
+
 def is_over_budget(db: Session, tenant_id: str) -> bool:
-    """RYZE_TENANT is always exempt. Never raises — fails open (False) on error."""
-    if tenant_id == RYZE_TENANT:
-        return False
+    """Tenants with billing_exempt=true are never over budget.
+    Never raises — fails open (False) on error."""
     try:
+        if _is_billing_exempt(db, tenant_id):
+            return False
         return get_month_cost(db, tenant_id) >= settings.AI_MONTHLY_BUDGET_USD
     except Exception as e:
         logger.error(f"[usage] is_over_budget failed open (tenant={tenant_id}): {e}")
