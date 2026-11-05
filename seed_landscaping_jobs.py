@@ -46,7 +46,8 @@ import sys
 from sqlalchemy import or_
 
 from app.core.database import SessionLocal
-from app.models.job_order import JobOrder, RYZE_TENANT
+from app.models.job_order import JobOrder
+from app.core.deps import RYZE_TENANT
 from app.models.employer_profile import EmployerProfile
 from app.services.embedding_service import (
     embed_job_order_background,

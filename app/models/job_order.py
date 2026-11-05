@@ -5,15 +5,13 @@ from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
-RYZE_TENANT = "ryze"
-
 
 class JobOrder(Base):
     __tablename__ = "job_orders"
 
     id = Column(Integer, primary_key=True)
-    # Multi-tenancy — 'ryze' = RYZE Recruiting (default tenant)
-    tenant_id = Column(String(100), nullable=True, default=RYZE_TENANT, index=True)
+    # Multi-tenancy — required; a row with no tenant fails at insert
+    tenant_id = Column(String(100), nullable=False, index=True)
 
     employer_profile_id = Column(
         Integer, ForeignKey("employer_profiles.id"), nullable=True

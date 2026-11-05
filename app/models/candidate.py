@@ -11,7 +11,7 @@ class Candidate(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # ── Multi-tenancy ─────────────────────────────────────────────────────
-    tenant_id = Column(String(100), nullable=True, index=True)
+    tenant_id = Column(String(100), nullable=False, index=True)
 
     # ── User account link ─────────────────────────────────────────────────
     # Set when a CANDIDATE user signs up / logs in and their email matches

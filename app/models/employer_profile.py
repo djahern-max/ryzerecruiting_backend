@@ -38,8 +38,8 @@ class EmployerProfile(Base):
     # Raw source text (original paste / job posting used to create this profile)
     raw_text = Column(Text, nullable=True)
 
-    # Multi-tenancy scaffold (NULL = RYZE.ai)
-    tenant_id = Column(String(100), nullable=True, default="ryze", index=True)
+    # Multi-tenancy — required; a row with no tenant fails at insert
+    tenant_id = Column(String(100), nullable=False, index=True)
 
     # RAG / PGVector
     embedding = Column(Vector(1536), nullable=True)

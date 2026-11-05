@@ -27,7 +27,7 @@ class Booking(Base):
     booking_type = Column(String(30), nullable=False, default="inbound")
 
     # ── Multi-tenancy ─────────────────────────────────────────────────────
-    tenant_id = Column(String(100), nullable=True, index=True)
+    tenant_id = Column(String(100), nullable=False, index=True)
 
     # ── Employer / contact ────────────────────────────────────────────────
     employer_id = Column(Integer, ForeignKey("users.id"), nullable=True)

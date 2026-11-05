@@ -1,160 +1,177 @@
 # Current Feature
 
-Local dev environment — backend running on this machine (first step of the greenscene.io revival)
+Tenant restructure, part 1 of 3 — schema: `tenant_id` NOT NULL everywhere, `tenants.billing_exempt` (first step of removing the house tenant)
 
 ## Status
 <!-- Not Started | In Progress | Completed -->
-Completed
+In Progress
 
 ## Goals
 <!-- Goals & requirements -->
-**Backend repo only.** Do not touch `ryzerecruiting_frontend` in this task.
+**Backend repo only. Schema and models only.** Do not remove `RYZE_TENANT` or
+rewrite any `or RYZE_TENANT` call site in this task — that is part 2. Do not
+touch the signup resolver (`app/services/tenant_resolution.py`) — that is part 3.
+No rebranding.
 
-Get the FastAPI backend running locally from a fresh clone, with a working
-database and a superadmin login, so that feature work for the greenscene.io
-revival can start. No rebranding, no tenant changes, no deploy — those are
-separate tasks that follow this one.
+Context: the platform (Nice ATS, formerly RYZE.ai) currently has a "house tenant"
+with slug `ryze` that is simultaneously the first customer and the platform itself.
+`RYZE_TENANT` does five jobs: NULL fallback for `tenant_id`, billing/usage
+exemption, branding default, signup lost-and-found, and the superuser check in
+`db_explorer.py`. The three-part restructure makes all tenants peers and moves
+platform behaviour onto explicit columns and user flags. This part lays the
+schema groundwork so that part 2 can delete the fallbacks as dead code.
 
 Done means:
-1. `uvicorn app.main:app --reload --port 8000` starts clean and `GET /docs` loads.
-2. `alembic upgrade head` has run against a fresh local Postgres with the
-   `vector` extension enabled, and `alembic current` shows head.
-3. A superadmin user exists (via `scripts/create_superadmin.py`) and
-   `POST /api/auth/login` returns a JWT for it.
-4. The demo seed (`seed_greenpath_demo.py`) has been run on the local DB and
-   `GET /api/candidates` (authenticated) returns rows.
-5. A `requirements.txt` exists that reproduces the environment — see Decision 1.
-
-Known facts from the inspection on 2026-11-02 (see project doc `LOCAL_SETUP.md`):
-- `requirements.txt` is in `.gitignore`, so the dependency list is not in the repo.
-  A reconstructed, unpinned list was drafted from the imports in `app/`.
-- Only `DATABASE_URL` and `SECRET_KEY` are required by `app/core/config.py`;
-  every other setting defaults to empty.
-- Redis is created lazily in `app/api/auth.py` and `app/services/rate_limit.py`
-  (`localhost:6379`), so the API starts without it; OAuth login and the public
-  signup-firm / demo-request endpoints need it.
-- `SessionMiddleware` in `app/main.py` is `https_only=True`, so the OAuth flow
-  cannot complete over `http://localhost`. Email/password (JWT) login is unaffected.
+1. A new Alembic migration (generated locally, `alembic revision --autogenerate`
+   plus hand-written backfill) that, in this order:
+   a. Backfills `tenant_id = 'ryze'` where NULL on `candidates`, `bookings`,
+      `employer_profiles`, `job_orders`, `job_interests` (zero rows locally; the
+      migration must still be correct for a restored prod dump).
+   b. Sets `tenant_id` NOT NULL on those five tables.
+   c. Adds `tenants.billing_exempt BOOLEAN NOT NULL DEFAULT false`
+      (`server_default=sa.text("false")`, matching the `sms_consent` precedent).
+   d. Downgrade reverses all three.
+   See Decision 1 for `users.tenant_id`.
+2. Models updated to match: `nullable=False` on the five columns above; the
+   `default="ryze"` / `default=RYZE_TENANT` arguments removed from
+   `employer_profile.py`, `job_order.py`, `job_interest.py` (and `user.py` if
+   Decision 1 → a). A row with no tenant must now fail at insert, not silently
+   land in `ryze`. The module-level `RYZE_TENANT = "ryze"` constants in
+   `job_order.py` and `job_interest.py` are deleted (they exist only for the
+   defaults); `deps.py` and `branding.py` keep theirs until part 2. The one
+   external importer, `seed_landscaping_jobs.py` line 49, is repointed at
+   `app.core.deps` in the same commit (one line, no behaviour change).
+3. `Tenant` model gains `billing_exempt = Column(Boolean, nullable=False,
+   default=False, server_default="false")` — both defaults, like `sms_consent`
+   in `booking.py`, so raw-SQL inserts from seed scripts and psql keep working.
+4. `alembic upgrade head` from scratch succeeds; `alembic check` reports nothing;
+   `alembic downgrade -1` then `upgrade head` round-trips.
+5. The existing test suite shows **no new failures versus the saved baseline**
+   (`pytest -m "not semantic"`: 3 failed / 11 passed / 3 skipped before any
+   change — the 3 failures in `test_tenant_isolation.py` are data-driven, see
+   Notes). This task changes no behaviour, only constraints. No test file is
+   edited. If a *new* failure appears, it is because a fixture inserts a row
+   with no `tenant_id`; fix the fixture, not the constraint.
+6. `audit_tenant_coverage.py` output is unchanged from baseline
+   (95 endpoints, 0 HARDCODED, 0 REVIEW).
 
 ### Decisions to flag in the audit (do not pick — present options and wait)
-**Decision 1 — `requirements.txt`.** It is gitignored today.
-  (a) Keep it ignored and maintain it only locally, as now.
-  (b) Remove it from `.gitignore` and commit a pinned list (`pip freeze`) so a
-      fresh clone — and Claude Code — can rebuild the environment.
-  Consequence of (a): every fresh machine repeats today's reconstruction.
-  Consequence of (b): the server's `pip install` becomes reproducible, but the
-  droplet's installed versions should be captured first so the pins match prod.
+**Decision 1 — `users.tenant_id`.** Today nullable with `default="ryze"`.
+  (a) Make it NOT NULL in this migration like the other five tables.
+      Consequence: every user must belong to a tenant at creation, including
+      signups the resolver can't place — which forces the part-3 decision
+      (reject / pending / create-tenant) to be made now, or the signup-firm
+      path breaks in the meantime.
+  (b) Leave `users.tenant_id` nullable in this task, drop only its
+      `default="ryze"`, and make it NOT NULL in part 3 once the resolver has
+      an explicit answer for unplaced users.
+  Recommendation to present: (b) — keeps this task purely mechanical.
 
-**Decision 2 — local OAuth.** `https_only=True` blocks Google/LinkedIn login
-locally. Options: (a) leave it — use email/password locally, OAuth is tested on
-the server only; (b) make `https_only` follow `settings.DEBUG` so local dev can
-exercise OAuth. Out of scope for this task either way; just record the choice.
+**Decision 2 — `chat_sessions` / `chat_messages`.** They have no `tenant_id`
+  column (scoped indirectly via `chat_sessions.user_id → users.tenant_id`,
+  noted 2026-11-03).
+  (a) Out of scope here; revisit after part 2 when every other table is strict.
+  (b) Add `tenant_id NOT NULL` to `chat_sessions` in this migration, backfilled
+      from the owning user.
+  Recommendation to present: (a) — one concern per change.
+
+**Decision 3 — backfill value.** The NULL rows (none locally) are historically
+  RYZE Recruiting's data, so `'ryze'` is the correct backfill for a prod dump.
+  Confirm Dane is happy that any such rows become part of whatever the `ryze`
+  tenant row is renamed to in part 2, rather than being deleted.
 
 ## Related Files
-- `app/core/config.py` — required settings
-- `app/core/database.py` — engine / `DATABASE_URL`
-- `app/main.py` — app entry, middleware
-- `alembic/env.py`, `alembic/versions/3b1bb86413d5_initial_migration.py` — pgvector dependency
-- `scripts/create_superadmin.py` — first login
-- `seed_greenpath_demo.py` — demo data (wipes all but user id 1)
-- `.env.example`, `.gitignore`
-- `app/api/auth.py`, `app/services/rate_limit.py` — Redis usage
+- `app/models/candidate.py`, `booking.py`, `employer_profile.py`, `job_order.py`,
+  `job_interest.py`, `user.py` — nullable `tenant_id` columns and `ryze` defaults
+- `app/models/tenant.py` — add `billing_exempt`
+- `app/models/usage_event.py` — already NOT NULL; reference for the pattern
+- `alembic/env.py` — imports every model; nothing new to add
+- `alembic/versions/d68448a26b3b_add_tenants_table.py` — the tenants table this extends
+- `tests/conftest.py`, `tests/test_tenant_isolation.py` — fixtures that may insert
+  rows without `tenant_id`
+- `audit_tenant_coverage.py` — baseline before, re-run after
 
 ## Verification
-- [x] `source venv/bin/activate && pip install -r requirements.txt` completes with no errors
-- [x] `psql -d ryzerecruiting -c "\dx"` lists `vector`
-- [x] `alembic upgrade head` then `alembic current` shows the head revision
-- [x] `python scripts/create_superadmin.py --email <me>` creates user id 1
-- [x] `uvicorn app.main:app --reload --port 8000` starts; `curl http://localhost:8000/docs` returns 200
-- [x] `curl -X POST http://localhost:8000/api/auth/login ...` returns a token
-- [x] `python seed_greenpath_demo.py` completes; authenticated `GET /api/candidates` returns 22 rows
-- [x] `python audit_tenant_coverage.py` runs clean (baseline — no code changes expected in this task)
+- [x] `python audit_tenant_coverage.py` run BEFORE any change; output saved for comparison
+- [x] New migration file exists under `alembic/versions/`, with explicit backfill
+      `UPDATE` statements before each `ALTER COLUMN ... SET NOT NULL`
+- [x] `psql -d niceats -c "\d candidates"` (and the other four) shows `tenant_id ... not null`
+- [x] `psql -d niceats -c "\d tenants"` shows `billing_exempt boolean not null default false`
+- [x] `alembic current` shows the new head; `alembic check` is clean
+- [x] `alembic downgrade -1` then `alembic upgrade head` both succeed
+- [x] Inserting a candidate with no `tenant_id` via SQLAlchemy raises `IntegrityError`
+      (one-line check in a python shell, not a committed test)
+- [x] `pytest -m "not semantic"` shows the same 3 failed / 11 passed as the baseline,
+      with no test-file edits
+- [x] `seed_landscaping_jobs.py` still imports (`python -c "import seed_landscaping_jobs"`
+      or equivalent) after the model constant is deleted
+- [x] `python audit_tenant_coverage.py` after: identical to baseline
+- [x] `uvicorn app.main:app --reload --port 8000` starts clean; login still returns a JWT
+- [ ] Committed and pushed to `origin/main`; `current-feature.md` History updated
 
 ## Notes
-- Machine OS: macOS (Darwin 25.6), Homebrew. PostgreSQL 16.9 + pgvector 0.8.0
-  via brew (service running, `pg_hba` = trust on loopback). Redis not installed
-  (not needed for the done criteria). Python 3.13.5 default, 3.12 via brew.
-- Decisions taken 2026-11-02: **1 → (b)** commit a pinned `requirements.txt`
-  built from the droplet's `pip freeze` and drop it from `.gitignore` (same
-  commit). **2 → (a)** leave `https_only=True`; email/password locally, OAuth
-  tested on the server only — no code change. **3 → (a)** the pre-existing
-  local `ryzerecruiting` DB (empty, at head, `users_id_seq` at 6) was dropped
-  and recreated so migrations run from scratch and the superadmin gets id 1.
-- venv uses `python3.12`: the pre-Feb-2026 pins (pydantic-core 2.14.x,
-  SQLAlchemy 2.0.25) have no 3.13 wheels, and `bcrypt` must stay <5 for passlib.
-- No `LOCAL_SETUP.md` and no older working copy exist on this machine; nothing
-  overrides the reconstructed `.env`/`requirements.txt`.
-- Follow-up (not this task): `scripts/` is gitignored; `create_superadmin.py`
-  is tracked only because it predates the rule. New helper scripts would be
-  silently uncommitted.
-- Follow-up (not this task): squash the migration chain into a single initial
-  migration once the Greenscene tenant/branding work has settled the schema.
-  Whoever squashes should know: `alembic check` / autogenerate emits
-  `SAWarning: Cannot correctly sort tables; there are unresolvable cycles
-  between tables "bookings, candidates"` — `bookings.candidate_id` and
-  `candidates.booking_id` (8bad52f7eb0f) reference each other. Harmless today;
-  SQLAlchemy says it may become an error in a future release.
-- Follow-up (tenant isolation, decide before the Greenscene tenant work):
-  `chat_sessions` / `chat_messages` have **no `tenant_id` column** — the models
-  never had one, and the migration added 2026-11-03 (4083c0d3ba12) mirrors the
-  models as-is. Scoping today is indirect via `chat_sessions.user_id → users.tenant_id`.
-- If the original working copy of this repo still exists on this machine, its
-  `requirements.txt` and `.env` take precedence over the reconstructed ones.
-- Next tasks after this one, in order (each its own current-feature.md):
-  1. Frontend running locally against this backend.
-  2. Create the Greenscene tenant / decide whether Rye Beach Landscaping runs as
-     a tenant or replaces the `ryze` defaults (branding resolver, PDF footers).
-  3. Rebrand hardcoded RYZE references; domain config for greenscene.io.
-  4. Deploy plan for greenscene.io.
+- Platform name decided 2026-11-05: **Nice ATS** (niceats.com). Local DB on the
+  mini is `niceats`. No code is rebranded yet; that follows the three restructure
+  tasks.
+- Part 2 (next task): delete `RYZE_TENANT` from `deps.py` and `branding.py`;
+  remove every `or RYZE_TENANT` fallback (~40 sites across `candidates.py`,
+  `employer_profiles.py`, `search.py`, `chat.py`, `chat_sessions.py`, `billing.py`,
+  `bookings.py`, `webhooks.py`, `embedding_service.py`) **plus the three literal
+  `or "ryze"` sites in `bookings.py` (lines ~152, ~206, ~641) that a grep for
+  `RYZE_TENANT` misses**; `seed_landscaping_jobs.py` now imports the constant
+  from `deps.py` and goes with it; replace the slug
+  comparison in `_check_tenant_access` and `usage.py` with `tenant.billing_exempt`;
+  replace the `db_explorer.py` line-360 tenant check with `user.is_superuser`;
+  rewrite `tests/test_tenant_isolation.py`. Audit before/after.
+- Part 3: `tenant_resolution.py` — decide reject / pending / create-tenant for
+  unplaced signups; `users.tenant_id` NOT NULL if Decision 1 → (b);
+  `tests/test_signup_tenant_resolution.py` rewritten (its `*_resolves_to_ryze`
+  tests encode the behaviour being removed).
+- Test baseline (2026-11-05, decided with Dane): `tests/test_tenant_isolation.py`
+  fails 3 tests on this machine before any change. The suite reads the live DB
+  and `conftest.GROUND_TRUTH` expects `greenpath_recruiting` bookings on
+  2026-07-09; local `niceats` is unseeded, and `seed_greenpath_demo.py` creates
+  slug `green_path_recruiting` (underscore) anyway, so seeding would not fix it.
+  Fix the slug mismatch in the part-2 rewrite of that file; do not touch it now.
+- Open question for Dane, not blocking this task: which tenant his own user
+  (id 1, currently `ryze`) should end up in — `green_path_recruiting` (what the
+  demo seed does) or a tenant named for his real recruiting business.
+- `seed_greenpath_demo.py --wipe-only` restores user 1 to `ryze`; `reset_demo_db.py`,
+  `seed_full.py`, `backfill_signup_tenants.py` also assume `ryze`. Those scripts are
+  updated in part 2 when the slug goes away, not here.
 
 ## History
 <!-- Keep this updated. Earliest to latest -->
-- 2026-11-02 — Task drafted from a read-only inspection of both repos (Claude, chat). No code changed.
-- 2026-11-02 — Audit done (Claude Code). Found: machine already had Postgres 16 +
-  pgvector and an empty `ryzerecruiting` DB at head; `requirements.txt` was
-  tracked until 3b28e0f (2026-02-16) and the pinned list is recoverable from git;
-  startup is import-safe with empty settings. Tenant audit baseline: 95 endpoints,
-  0 HARDCODED, 0 REVIEW. Decisions 1(b)/2(a)/3(a) confirmed by Dane.
-- 2026-11-02 — Created `.env` from `.env.example` (fresh `SECRET_KEY`, `DEBUG=True`);
-  dropped and recreated `ryzerecruiting` (Decision 3a). Waiting on the droplet
-  `pip freeze` before building the venv.
-- 2026-11-02 — `requirements.txt` written (Feb-2026 pins from 3b28e0f + 14 added
-  packages, fully pinned from `pip freeze`, 96 lines); removed from `.gitignore`.
-  venv built with python3.12.12; `pip install` clean — **zero bumps** to the
-  February pins were needed. `import app.main` OK (101 routes). No droplet
-  exists, so no prod freeze to match (Dane, 2026-11-02).
-- 2026-11-02 — **BLOCKER found:** `alembic upgrade head` on the fresh DB fails at
-  d68448a26b3b (`DROP CONSTRAINT bookings_candidate_id_fkey` — does not exist).
-  46a2f9a418dc already dropped `bookings.candidate_id`; d68448a26b3b drops it
-  again and 31bc4d401f23 indexes/FKs it without re-adding it. Prod had drifted
-  from the chain (column re-added by hand). The previous local DB was at head
-  only because it was restored, not migrated. Chain is at 11ae0fa76851 locally;
-  awaiting decision on the fix.
-- 2026-11-02 — Commit f77b8c5: pinned `requirements.txt` restored, un-ignored.
-  Commit 0bd9fde: migration chain fix (Option A — d68448a26b3b spurious drops
-  removed; 31bc4d401f23 re-adds `bookings.candidate_id` before its index/FK).
-  `alembic upgrade head` now succeeds from scratch; `alembic current` =
-  990ba786ad38 (head); `vector 0.8.0` installed; `users_id_seq` fresh at 1.
-  **`alembic check` still FAILS:** `chat_sessions` / `chat_messages` (models
-  added 2026-03-16, commit 8132911) were never given a migration and nothing
-  calls `create_all`, so prod created them out-of-band. Awaiting decision on a
-  new autogenerated migration.
-- 2026-11-03 — Commit for 4083c0d3ba12: autogenerated migration creating
-  `chat_sessions` + `chat_messages` (two tables, four indexes, nothing else; no
-  `tenant_id` — models never had one, recorded in Notes). `alembic upgrade head`
-  → `alembic current` = 4083c0d3ba12 (head); `alembic check` reports no new
-  upgrade operations. FK-cycle SAWarning and squash recorded as Notes follow-ups.
-- 2026-11-03 — Criterion 1 verified: `uvicorn app.main:app --reload --port 8000`
-  starts clean (startup complete, no tracebacks); `GET /docs` → 200, `GET /` →
-  `It Works!`. Server left running in the background for the login/seed checks.
-  Verification boxes ticked: pip install, `\dx` vector, alembic head, uvicorn/docs.
-- 2026-11-03 — Criteria 3 + 4 verified. Dane ran `create_superadmin.py` →
-  `id=1 danielaherniv@gmail.com` (tenant `ryze`, superuser) and confirmed
-  `POST /api/auth/login` returns a JWT; the JWT lives in `.token` (now
-  gitignored) and `GET /api/auth/me` with it → 200, id 1. `seed_greenpath_demo.py
-  --yes` completed: 22 candidates, 12 employers, 18 job orders, 31 bookings,
-  tenant `green_path_recruiting` created, user 1 moved into it. Authenticated
-  `GET /api/candidates` → 200, 22 rows. `audit_tenant_coverage.py`: 95 endpoints,
-  0 HARDCODED, 0 REVIEW (unchanged from baseline). All 8 Verification boxes
-  checked; Status → Completed. Awaiting Dane's confirmation before archive.
-  `run_backfill.py` (embeddings) not run — needs an OpenAI key, not a criterion.
+- 2026-11-05 — Task drafted (Claude, chat) from a read-only inspection of the
+  models, `deps.py`, `branding.py`, `usage.py`, `tenant_resolution.py`,
+  `db_explorer.py` and both tenant test files. No code changed.
+- 2026-11-05 — Audit done (Claude Code). Baselines: audit 95 endpoints / 0
+  HARDCODED / 0 REVIEW; alembic at 4083c0d3ba12, `check` clean; zero NULL
+  `tenant_id` rows locally (DB otherwise empty — 0 tenants, user 1 in `ryze`);
+  pytest offline tier 3 failed / 11 passed (data-driven, see Notes). Found:
+  every app constructor passes `tenant_id` explicitly, so dropping the model
+  defaults changes no behaviour; `seed_landscaping_jobs.py` imports
+  `RYZE_TENANT` from `job_order.py`; `bookings.py` has three literal `or "ryze"`.
+  Decisions confirmed by Dane: 1 → (b), 2 → (a), 3 → backfill `'ryze'`;
+  Criterion 5 reworded to "no new failures vs baseline"; `billing_exempt` gets
+  both `default` and `server_default`.
+- 2026-11-05 — Implemented (Claude Code), not yet committed. Models: `nullable=False`
+  on the five tables, `default="ryze"`/`RYZE_TENANT` defaults and the two
+  module-level constants removed, `users.tenant_id` keeps nullable (Decision 1b)
+  with its default dropped, `Tenant.billing_exempt` added; `seed_landscaping_jobs.py`
+  import repointed at `app.core.deps`. Migration f807a49989a8 (autogenerated,
+  then hand-edited: per-table `UPDATE ... WHERE tenant_id IS NULL` before each
+  `SET NOT NULL`, `billing_exempt` with `server_default=sa.text("false")`,
+  downgrade reverses all). Verified: `alembic upgrade head` → f807a49989a8,
+  `alembic check` clean, `downgrade -1` → all five nullable again and column
+  gone → `upgrade head` again OK; information_schema shows the five columns
+  NOT NULL, `users.tenant_id` nullable, `billing_exempt boolean NOT NULL
+  DEFAULT false`; no-tenant `Candidate` insert raises `IntegrityError`
+  (not-null violation); pytest offline tier 3 failed / 11 passed — identical to
+  baseline; audit output byte-identical to baseline (95 / 0 / 0); uvicorn
+  starts clean, `GET /docs` → 200. **Not verified:** login → JWT (no `.token`
+  on this machine and no password in session). Awaiting Dane's review of the
+  diff before commit.
+- 2026-11-05 — Dane reviewed the diff and verified login in the browser against
+  the migrated DB (JWT returned). Committed as one change and pushed to
+  `origin/main` together with the archive commit d3edd13.

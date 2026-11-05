@@ -1,5 +1,5 @@
 # app/models/tenant.py
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -21,6 +21,12 @@ class Tenant(Base):
     # Trial window
     trial_starts_at = Column(DateTime(timezone=True), nullable=True)
     trial_ends_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Platform tenants (the house account) are exempt from billing / AI budget
+    # checks. Replaces the slug == "ryze" comparisons in part 2 of the restructure.
+    billing_exempt = Column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     # Stripe — populated after successful checkout
     stripe_customer_id = Column(String(255), nullable=True)
