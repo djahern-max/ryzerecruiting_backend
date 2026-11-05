@@ -4,6 +4,117 @@ Completed features/fixes move here from `current-feature.md` once Status = Compl
 
 This file doubles as source material for the Build in Public series — each entry is close to script-ready: what the problem was, what changed, and the dated sequence of how it got fixed.
 
+## Tenant restructure part 2 — remove the house tenant: `RYZE_TENANT` and every `or "ryze"` fallback deleted (completed 2026-11-05)
+Second step of the three-part restructure. After part 1 made `tenant_id` NOT
+NULL on the five data tables and added `tenants.billing_exempt`, this part
+deletes the house tenant itself: the `RYZE_TENANT` constant, every
+`current_user.tenant_id or "ryze"` fallback, and the "no tenants row — legacy
+account, allow through" branch. All tenants are now peers and the platform
+(Nice ATS) is not a tenant. Backend repo only; `tenant_resolution.py` and
+`test_signup_tenant_resolution.py` untouched (part 3); no display-string
+rebrand (separate task after part 3).
+
+**Four behaviour changes.** (1) Billing / AI-budget exemption reads
+`tenants.billing_exempt` in `_check_tenant_access` (`deps.py`) and
+`is_over_budget` (`usage.py`) — no slug compare. (2) A slug with no `tenants`
+row is a 403. (3) A NULL `users.tenant_id` is a 403: endpoints depend on
+`get_current_tenant` / `get_current_admin_tenant`, non-endpoint code calls the
+new `require_tenant(user)` helper in `deps.py`; no file re-implements the check.
+(4) Platform owner for the unscoped `db_explorer` views is `users.is_superuser`,
+not tenant membership. `get_branding()` lost its `tid == RYZE_TENANT` shortcut
+and `_ryze_defaults` became `_platform_defaults` (strings unchanged); the
+notify functions and `chat.py` tool functions take `tenant_id` as a required
+parameter with no default; `email.py`'s 17 `get_branding(None, "ryze")` sites
+became `get_branding(None, None)`; the eight notify calls that passed no tenant
+(`bookings.py` ×7, `scheduler.py`) pass the booking's `tenant_id`.
+
+**Decisions (2026-11-05).** 1 → (a): Dane's own tenant is
+`green_path_recruiting` / "Green Path Recruiting", the slug the demo seed
+already creates, so demo and working data share one tenant and the seed's
+`ensure_tenant` is idempotent against the migrated row. 2 → (a): 403 (not 401)
+for the no-tenant cases — authenticated but not entitled. 3 → (a): `chat.py`
+tool functions take `tenant_id` as a required positional parameter. 4 → (a):
+a local `_LEGACY_UNPLACED = "ryze"` inside `tenant_resolution.py` keeps part 3
+in charge of the signup rewrite; consequence, unplaced signups now resolve to a
+slug with no `tenants` row and get 403 on data endpoints until part 3 — intended.
+
+**Six commits, one concern each.** (1) e8471f5 deps/usage/branding/db_explorer
++ `require_tenant`; (2) 7342ea5 API call sites — bookings.py's eleven literal
+`or "ryze"`, job_orders.py's ten, candidates, employer_profiles, search, chat,
+chat_sessions, billing, webhooks, admin_invite; (3) c76d157 services and
+scripts, `RYZE_TENANT` deleted with its last importers, seed/maintenance
+scripts repointed, `create_superadmin.py --tenant`, audit-script pattern list
+updated; (4) af88f5e hand-written data migration a1b2c3d4e5f6 — upsert the
+`green_path_recruiting` row (active, billing_exempt) and move user 1 plus any
+`'ryze'` rows on the five data tables into it, downgrade reverses the UPDATEs
+and leaves the tenant row; (5) 0fef322 `tests/test_tenant_isolation.py`
+rewritten self-contained — each test builds its own tenants/users/rows in a
+rolled-back transaction, chat-tool isolation asserted both ways, plus
+behaviours 1–4 at the dependency and HTTP level (httpx `ASGITransport`, since
+the pinned starlette 0.35 TestClient is incompatible with the pinned httpx
+0.28); conftest/README fixed for the stale `greenpath_recruiting` slug;
+(6) dd46661 CLAUDE.md isolation + branding sections rewritten for the
+no-house-tenant rules, `.gitignore` no longer ignores `scripts/`.
+
+**Verified locally:** `grep -rn "RYZE_TENANT\|\"ryze\"\|'ryze'" app/` → only
+`_LEGACY_UNPLACED` in `tenant_resolution.py`; `alembic upgrade head` →
+a1b2c3d4e5f6, `check` clean, `downgrade -1` / `upgrade head` round-trip;
+`tenants` shows `green_path_recruiting | active | t` and user 1 in that slug;
+`pytest -m "not semantic"` 24 passed / 0 failed (was 3 failed / 11 passed at
+baseline); `audit_tenant_coverage.py` unchanged after each of commits 1–3 and
+at the end (95 endpoints, 76 Safe, 0 HARDCODED, 0 REVIEW); the isolation
+suite leaves zero rows behind. Dane confirmed completion (browser login and
+the manual psql checks are Dane's). The seed/wipe round-trip was not run by
+Claude (auto-mode permission refused the wipe; every table it clears was
+empty). **Finding carried forward:** `GET /api/candidates` resolves its tenant
+with `require_tenant` only, so an expired non-exempt tenant gets 200 there,
+not 402 — unchanged from before part 2; the 402 path lives on endpoints that
+depend on `get_current_tenant` (`GET /api/bookings`, `GET /api/job-orders/open`).
+Widening billing enforcement to the candidates endpoints is a separate change
+if wanted. **No deploy:** no production server as of 2026-11-05.
+
+**Next:** part 3 — `tenant_resolution.py` decides what happens to unplaced
+signups (reject / pending / create-tenant), `users.tenant_id` goes NOT NULL
+once that is settled, `tests/test_signup_tenant_resolution.py` rewritten (its
+`*_resolves_to_ryze` tests encode the behaviour being removed). The `/auth`
+page's platform-level Employer/Candidate self-registration depends on this.
+Then the rebrand task (display strings, PDF footers, CORS origins).
+`chat_sessions` / `chat_messages` still have no `tenant_id` — revisit after part 3.
+
+History:
+- 2026-11-05 — Task drafted (Claude, chat) from a read-only inspection after
+  part 1 landed (00d3712). No code changed.
+- 2026-11-05 — Pre-change audit (Claude): baseline saved to
+  `context/audit_baseline_part2.txt` (95 / 76 Safe / 0 HARDCODED / 0 REVIEW).
+  Inventory verified; bookings.py has exactly 11 literal `or "ryze"` plus a
+  12th via `RYZE_TENANT` at line 73. Found sites missing from the inventory:
+  job_orders.py (10 literal `or "ryze"`), admin_invite.py:97, email.py
+  (17 `get_branding(None, "ryze")`), settings.py:120 comment, and
+  tenant_resolution.py importing `RYZE_TENANT` from deps (part-3 file).
+  Decisions 1–3 (+ a new Decision 4) presented; waiting on answers. No code changed.
+- 2026-11-05 — Commits 1–4 landed locally (e8471f5, 7342ea5, c76d157,
+  a1b2c3d4e5f6 migration). Audit unchanged after each of 1–3 (95 / 76 Safe /
+  0 / 0). Migration round-tripped on `niceats`; user 1 now in
+  `green_path_recruiting`, row active + billing_exempt. Awaiting Dane's browser
+  check (login + /api/bookings) before commit 5 (tests). Not yet pushed.
+- 2026-11-05 — Commits 1–4 pushed. Commit 5 (0fef322): `test_tenant_isolation.py`
+  rewritten self-contained (own tenants/rows in a rolled-back transaction),
+  15 tests covering chat-tool isolation both ways plus behaviours 1–4 at the
+  dependency and HTTP level (httpx ASGITransport — starlette 0.35's TestClient
+  is incompatible with the pinned httpx 0.28). conftest/README updated, stale
+  `greenpath_recruiting` slug fixed. Full offline suite 24 passed / 0 failed.
+  Commit 6 (dd46661): CLAUDE.md isolation + branding sections rewritten for
+  the no-house-tenant rules; `.gitignore` no longer ignores `scripts/`. Both
+  pushed. Open: Dane's browser login check, the two manual psql checks, and
+  the seed/wipe run (permission-blocked). Finding: `GET /api/candidates` uses
+  `require_tenant` only, so it returns 200, not 402, for an expired
+  non-exempt tenant — same as before part 2. The 402 path is on endpoints
+  that depend on `get_current_tenant` (e.g. `GET /api/bookings`,
+  `GET /api/job-orders/open`); the manual 402 check should use one of those.
+- 2026-11-05 — Dane confirmed part 2 complete. Archived to CHANGELOG.md;
+  current-feature.md reset to the blank template (Case A-close; next task
+  arrives separately).
+
 ## Tenant restructure part 1 — `tenant_id` NOT NULL everywhere, `tenants.billing_exempt` (completed 2026-11-05)
 Schema-only first step of a three-part restructure that removes the "house
 tenant". The platform (Nice ATS, formerly RYZE.ai) had a tenant with slug `ryze`
