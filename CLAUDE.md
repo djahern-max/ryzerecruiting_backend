@@ -36,8 +36,18 @@ The per-tenant branding resolver is **implemented** at `app/services/branding.py
 - **Secret handling:** `tenant.twilio_auth_token` is a credential-column stub for a future per-number model. Do NOT populate it in production until it's encrypted at rest. In the shared-sender model, tenants leave `twilio_*` NULL and ride on RYZE's number.
 - **Resend:** `from_email` must be a Resend-verified domain. Until a firm verifies its own domain, leave its `from_email` NULL — mail sends from RYZE's verified address with the firm's display name and the firm's `reply_to`.
 
-## Deploy & migration workflow — do NOT run these yourself
-Production is a DigitalOcean droplet (167.71.93.90, user `dane`). The actual deploy always happens manually:
+## Deploy & migration workflow — HISTORICAL; no production server right now
+**As of 2026-11-05 there is no production server.** The DigitalOcean droplet
+(167.71.93.90, user `dane`) that hosted `api.ryze.ai` is gone, and hosting for
+Nice ATS is TBD. Until a new host exists, no server steps follow a task: the
+deliverable ends at `git push origin main` plus local verification
+(`alembic upgrade head` on the local `niceats` DB, `alembic check`, `pytest`,
+`audit_tenant_coverage.py`). Do not propose or write deploy commands.
+
+The workflow below is kept because the migration rules still hold wherever the
+app is next hosted. When that happens, update this section and reinstate the
+deploy-verification rule under Conventions. Historical procedure — the deploy
+always happened manually, never run by Claude:
 
 ```
 # local
@@ -58,7 +68,7 @@ sudo systemctl start ryze-api     # or restart
 ## Conventions
 - **Route ordering matters:** static routes like `/me` must be declared before `/{id}` routes in the same router, or FastAPI treats `me` as a path param.
 - **Resend** only sends from the verified `ryze.ai` domain — `from_email` stays fixed, vary `reply_to` and display name instead (see Tenant branding above).
-- CORS errors in the browser console almost always mean a server-side 500 — check `journalctl -u ryze-api`, not devtools, first.
+- CORS errors in the browser console almost always mean a server-side 500 — check the API logs (locally the uvicorn output; on the old droplet it was `journalctl -u ryze-api`), not devtools, first.
 - `SKIP_FILES` in `audit_tenant_coverage.py` (webhooks, blog, contact, ai_parser) are intentionally public/infrastructure — don't try to tenant-scope them.
 - **PDF generation:** Playwright (`sync_playwright`) must run in plain `def` endpoints (not `async def`) so FastAPI executes it in a thread pool; use `wait_until="networkidle"` so Google Fonts load.
 
@@ -68,7 +78,7 @@ sudo systemctl start ryze-api     # or restart
 - I prefer **complete drop-in replacement files** for anything that's gotten complex, rather than partial diffs — I'll say so when I want that.
 - Narrow, clearly-scoped surgical edits are fine without asking.
 - Don't invent new abstractions or rename public APIs/endpoints unless I asked for that specifically.
-- A task is not done until its commits are pushed to `origin/main`; a deploy is not verified until the droplet's HEAD matches and the service restarts healthy.
+- A task is not done until its commits are pushed to `origin/main`. (Historical, reinstate when hosting exists: a deploy was not verified until the server's HEAD matched and the service restarted healthy.)
 
 ## Session workflow — context/current-feature.md
 At the start of every session, read `context/current-feature.md` — it holds the active task's Status, Goals, Related Files, and Verification steps. Work from it, don't start unrelated work without checking it first.
