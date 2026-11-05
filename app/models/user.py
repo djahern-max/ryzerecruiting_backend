@@ -28,9 +28,12 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
 
-    # Multi-tenancy — which firm this user belongs to. Nullable until the signup
-    # resolver has an explicit answer for unplaced users (tenant restructure part 3).
-    tenant_id = Column(String(100), nullable=True, index=True)
+    # Multi-tenancy — which firm this user belongs to. NOT NULL since tenant
+    # restructure part 3: there are no unplaced users. Firms get their tenant
+    # from /signup-firm or /admin/invite-firm; candidates / employers can only
+    # register if exactly one firm already has their email on file
+    # (app/services/tenant_resolution.py).
+    tenant_id = Column(String(100), nullable=False, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

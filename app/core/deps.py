@@ -27,6 +27,10 @@ def require_tenant(user: User) -> str:
     non-endpoint code that already holds a User; endpoints should depend on
     get_current_tenant / get_current_admin_tenant instead, which also enforce
     the tenant's billing state.
+
+    users.tenant_id is NOT NULL since tenant restructure part 3, so the branch
+    below is defensive (an empty string, a detached object, a future schema
+    relaxation). It is cheap; keep it.
     """
     if not user.tenant_id:
         raise HTTPException(
